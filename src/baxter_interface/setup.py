@@ -25,8 +25,8 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'gripper_action_server = baxter_interface.gripper_action_server:main',
-            'head_action_server = baxter_interface.head_action_server:main',
+            # 'gripper_action_server = baxter_interface.gripper_action_server:main',
+            # 'head_action_server = baxter_interface.head_action_server:main',
             'joint_trajectory_action_server = baxter_interface.joint_trajectory_action_server:main',
         ],
     },

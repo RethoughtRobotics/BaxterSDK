@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 # Copyright (c) 2013-2015, Rethink Robotics
 # All rights reserved.
 #

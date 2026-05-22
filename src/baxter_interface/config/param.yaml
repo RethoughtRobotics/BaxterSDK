@@ -1,0 +1,6 @@
+---
+__ros_parameters:
+
+  # Baxter Interface
+  baxter_interface:
+    ros__parameters:

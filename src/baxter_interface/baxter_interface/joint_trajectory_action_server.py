@@ -1,117 +1,48 @@
-#!/usr/bin/env python
-
-# Copyright (c) 2013-2015, Rethink Robotics
-# All rights reserved.
-#
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are met:
-#
-# 1. Redistributions of source code must retain the above copyright notice,
-#    this list of conditions and the following disclaimer.
-# 2. Redistributions in binary form must reproduce the above copyright
-#    notice, this list of conditions and the following disclaimer in the
-#    documentation and/or other materials provided with the distribution.
-# 3. Neither the name of the Rethink Robotics nor the names of its
-#    contributors may be used to endorse or promote products derived from
-#    this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-# ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
-# LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-# CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-# SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-# INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-# CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
-# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-# POSSIBILITY OF SUCH DAMAGE.
-
-"""
-Baxter RSDK Joint Trajectory Controller
-    Unlike other robots running ROS, this is not a Motor Controller plugin,
-    but a regular node using the SDK interface.
-"""
-
-from __future__ import print_function
-
-import argparse
-
 import rclpy
-from dynamic_reconfigure.server import Server
-from joint_trajectory_action.joint_trajectory_action import (
-    JointTrajectoryActionServer,
-)
+from joint_trajectory_action.joint_trajectory_action import JointTrajectoryActionServer
+from rclpy.executors import MultiThreadedExecutor
 
-from baxter_interface.cfg import (
-    PositionFFJointTrajectoryActionServerConfig,
-    PositionJointTrajectoryActionServerConfig,
-    VelocityJointTrajectoryActionServerConfig,
-)
-
-
-def start_server(limb, rate, mode, interpolation):
-    print('Initializing node... ')
-    rclpy.init()
-    node = rclpy.create_node(
-        'rsdk_%s_joint_trajectory_action_server%s'
-        % (
-            mode,
-            '' if limb == 'both' else '_' + limb,
-        )
-    )
-    print('Initializing joint trajectory action server...')
-
-    if mode == 'velocity':
-        dyn_cfg_srv = Server(VelocityJointTrajectoryActionServerConfig, lambda config, level: config)
-    elif mode == 'position':
-        dyn_cfg_srv = Server(PositionJointTrajectoryActionServerConfig, lambda config, level: config)
-    else:
-        dyn_cfg_srv = Server(PositionFFJointTrajectoryActionServerConfig, lambda config, level: config)
-    jtas = []
-    if limb == 'both':
-        jtas.append(JointTrajectoryActionServer('right', dyn_cfg_srv, rate, mode, interpolation))
-        jtas.append(JointTrajectoryActionServer('left', dyn_cfg_srv, rate, mode, interpolation))
-    else:
-        jtas.append(JointTrajectoryActionServer(limb, dyn_cfg_srv, rate, mode, interpolation))
-
-    def cleanup():
-        for j in jtas:
-            j.clean_shutdown()
-
-    rclpy.get_default_context().on_shutdown(cleanup)
-    print('Running. Ctrl-c to quit')
-    rclpy.spin(node)
+from baxter_interface import Limb
 
 
 def main():
-    arg_fmt = argparse.ArgumentDefaultsHelpFormatter
-    parser = argparse.ArgumentParser(formatter_class=arg_fmt)
-    parser.add_argument(
-        '-l',
-        '--limb',
-        dest='limb',
-        default='both',
-        choices=['both', 'left', 'right'],
-        help='joint trajectory action server limb',
+    rclpy.init()
+    node = rclpy.create_node('baxter_joint_trajectory_action_server')
+    log = node.get_logger()
+
+    log.info('Waiting for robot joint states...')
+    left_limb = Limb('left', node)
+    right_limb = Limb('right', node)
+    log.info('Limbs ready')
+
+    JointTrajectoryActionServer(
+        'left_arm_controller/follow_joint_trajectory',
+        [left_limb],
+        node,
     )
-    parser.add_argument('-r', '--rate', dest='rate', default=100.0, type=float, help='trajectory control rate (Hz)')
-    parser.add_argument(
-        '-m',
-        '--mode',
-        default='position_w_id',
-        choices=['position_w_id', 'position', 'velocity'],
-        help='control mode for trajectory execution',
+    JointTrajectoryActionServer(
+        'right_arm_controller/follow_joint_trajectory',
+        [right_limb],
+        node,
     )
-    parser.add_argument(
-        '-i',
-        '--interpolation',
-        default='bezier',
-        choices=['bezier', 'bezier_with_velocity', 'minjerk'],
-        help='interpolation method for trajectory generation',
+    JointTrajectoryActionServer(
+        'both_arms_controller/follow_joint_trajectory',
+        [left_limb, right_limb],
+        node,
     )
-    args = parser.parse_args()
-    start_server(args.limb, args.rate, args.mode, args.interpolation)
+
+    executor = MultiThreadedExecutor()
+    executor.add_node(node)
+
+    log.info('Baxter joint trajectory action server running')
+    try:
+        executor.spin()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        executor.shutdown()
+        node.destroy_node()
+        rclpy.shutdown()
 
 
 if __name__ == '__main__':
