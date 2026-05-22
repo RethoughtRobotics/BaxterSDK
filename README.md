@@ -3,6 +3,8 @@
 ![ROS2 Kilted](https://img.shields.io/badge/ROS2_Kilted-compatible-brightgreen?logo=ros&logoColor=white)
 ![MoveIt2](https://img.shields.io/badge/MoveIt2-supported-blue)
 
+![Baxter Bridge overview diagram](assets/overview.png)
+
 ROS 2 port of the Baxter robot SDK and MoveIt2 integration. Requires the [Baxter Bridge](https://github.com/RethoughtRobotics/baxter-zenoh) to be running.
 
 ---
