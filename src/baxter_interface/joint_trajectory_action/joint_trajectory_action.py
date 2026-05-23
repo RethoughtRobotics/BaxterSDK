@@ -45,6 +45,7 @@ from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory
 from rclpy.action import ActionServer
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy
 from std_msgs.msg import (
     UInt16,
 )
@@ -109,11 +110,14 @@ class JointTrajectoryActionServer(object):
         self._coeff = [None] * len(self._limb.joint_names())
 
         # Set joint state publishing to specified control rate
-        self._pub_rate = self._node.create_publisher(UInt16, '/robot/joint_state_publish_rate', queue_size=10)
+        qos_reliable = QoSProfile(depth=10)
+        qos_rt = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, depth=1)
+
+        self._pub_rate = self._node.create_publisher(UInt16, '/robot/joint_state_publish_rate', qos_reliable)
         self._pub_rate.publish(self._control_rate)
 
         self._pub_ff_cmd = self._node.create_publisher(
-            JointTrajectoryPoint, self._ns + '/inverse_dynamics_command', tcp_nodelay=True, queue_size=1
+            JointTrajectoryPoint, self._ns + '/inverse_dynamics_command', qos_rt
         )
 
     def robot_is_enabled(self):
