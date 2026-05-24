@@ -9,6 +9,7 @@ Usage:
   ros2 launch baxter_moveit_config baxter.launch.py use_rviz:=false
 """
 
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.conditions import IfCondition
@@ -55,6 +56,7 @@ def generate_launch_description():
             package='baxter_interface',
             executable='joint_trajectory_action_server',
             output='screen',
+            parameters=[get_package_share_directory('baxter_interface') + '/config/param.yaml'],
         )
     )
 

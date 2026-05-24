@@ -88,6 +88,17 @@ class Limb(object):
             depth=1,
         )
 
+        # Joint commands: match the bridge's SensorDataQoS subscriber (BEST_EFFORT).
+        # The bridge's create_bridge_from_2_to_1 uses rclcpp::SensorDataQoS
+        # which is BEST_EFFORT + VOLATILE.  With rmw_zenoh_cpp both sides must
+        # agree on reliability for messages to actually flow.
+        cmd_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+
         self._state_cb_group = MutuallyExclusiveCallbackGroup()
 
         ns = '/robot/limb/' + limb + '/'
@@ -96,7 +107,7 @@ class Limb(object):
 
         self._pub_speed_ratio = node.create_publisher(Float64, ns + 'set_speed_ratio', latch_qos)
 
-        self._pub_joint_cmd = node.create_publisher(JointCommand, ns + 'joint_command', joint_qos)
+        self._pub_joint_cmd = node.create_publisher(JointCommand, ns + 'joint_command', cmd_qos)
 
         self._pub_joint_cmd_timeout = node.create_publisher(Float64, ns + 'joint_command_timeout', latch_qos)
 

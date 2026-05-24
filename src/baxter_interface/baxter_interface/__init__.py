@@ -35,8 +35,7 @@ from .head import Head as Head
 from .limb import Limb as Limb
 from .navigator import Navigator as Navigator
 from .robot_enable import RobotEnable as RobotEnable
-
-# from .robust_controller import RobustController
+from .robust_controller import RobustController as RobustController
 from .settings import (
     CHECK_VERSION as CHECK_VERSION,
 )

@@ -42,8 +42,8 @@ def wait_for(node, test, timeout=1.0, raise_on_error=True, rate=100, timeout_msg
     @param body: optional function to execute while waiting
     """
     interval = 1.0 / rate
-    max_iter = int(timeout * rate)
     notimeout = (timeout < 0.0) or timeout == float('inf')
+    max_iter = 0 if notimeout else int(timeout * rate)
     iters = 0
     while not test():
         iters += 1

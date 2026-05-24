@@ -5,11 +5,10 @@ moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControll
 
 moveit_simple_controller_manager:
   controller_names:
-    - left_arm_controller
-    - right_arm_controller
-    - both_arms_controller
+    - robot/limb/left
+    - robot/limb/right
 
-  left_arm_controller:
+  robot/limb/left:
     type: FollowJointTrajectory
     action_ns: follow_joint_trajectory
     joints:
@@ -20,28 +19,10 @@ moveit_simple_controller_manager:
       - left_w0
       - left_w1
       - left_w2
-  right_arm_controller:
+  robot/limb/right:
     type: FollowJointTrajectory
     action_ns: follow_joint_trajectory
     joints:
-      - right_s0
-      - right_s1
-      - right_e0
-      - right_e1
-      - right_w0
-      - right_w1
-      - right_w2
-  both_arms_controller:
-    type: FollowJointTrajectory
-    action_ns: follow_joint_trajectory
-    joints:
-      - left_s0
-      - left_s1
-      - left_e0
-      - left_e1
-      - left_w0
-      - left_w1
-      - left_w2
       - right_s0
       - right_s1
       - right_e0

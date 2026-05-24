@@ -29,23 +29,18 @@
 Baxter RSDK Joint Trajectory Action Server
 """
 
-from __future__ import absolute_import
-
 import bisect
 import math
 import operator
-import time
+import time as _wtime
 from copy import deepcopy
 
-import baxter_control
-import baxter_dataflow
 import numpy as np
 import rclpy
 from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory
 from rclpy.action import ActionServer
-from rclpy.node import Node
-from rclpy.qos import QoSProfile, ReliabilityPolicy
+from rclpy.callback_groups import ReentrantCallbackGroup
 from std_msgs.msg import (
     UInt16,
 )
@@ -59,18 +54,29 @@ from . import bezier, minjerk
 
 
 class JointTrajectoryActionServer(object):
-    def __init__(self, limb, reconfig_server, rate=100.0, mode='position_w_id', interpolation='bezier', node=Node):
+    def __init__(self, limb, reconfig_server=None, node=None, rate=100.0, mode='position_w_id', interpolation='bezier'):
+        # In ROS2 we load params from the node instead of dynamic_reconfigure.
+        # If reconfig_server is not provided, declare and read node params.
+        if reconfig_server is not None:
+            self._dyn = reconfig_server
+        else:
+            self._dyn = self._load_params(node)
         self._node = node
-        self._dyn = reconfig_server
         self._ns = 'robot/limb/' + limb
         self._fjt_ns = self._ns + '/follow_joint_trajectory'
-        self._server = ActionServer(self._node, FollowJointTrajectory, self._fjt_ns, self._on_trajectory_action)
+        self._server = ActionServer(
+            self._node,
+            FollowJointTrajectory,
+            self._fjt_ns,
+            execute_callback=self._on_trajectory_action,
+            callback_group=ReentrantCallbackGroup(),
+        )
         self._action_name = self._node.get_name()
-        self._limb = baxter_interface.Limb(limb)
-        self._enable = baxter_interface.RobotEnable()
+        self._limb = baxter_interface.Limb(limb, self._node)
+        self._enable = baxter_interface.RobotEnable(node=self._node)
         self._name = limb
         self._interpolation = interpolation
-        self._cuff = baxter_interface.DigitalIO('%s_lower_cuff' % (limb,))
+        self._cuff = baxter_interface.DigitalIO('%s_lower_cuff' % (limb,), self._node)
         self._cuff.state_changed.connect(self._cuff_cb)
         # Verify joint control mode
         self._mode = mode
@@ -101,24 +107,52 @@ class JointTrajectoryActionServer(object):
         self._goal_error = dict()
         self._path_thresh = dict()
 
-        # Create our PID controllers
-        self._pid = dict()
-        for joint in self._limb.joint_names():
-            self._pid[joint] = baxter_control.PID()
-
         # Create our spline coefficients
         self._coeff = [None] * len(self._limb.joint_names())
 
         # Set joint state publishing to specified control rate
-        qos_reliable = QoSProfile(depth=10)
-        qos_rt = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT, depth=1)
+        self._pub_rate = self._node.create_publisher(UInt16, '/robot/joint_state_publish_rate', 10)
+        msg = UInt16()
+        msg.data = int(self._control_rate)
+        self._pub_rate.publish(msg)
 
-        self._pub_rate = self._node.create_publisher(UInt16, '/robot/joint_state_publish_rate', qos_reliable)
-        self._pub_rate.publish(self._control_rate)
+        self._pub_ff_cmd = self._node.create_publisher(JointTrajectoryPoint, self._ns + '/inverse_dynamics_command', 1)
 
-        self._pub_ff_cmd = self._node.create_publisher(
-            JointTrajectoryPoint, self._ns + '/inverse_dynamics_command', qos_rt
+    @staticmethod
+    def _load_params(node):
+        """Declare and load trajectory parameters from the node (replaces dynamic_reconfigure)."""
+
+        def _param(name, default):
+            if node.has_parameter(name):
+                return node.get_parameter(name).value
+            return node.declare_parameter(name, default).value
+
+        params = {}
+        params['goal_time'] = _param('goal_time', 0.1)
+        params['stopped_velocity_tolerance'] = _param('stopped_velocity_tolerance', 0.20)
+        joints = (
+            'left_s0',
+            'left_s1',
+            'left_e0',
+            'left_e1',
+            'left_w0',
+            'left_w1',
+            'left_w2',
+            'right_s0',
+            'right_s1',
+            'right_e0',
+            'right_e1',
+            'right_w0',
+            'right_w1',
+            'right_w2',
         )
+        for jnt in joints:
+            params[jnt + '_trajectory'] = _param(jnt + '_trajectory', 0.35)
+            params[jnt + '_goal'] = _param(jnt + '_goal', -1.0)
+            params[jnt + '_kp'] = _param(jnt + '_kp', 2.0)
+            params[jnt + '_ki'] = _param(jnt + '_ki', 0.0)
+            params[jnt + '_kd'] = _param(jnt + '_kd', 0.0)
+        return params
 
     def robot_is_enabled(self):
         return self._enable.state().enabled
@@ -136,12 +170,13 @@ class JointTrajectoryActionServer(object):
         # parameter server/dynamic reconfigure
 
         # Goal time tolerance - time buffer allowing goal constraints to be met
-        if goal.goal_time_tolerance:
-            self._goal_time = goal.goal_time_tolerance.sec + goal.goal_time_tolerance.nanosec * 1e-9
+        gt = goal.goal_time_tolerance
+        if gt.sec != 0 or gt.nanosec != 0:
+            self._goal_time = gt.sec + gt.nanosec * 1e-9
         else:
-            self._goal_time = self._dyn.config['goal_time']
+            self._goal_time = self._dyn['goal_time']
         # Stopped velocity tolerance - max velocity at end of execution
-        self._stopped_velocity = self._dyn.config['stopped_velocity_tolerance']
+        self._stopped_velocity = self._dyn['stopped_velocity_tolerance']
 
         # Path execution and goal tolerances per joint
         for jnt in joint_names:
@@ -157,7 +192,7 @@ class JointTrajectoryActionServer(object):
                 goal_handle.abort()
                 return False
             # Path execution tolerance
-            path_error = self._dyn.config[jnt + '_trajectory']
+            path_error = self._dyn[jnt + '_trajectory']
             if goal.path_tolerance:
                 for tolerance in goal.path_tolerance:
                     if jnt == tolerance.name:
@@ -168,7 +203,7 @@ class JointTrajectoryActionServer(object):
             else:
                 self._path_thresh[jnt] = path_error
             # Goal error tolerance
-            goal_error = self._dyn.config[jnt + '_goal']
+            goal_error = self._dyn[jnt + '_goal']
             if goal.goal_tolerance:
                 for tolerance in goal.goal_tolerance:
                     if jnt == tolerance.name:
@@ -178,13 +213,7 @@ class JointTrajectoryActionServer(object):
                             self._goal_error[jnt] = goal_error
             else:
                 self._goal_error[jnt] = goal_error
-
-            # PID gains if executing using the velocity (integral) controller
-            if self._mode == 'velocity':
-                self._pid[jnt].set_kp(self._dyn.config[jnt + '_kp'])
-                self._pid[jnt].set_ki(self._dyn.config[jnt + '_ki'])
-                self._pid[jnt].set_kd(self._dyn.config[jnt + '_kd'])
-                self._pid[jnt].initialize()
+        return True
 
     def _get_current_position(self, joint_names):
         return [self._limb.joint_angle(joint) for joint in joint_names]
@@ -198,7 +227,6 @@ class JointTrajectoryActionServer(object):
         return zip(joint_names, error)
 
     def _update_feedback(self, cmd_point, jnt_names, cur_time, goal_handle):
-        self._fdbk.header.stamp = self._node.get_clock().now().to_msg()
         self._fdbk.joint_names = jnt_names
         self._fdbk.desired = cmd_point
         self._fdbk.desired.time_from_start = Duration(sec=int(cur_time), nanosec=int((cur_time % 1) * 1e9))
@@ -225,18 +253,21 @@ class JointTrajectoryActionServer(object):
                 pnt.accelerations.append(accel_cmd[jnt_name])
         return pnt
 
-    def _command_stop(self, joint_names, joint_angles, start_time, dimensions_dict, goal_handle):
+    def _command_stop(self, joint_names, joint_angles, start_time, dimensions_dict):
+        """Send one final position command.
+
+        In ROS1 this was a holding while-loop, but in ROS2 the action
+        result is only sent when the execute callback returns, so we
+        cannot loop here.  A single command is sufficient because
+        Baxter holds its last commanded position.
+        """
         if self._mode == 'velocity':
             velocities = [0.0] * len(joint_names)
             cmd = dict(zip(joint_names, velocities))
-            while not goal_handle.is_cancel_requested and self._alive and self.robot_is_enabled():
-                self._limb.set_joint_velocities(cmd)
-                if self._cuff_state:
-                    self._limb.exit_control_mode()
-                    break
-                time.sleep(1.0 / self._control_rate)
+            self._limb.set_joint_velocities(cmd)
         elif self._mode == 'position' or self._mode == 'position_w_id':
             raw_pos_mode = self._mode == 'position_w_id'
+            self._limb.set_joint_positions(joint_angles, raw=raw_pos_mode)
             if raw_pos_mode:
                 pnt = JointTrajectoryPoint()
                 pnt.positions = self._get_current_position(joint_names)
@@ -244,24 +275,16 @@ class JointTrajectoryActionServer(object):
                     pnt.velocities = [0.0] * len(joint_names)
                 if dimensions_dict['accelerations']:
                     pnt.accelerations = [0.0] * len(joint_names)
-            while not goal_handle.is_cancel_requested and self._alive and self.robot_is_enabled():
-                self._limb.set_joint_positions(joint_angles, raw=raw_pos_mode)
-                # zero inverse dynamics feedforward command
-                if self._mode == 'position_w_id':
-                    elapsed = self._node.get_clock().now().nanoseconds * 1e-9 - start_time
-                    pnt.time_from_start = Duration(sec=int(elapsed), nanosec=int((elapsed % 1) * 1e9))
-                    ff_pnt = self._reorder_joints_ff_cmd(joint_names, pnt)
-                    self._pub_ff_cmd.publish(ff_pnt)
-                if self._cuff_state:
-                    self._limb.exit_control_mode()
-                    break
-                time.sleep(1.0 / self._control_rate)
+                elapsed = self._node.get_clock().now().nanoseconds * 1e-9 - start_time
+                pnt.time_from_start = Duration(sec=int(elapsed), nanosec=int((elapsed % 1) * 1e9))
+                ff_pnt = self._reorder_joints_ff_cmd(joint_names, pnt)
+                self._pub_ff_cmd.publish(ff_pnt)
 
     def _command_joints(self, joint_names, point, start_time, dimensions_dict, goal_handle):
         if goal_handle.is_cancel_requested or not self.robot_is_enabled():
             self._node.get_logger().info('%s: Trajectory Preempted' % (self._action_name,))
             goal_handle.canceled()
-            self._command_stop(joint_names, self._limb.joint_angles(), start_time, dimensions_dict, goal_handle)
+            self._command_stop(joint_names, self._limb.joint_angles(), start_time, dimensions_dict)
             return False
         velocities = []
         deltas = self._get_current_error(joint_names, point.positions)
@@ -279,10 +302,8 @@ class JointTrajectoryActionServer(object):
                 )
                 self._result.error_code = self._result.PATH_TOLERANCE_VIOLATED
                 goal_handle.abort()
-                self._command_stop(joint_names, self._limb.joint_angles(), start_time, dimensions_dict, goal_handle)
+                self._command_stop(joint_names, self._limb.joint_angles(), start_time, dimensions_dict)
                 return False
-            if self._mode == 'velocity':
-                velocities.append(self._pid[delta[0]].compute_output(delta[1]))
         if (self._mode == 'position' or self._mode == 'position_w_id') and self._alive:
             cmd = dict(zip(joint_names, point.positions))
             raw_pos_mode = self._mode == 'position_w_id'
@@ -409,10 +430,10 @@ class JointTrajectoryActionServer(object):
 
     def _on_trajectory_action(self, goal_handle):
         goal = goal_handle.request
-        joint_names = goal.trajectory.joint_names
-        trajectory_points = goal.trajectory.points
+        joint_names = list(goal.trajectory.joint_names)
+        trajectory_points = list(goal.trajectory.points)
         # Load parameters for trajectory
-        if self._get_trajectory_parameters(joint_names, goal, goal_handle) is False:
+        if not self._get_trajectory_parameters(joint_names, goal, goal_handle):
             return self._result
         # Create a new discretized joint trajectory
         num_points = len(trajectory_points)
@@ -421,8 +442,6 @@ class JointTrajectoryActionServer(object):
             goal_handle.abort()
             return self._result
         self._node.get_logger().info('%s: Executing requested joint trajectory' % (self._action_name,))
-        self._node.get_logger().debug('Trajectory Points: {0}'.format(trajectory_points))
-        control_rate = self._node.create_rate(self._control_rate)
 
         dimensions_dict = self._determine_dimensions(trajectory_points)
 
@@ -471,18 +490,19 @@ class JointTrajectoryActionServer(object):
             goal_handle.abort()
             return self._result
         # Wait for the specified execution time, if not provided use now
-        stamp = goal.trajectory.header.stamp
-        start_time = stamp.sec + stamp.nanosec * 1e-9
+        hdr = goal.trajectory.header.stamp
+        start_time = hdr.sec + hdr.nanosec * 1e-9
         if start_time == 0.0:
             start_time = self._node.get_clock().now().nanoseconds * 1e-9
-        baxter_dataflow.wait_for(
-            self._node, lambda: self._node.get_clock().now().nanoseconds * 1e-9 >= start_time, timeout=float('inf')
-        )
+        # Wait until start time
+        while self._node.get_clock().now().nanoseconds * 1e-9 < start_time and rclpy.ok():
+            _wtime.sleep(0.001)
+
         # Loop until end of trajectory time.  Provide a single time step
         # of the control rate past the end to ensure we get to the end.
         # Keep track of current indices for spline segment generation
         now_from_start = self._node.get_clock().now().nanoseconds * 1e-9 - start_time
-        end_time = trajectory_points[-1].time_from_start.sec + trajectory_points[-1].time_from_start.nanosec * 1e-9
+        end_time = pnt_times[-1]
         while now_from_start < end_time and rclpy.ok() and self.robot_is_enabled():
             # Acquire Mutex
             now = self._node.get_clock().now().nanoseconds * 1e-9
@@ -510,10 +530,10 @@ class JointTrajectoryActionServer(object):
             # Release the Mutex
             if not command_executed:
                 return self._result
-            control_rate.sleep()
+            _wtime.sleep(1.0 / self._control_rate)
         # Keep trying to meet goal until goal_time constraint expired
         last = trajectory_points[-1]
-        last_time = trajectory_points[-1].time_from_start.sec + trajectory_points[-1].time_from_start.nanosec * 1e-9
+        last_time = pnt_times[-1]
         end_angles = dict(zip(joint_names, last.positions))
 
         def check_goal_state():
@@ -534,7 +554,7 @@ class JointTrajectoryActionServer(object):
                 return self._result
             now_from_start = self._node.get_clock().now().nanoseconds * 1e-9 - start_time
             self._update_feedback(deepcopy(last), joint_names, now_from_start, goal_handle)
-            control_rate.sleep()
+            _wtime.sleep(1.0 / self._control_rate)
 
         now_from_start = self._node.get_clock().now().nanoseconds * 1e-9 - start_time
         self._update_feedback(deepcopy(last), joint_names, now_from_start, goal_handle)
@@ -559,5 +579,5 @@ class JointTrajectoryActionServer(object):
             )
             self._result.error_code = self._result.GOAL_TOLERANCE_VIOLATED
             goal_handle.abort()
-        self._command_stop(goal.trajectory.joint_names, end_angles, start_time, dimensions_dict, goal_handle)
+        self._command_stop(goal.trajectory.joint_names, end_angles, start_time, dimensions_dict)
         return self._result

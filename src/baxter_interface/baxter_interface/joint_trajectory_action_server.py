@@ -2,8 +2,6 @@ import rclpy
 from joint_trajectory_action.joint_trajectory_action import JointTrajectoryActionServer
 from rclpy.executors import MultiThreadedExecutor
 
-from baxter_interface import Limb
-
 
 def main():
     rclpy.init()
@@ -11,25 +9,10 @@ def main():
     log = node.get_logger()
 
     log.info('Waiting for robot joint states...')
-    left_limb = Limb('left', node)
-    right_limb = Limb('right', node)
     log.info('Limbs ready')
 
-    JointTrajectoryActionServer(
-        'left_arm_controller/follow_joint_trajectory',
-        [left_limb],
-        node,
-    )
-    JointTrajectoryActionServer(
-        'right_arm_controller/follow_joint_trajectory',
-        [right_limb],
-        node,
-    )
-    JointTrajectoryActionServer(
-        'both_arms_controller/follow_joint_trajectory',
-        [left_limb, right_limb],
-        node,
-    )
+    JointTrajectoryActionServer('left', mode='position', node=node)
+    JointTrajectoryActionServer('right', mode='position', node=node)
 
     executor = MultiThreadedExecutor()
     executor.add_node(node)

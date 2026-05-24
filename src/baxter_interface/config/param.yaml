@@ -1,6 +1,83 @@
 ---
-__ros_parameters:
+baxter_joint_trajectory_action_server:
+  ros__parameters:
+    # Time buffer (s) the controller is permitted to be late achieving the goal
+    goal_time: 0.1
+    # Maximum joint velocity (rad/s) at end of trajectory to be considered stopped
+    stopped_velocity_tolerance: 0.20
 
-  # Baxter Interface
-  baxter_interface:
-    ros__parameters:
+    # Per-joint path execution tolerance (rad). Negative = disabled.
+    left_s0_trajectory: 0.35
+    left_s1_trajectory: 0.35
+    left_e0_trajectory: 0.35
+    left_e1_trajectory: 0.35
+    left_w0_trajectory: 0.35
+    left_w1_trajectory: 0.35
+    left_w2_trajectory: 0.35
+    right_s0_trajectory: 0.35
+    right_s1_trajectory: 0.35
+    right_e0_trajectory: 0.35
+    right_e1_trajectory: 0.35
+    right_w0_trajectory: 0.35
+    right_w1_trajectory: 0.35
+    right_w2_trajectory: 0.35
+
+    # Per-joint goal error tolerance (rad). Negative = disabled.
+    left_s0_goal: -1.0
+    left_s1_goal: -1.0
+    left_e0_goal: -1.0
+    left_e1_goal: -1.0
+    left_w0_goal: -1.0
+    left_w1_goal: -1.0
+    left_w2_goal: -1.0
+    right_s0_goal: -1.0
+    right_s1_goal: -1.0
+    right_e0_goal: -1.0
+    right_e1_goal: -1.0
+    right_w0_goal: -1.0
+    right_w1_goal: -1.0
+    right_w2_goal: -1.0
+
+    # Per-joint PID gains (velocity mode only)
+    left_s0_kp: 2.0
+    left_s0_ki: 0.0
+    left_s0_kd: 0.0
+    left_s1_kp: 2.0
+    left_s1_ki: 0.0
+    left_s1_kd: 0.0
+    left_e0_kp: 2.0
+    left_e0_ki: 0.0
+    left_e0_kd: 0.0
+    left_e1_kp: 2.0
+    left_e1_ki: 0.0
+    left_e1_kd: 0.0
+    left_w0_kp: 2.0
+    left_w0_ki: 0.0
+    left_w0_kd: 0.0
+    left_w1_kp: 2.0
+    left_w1_ki: 0.0
+    left_w1_kd: 0.0
+    left_w2_kp: 2.0
+    left_w2_ki: 0.0
+    left_w2_kd: 0.0
+    right_s0_kp: 2.0
+    right_s0_ki: 0.0
+    right_s0_kd: 0.0
+    right_s1_kp: 2.0
+    right_s1_ki: 0.0
+    right_s1_kd: 0.0
+    right_e0_kp: 2.0
+    right_e0_ki: 0.0
+    right_e0_kd: 0.0
+    right_e1_kp: 2.0
+    right_e1_ki: 0.0
+    right_e1_kd: 0.0
+    right_w0_kp: 2.0
+    right_w0_ki: 0.0
+    right_w0_kd: 0.0
+    right_w1_kp: 2.0
+    right_w1_ki: 0.0
+    right_w1_kd: 0.0
+    right_w2_kp: 2.0
+    right_w2_ki: 0.0
+    right_w2_kd: 0.0
