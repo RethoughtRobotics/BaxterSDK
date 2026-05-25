@@ -40,7 +40,7 @@ import rclpy
 from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory
 from rclpy.action import ActionServer
-from rclpy.callback_groups import ReentrantCallbackGroup
+from rclpy.callback_groups import ReentrantCallbackGroup, MutuallyExclusiveCallbackGroup
 from std_msgs.msg import (
     UInt16,
 )
@@ -55,7 +55,7 @@ from . import bezier, minjerk
 
 class JointTrajectoryActionServer(object):
     def __init__(self, limb, reconfig_server=None, node=None, rate=100.0, mode='position_w_id', interpolation='bezier'):
-        self._dyn = self._load_params(node)
+        self._dyn = self._load_params(node, mode)
         self._node = node
         self._ns = 'robot/limb/' + limb
         self._fjt_ns = limb + '_arm/follow_joint_trajectory'
@@ -64,12 +64,9 @@ class JointTrajectoryActionServer(object):
             FollowJointTrajectory,
             self._fjt_ns,
             execute_callback=self._on_trajectory_action,
-            callback_group=ReentrantCallbackGroup(),
+            callback_group=MutuallyExclusiveCallbackGroup(),
         )
         self._action_name = self._node.get_name()
-        # All I/O on the main node — rmw_zenoh_cpp only flushes
-        # publishes when the publisher's node is on the same executor
-        # and NOT on a separate _io_node.
         self._limb = baxter_interface.Limb(limb, self._node)
         self._enable = baxter_interface.RobotEnable(node=self._node)
         self._name = limb
@@ -117,35 +114,39 @@ class JointTrajectoryActionServer(object):
         self._pub_ff_cmd = self._node.create_publisher(JointTrajectoryPoint, self._ns + '/inverse_dynamics_command', 1)
 
     @staticmethod
-    def _load_params(node):
-        """Declare and load trajectory parameters from the node (replaces dynamic_reconfigure)."""
+    def _load_params(node, mode='position_w_id'):
+        """Declare and load trajectory parameters, matching ROS1 defaults per mode."""
 
         def _param(name, default):
             if node.has_parameter(name):
                 return node.get_parameter(name).value
             return node.declare_parameter(name, default).value
 
+        # Per-mode defaults matching original Rethink .cfg files
+        if mode == 'velocity':
+            default_goal_time = 0.0
+            default_stopped_velocity = -1.0
+            default_trajectory = -1.0
+        elif mode == 'position':
+            default_goal_time = 0.1
+            default_stopped_velocity = 0.25
+            default_trajectory = 0.2
+        else:  # position_w_id
+            default_goal_time = 0.1
+            default_stopped_velocity = 0.20
+            default_trajectory = 0.35
+
         params = {}
-        params['goal_time'] = _param('goal_time', 0.1)
-        params['stopped_velocity_tolerance'] = _param('stopped_velocity_tolerance', 0.20)
+        params['goal_time'] = _param('goal_time', default_goal_time)
+        params['stopped_velocity_tolerance'] = _param('stopped_velocity_tolerance', default_stopped_velocity)
         joints = (
-            'left_s0',
-            'left_s1',
-            'left_e0',
-            'left_e1',
-            'left_w0',
-            'left_w1',
-            'left_w2',
-            'right_s0',
-            'right_s1',
-            'right_e0',
-            'right_e1',
-            'right_w0',
-            'right_w1',
-            'right_w2',
+            'left_s0', 'left_s1', 'left_e0', 'left_e1',
+            'left_w0', 'left_w1', 'left_w2',
+            'right_s0', 'right_s1', 'right_e0', 'right_e1',
+            'right_w0', 'right_w1', 'right_w2',
         )
         for jnt in joints:
-            params[jnt + '_trajectory'] = _param(jnt + '_trajectory', 0.35)
+            params[jnt + '_trajectory'] = _param(jnt + '_trajectory', default_trajectory)
             params[jnt + '_goal'] = _param(jnt + '_goal', -1.0)
             params[jnt + '_kp'] = _param(jnt + '_kp', 2.0)
             params[jnt + '_ki'] = _param(jnt + '_ki', 0.0)

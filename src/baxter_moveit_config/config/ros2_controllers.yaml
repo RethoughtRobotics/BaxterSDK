@@ -15,7 +15,6 @@ controller_manager:
 
     joint_state_broadcaster:
       type: joint_state_broadcaster/JointStateBroadcaster
-
 left_arm_controller:
   ros__parameters:
     joints:
@@ -34,7 +33,7 @@ left_arm_controller:
       - position
       - velocity
       - effort
-    allow_nonzero_velocity_at_trajectory_end: true
+    allow_nonzero_velocity_at_trajectory_end: true 
 right_arm_controller:
   ros__parameters:
     joints:

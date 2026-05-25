@@ -26,15 +26,14 @@ def generate_launch_description():
 
     ld.add_action(DeclareLaunchArgument('use_rviz', default_value='true'))
 
-    # world -> base static transform
+    # world to base static transform
     ld.add_action(
         IncludeLaunchDescription(
             PythonLaunchDescriptionSource(str(launch_package_path / 'launch/static_virtual_joint_tfs.launch.py'))
         )
     )
 
-    # Robot state publisher fed by real joint states.
-    # ignore_timestamp avoids TF_OLD_DATA conflicts with the bridge's own TF.
+    # Robot state publisher
     ld.add_action(
         Node(
             package='robot_state_publisher',
@@ -47,15 +46,7 @@ def generate_launch_description():
             remappings=[('/joint_states', '/robot/joint_states')],
         )
     )
-
-    # move_group — same publish flags as generate_move_group_launch, plus
-    # moveit_manage_controllers=False since we have no ros2_control stack.
-    # trajectory_execution tolerances match the original Baxter MoveIt config.
-    # planning_scene_monitor log level set to ERROR to suppress the flood of
-    # "unable to transform reference/* frames" warnings from the Docker bridge
-    # (the bridge publishes ~50 reference frames as independent TF roots with
-    # no connection to the planning frame; they're internal commanded-state
-    # frames that don't affect planning or execution).
+    # MoveIt! move_group node
     ld.add_action(
         Node(
             name='move_group',
