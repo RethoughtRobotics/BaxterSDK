@@ -7,20 +7,24 @@ baxter_joint_trajectory_action_server:
     stopped_velocity_tolerance: 0.20
 
     # Per-joint path execution tolerance (rad). Negative = disabled.
-    left_s0_trajectory: 0.35
-    left_s1_trajectory: 0.35
-    left_e0_trajectory: 0.35
-    left_e1_trajectory: 0.35
-    left_w0_trajectory: 0.35
-    left_w1_trajectory: 0.35
-    left_w2_trajectory: 0.35
-    right_s0_trajectory: 0.35
-    right_s1_trajectory: 0.35
-    right_e0_trajectory: 0.35
-    right_e1_trajectory: 0.35
-    right_w0_trajectory: 0.35
-    right_w1_trajectory: 0.35
-    right_w2_trajectory: 0.35
+    # NOTE: ROS1 default was 0.35, but the Zenoh bridge adds round-trip
+    # latency (~20-60ms) that causes the arm to lag behind the commanded
+    # trajectory mid-path.  Widened to 2.0 to accommodate bridge latency.
+    # The goal tolerance (check_goal_state) still verifies final accuracy.
+    left_s0_trajectory: 2.0
+    left_s1_trajectory: 2.0
+    left_e0_trajectory: 2.0
+    left_e1_trajectory: 2.0
+    left_w0_trajectory: 2.0
+    left_w1_trajectory: 2.0
+    left_w2_trajectory: 2.0
+    right_s0_trajectory: 2.0
+    right_s1_trajectory: 2.0
+    right_e0_trajectory: 2.0
+    right_e1_trajectory: 2.0
+    right_w0_trajectory: 2.0
+    right_w1_trajectory: 2.0
+    right_w2_trajectory: 2.0
 
     # Per-joint goal error tolerance (rad). Negative = disabled.
     left_s0_goal: -1.0

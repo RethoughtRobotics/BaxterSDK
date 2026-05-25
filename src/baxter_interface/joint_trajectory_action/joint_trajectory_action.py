@@ -55,15 +55,10 @@ from . import bezier, minjerk
 
 class JointTrajectoryActionServer(object):
     def __init__(self, limb, reconfig_server=None, node=None, rate=100.0, mode='position_w_id', interpolation='bezier'):
-        # In ROS2 we load params from the node instead of dynamic_reconfigure.
-        # If reconfig_server is not provided, declare and read node params.
-        if reconfig_server is not None:
-            self._dyn = reconfig_server
-        else:
-            self._dyn = self._load_params(node)
+        self._dyn = self._load_params(node)
         self._node = node
         self._ns = 'robot/limb/' + limb
-        self._fjt_ns = self._ns + '/follow_joint_trajectory'
+        self._fjt_ns = limb + '_arm/follow_joint_trajectory'
         self._server = ActionServer(
             self._node,
             FollowJointTrajectory,
@@ -72,6 +67,9 @@ class JointTrajectoryActionServer(object):
             callback_group=ReentrantCallbackGroup(),
         )
         self._action_name = self._node.get_name()
+        # All I/O on the main node — rmw_zenoh_cpp only flushes
+        # publishes when the publisher's node is on the same executor
+        # and NOT on a separate _io_node.
         self._limb = baxter_interface.Limb(limb, self._node)
         self._enable = baxter_interface.RobotEnable(node=self._node)
         self._name = limb
@@ -432,10 +430,8 @@ class JointTrajectoryActionServer(object):
         goal = goal_handle.request
         joint_names = list(goal.trajectory.joint_names)
         trajectory_points = list(goal.trajectory.points)
-        # Load parameters for trajectory
         if not self._get_trajectory_parameters(joint_names, goal, goal_handle):
             return self._result
-        # Create a new discretized joint trajectory
         num_points = len(trajectory_points)
         if num_points == 0:
             self._node.get_logger().error('%s: Empty Trajectory' % (self._action_name,))
@@ -446,11 +442,8 @@ class JointTrajectoryActionServer(object):
         dimensions_dict = self._determine_dimensions(trajectory_points)
 
         if num_points == 1:
-            # Add current position as trajectory point
             first_trajectory_point = JointTrajectoryPoint()
             first_trajectory_point.positions = self._get_current_position(joint_names)
-            # To preserve desired velocities and accelerations, copy them to the first
-            # trajectory point if the trajectory is only 1 point.
             if dimensions_dict['velocities']:
                 first_trajectory_point.velocities = deepcopy(trajectory_points[0].velocities)
             if dimensions_dict['accelerations']:
@@ -459,11 +452,6 @@ class JointTrajectoryActionServer(object):
             trajectory_points.insert(0, first_trajectory_point)
             num_points = len(trajectory_points)
 
-        # Force Velocites/Accelerations to zero at the final timestep
-        # if they exist in the trajectory
-        # Remove this behavior if you are stringing together trajectories,
-        # and want continuous, non-zero velocities/accelerations between
-        # trajectories
         if dimensions_dict['velocities']:
             trajectory_points[-1].velocities = [0.0] * len(joint_names)
         if dimensions_dict['accelerations']:
@@ -472,14 +460,11 @@ class JointTrajectoryActionServer(object):
         pnt_times = [pnt.time_from_start.sec + pnt.time_from_start.nanosec * 1e-9 for pnt in trajectory_points]
         try:
             if self._interpolation == 'minjerk':
-                # Compute Full MinJerk Curve Coefficients for all 7 joints
                 point_duration = [pnt_times[i + 1] - pnt_times[i] for i in range(len(pnt_times) - 1)]
                 m_matrix = self._compute_minjerk_coeff(joint_names, trajectory_points, point_duration, dimensions_dict)
             elif self._interpolation == 'bezier_with_velocity':
-                # Compute Full Bezier Curve Coefficients for all 7 joints
                 b_matrix = self._compute_bezier_with_velocity_coeff(joint_names, trajectory_points, dimensions_dict)
             else:
-                # Compute Full Bezier Curve Coefficients for all 7 joints
                 b_matrix = self._compute_bezier_coeff(joint_names, trajectory_points, dimensions_dict)
         except Exception as ex:
             self._node.get_logger().error(
@@ -489,49 +474,41 @@ class JointTrajectoryActionServer(object):
             )
             goal_handle.abort()
             return self._result
-        # Wait for the specified execution time, if not provided use now
+
         hdr = goal.trajectory.header.stamp
         start_time = hdr.sec + hdr.nanosec * 1e-9
         if start_time == 0.0:
             start_time = self._node.get_clock().now().nanoseconds * 1e-9
-        # Wait until start time
+
         while self._node.get_clock().now().nanoseconds * 1e-9 < start_time and rclpy.ok():
             _wtime.sleep(0.001)
 
-        # Loop until end of trajectory time.  Provide a single time step
-        # of the control rate past the end to ensure we get to the end.
-        # Keep track of current indices for spline segment generation
+        _period = 1.0 / self._control_rate
+
         now_from_start = self._node.get_clock().now().nanoseconds * 1e-9 - start_time
-        end_time = pnt_times[-1]
-        while now_from_start < end_time and rclpy.ok() and self.robot_is_enabled():
-            # Acquire Mutex
-            now = self._node.get_clock().now().nanoseconds * 1e-9
-            now_from_start = now - start_time
-            idx = bisect.bisect(pnt_times, now_from_start)
-            # Calculate percentage of time passed in this interval
-            if idx >= num_points:
-                cmd_time = now_from_start - pnt_times[-1]
-                t = 1.0
-            elif idx >= 0:
-                cmd_time = now_from_start - pnt_times[idx - 1]
-                t = cmd_time / (pnt_times[idx] - pnt_times[idx - 1])
-            else:
-                cmd_time = 0
-                t = 0
+        while now_from_start < pnt_times[-1] and rclpy.ok() and self.robot_is_enabled():
+            _iter_start = _wtime.time()
+            idx = bisect.bisect_left(pnt_times, now_from_start) - 1
+            idx = max(0, min(idx, len(pnt_times) - 2))
+            t_seg_start = pnt_times[idx]
+            t_seg_end = pnt_times[idx + 1]
+            seg_dur = t_seg_end - t_seg_start
+            t = (now_from_start - t_seg_start) / seg_dur if seg_dur > 0.0 else 0.0
+            t = max(0.0, min(1.0, t))
 
             if self._interpolation == 'minjerk':
-                point = self._get_minjerk_point(m_matrix, idx, t, cmd_time, dimensions_dict)
+                pnt = self._get_minjerk_point(m_matrix, idx, t, now_from_start, dimensions_dict)
             else:
-                point = self._get_bezier_point(b_matrix, idx, t, cmd_time, dimensions_dict)
+                pnt = self._get_bezier_point(b_matrix, idx, t, now_from_start, dimensions_dict)
 
-            # Command Joint Position, Velocity, Acceleration
-            command_executed = self._command_joints(joint_names, point, start_time, dimensions_dict, goal_handle)
-            self._update_feedback(deepcopy(point), joint_names, now_from_start, goal_handle)
-            # Release the Mutex
-            if not command_executed:
+            if not self._command_joints(joint_names, pnt, start_time, dimensions_dict, goal_handle):
                 return self._result
-            _wtime.sleep(1.0 / self._control_rate)
-        # Keep trying to meet goal until goal_time constraint expired
+            self._update_feedback(pnt, joint_names, now_from_start, goal_handle)
+            _remaining = _period - (_wtime.time() - _iter_start)
+            if _remaining > 0.0:
+                _wtime.sleep(_remaining)
+            now_from_start = self._node.get_clock().now().nanoseconds * 1e-9 - start_time
+
         last = trajectory_points[-1]
         last_time = pnt_times[-1]
         end_angles = dict(zip(joint_names, last.positions))
@@ -546,20 +523,22 @@ class JointTrajectoryActionServer(object):
                 > self._stopped_velocity
             ):
                 return False
-            else:
-                return True
+            return True
 
+        now_from_start = self._node.get_clock().now().nanoseconds * 1e-9 - start_time
         while now_from_start < (last_time + self._goal_time) and rclpy.ok() and self.robot_is_enabled():
+            _iter_start = _wtime.time()
             if not self._command_joints(joint_names, last, start_time, dimensions_dict, goal_handle):
                 return self._result
             now_from_start = self._node.get_clock().now().nanoseconds * 1e-9 - start_time
             self._update_feedback(deepcopy(last), joint_names, now_from_start, goal_handle)
-            _wtime.sleep(1.0 / self._control_rate)
+            _remaining = _period - (_wtime.time() - _iter_start)
+            if _remaining > 0.0:
+                _wtime.sleep(_remaining)
 
         now_from_start = self._node.get_clock().now().nanoseconds * 1e-9 - start_time
         self._update_feedback(deepcopy(last), joint_names, now_from_start, goal_handle)
 
-        # Verify goal constraint
         result = check_goal_state()
         if result is True:
             self._node.get_logger().info(

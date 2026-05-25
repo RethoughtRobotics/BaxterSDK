@@ -1,16 +1,15 @@
 ---
-# MoveIt uses this configuration for controller management
-
 moveit_controller_manager: moveit_simple_controller_manager/MoveItSimpleControllerManager
 
 moveit_simple_controller_manager:
   controller_names:
-    - robot/limb/left
-    - robot/limb/right
+    - left_arm
+    - right_arm
 
-  robot/limb/left:
+  left_arm:
     type: FollowJointTrajectory
     action_ns: follow_joint_trajectory
+    default: true
     joints:
       - left_s0
       - left_s1
@@ -19,9 +18,11 @@ moveit_simple_controller_manager:
       - left_w0
       - left_w1
       - left_w2
-  robot/limb/right:
+
+  right_arm:
     type: FollowJointTrajectory
     action_ns: follow_joint_trajectory
+    default: true
     joints:
       - right_s0
       - right_s1
