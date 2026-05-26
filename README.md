@@ -1,8 +1,8 @@
 # BringBackBaxter
 
-![ROS2 Jazzy](https://img.shields.io/badge/ROS2_Kilted-compatible-brightgreen?logo=ros&logoColor=white)
+![ROS2 Jazzy](https://img.shields.io/badge/ROS2_Jazzy-compatible-brightgreen?logo=ros&logoColor=white)
 ![ROS2 Kilted](https://img.shields.io/badge/ROS2_Kilted-compatible-brightgreen?logo=ros&logoColor=white)
-![ROS2 Lyrical](https://img.shields.io/badge/ROS2_Kilted-compatible-brightgreen?logo=ros&logoColor=white)
+![ROS2 Lyrical](https://img.shields.io/badge/ROS2_Lyrical-compatible-brightgreen?logo=ros&logoColor=white)
 ![MoveIt2](https://img.shields.io/badge/MoveIt2-compatible-blue)
 
 ![Baxter Bridge overview diagram](assets/overview.png)
