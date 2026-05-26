@@ -46,16 +46,17 @@ source install/setup.bash
 source install/setup.bash
 ```
 
-**Launch MoveIt2 with RViz**
-
-```bash
-ros2 launch baxter_moveit_config real_robot.launch.py
-```
-
-**Enable the robot**
+**Terminal 1 - Enable the robot, then start the joint action server**
 
 ```bash
 ros2 run baxter_interface robot_enable
+ros2 run baxter_interface joint_trajectory_action_server
+```
+
+**Terminal 2 - Launch MoveIt2 with RViz**
+
+```bash
+ros2 launch baxter_moveit_config baxter.launch.py
 ```
 
 ---
