@@ -1,7 +1,9 @@
 # BringBackBaxter
 
+![ROS2 Jazzy](https://img.shields.io/badge/ROS2_Kilted-compatible-brightgreen?logo=ros&logoColor=white)
 ![ROS2 Kilted](https://img.shields.io/badge/ROS2_Kilted-compatible-brightgreen?logo=ros&logoColor=white)
-![MoveIt2](https://img.shields.io/badge/MoveIt2-supported-blue)
+![ROS2 Lyrical](https://img.shields.io/badge/ROS2_Kilted-compatible-brightgreen?logo=ros&logoColor=white)
+![MoveIt2](https://img.shields.io/badge/MoveIt2-compatible-blue)
 
 ![Baxter Bridge overview diagram](assets/overview.png)
 
@@ -72,22 +74,6 @@ ros2 run baxter_examples head_wobbler
 
 # Gripper cuff control
 ros2 run baxter_examples gripper_cuff_control
-```
-
----
-
-## 4. Architecture
-
-```
-Baxter Robot (ROS 1)
-        |
-  [Baxter Bridge]   ← baxter-zenoh container (Zenoh / ros1_bridge)
-        |
-   ROS 2 topics     /robot/joint_states, /robot/limb/*/joint_command, ...
-        |
-  [baxter_interface] ← Python SDK layer (limb, gripper, head, camera, ...)
-        |
-  [baxter_moveit_config] ← MoveIt2 move_group + RViz
 ```
 
 ---

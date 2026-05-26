@@ -119,7 +119,7 @@ class Limb(object):
             callback_group=self._state_cb_group,
         )
 
-        joint_state_topic = 'robot/joint_states'
+        joint_state_topic = '/robot/joint_states'
         self._joint_state_sub = node.create_subscription(
             JointState, joint_state_topic, self._on_joint_states, joint_qos, callback_group=self._state_cb_group
         )
@@ -213,7 +213,7 @@ class Limb(object):
         @rtype: dict({str:float})
         @return: unordered dict of joint name Keys to angle (rad) Values
         """
-        return deepcopy(self._joint_angle)
+        return dict(self._joint_angle)
 
     def joint_velocity(self, joint):
         """
@@ -233,7 +233,7 @@ class Limb(object):
         @rtype: dict({str:float})
         @return: unordered dict of joint name Keys to velocity (rad/s) Values
         """
-        return deepcopy(self._joint_velocity)
+        return dict(self._joint_velocity)
 
     def joint_effort(self, joint):
         """
@@ -253,7 +253,7 @@ class Limb(object):
         @rtype: dict({str:float})
         @return: unordered dict of joint name Keys to effort (Nm) Values
         """
-        return deepcopy(self._joint_effort)
+        return dict(self._joint_effort)
 
     def endpoint_pose(self):
         """
