@@ -49,7 +49,7 @@ source install/setup.bash
 **Terminal 1 - Enable the robot, then start the joint action server**
 
 ```bash
-ros2 run baxter_interface robot_enable
+ros2 run baxter_tools enable_robot -e
 ros2 run baxter_interface joint_trajectory_action_server
 ```
 
