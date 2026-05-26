@@ -29,11 +29,12 @@
 Baxter RSDK Gripper Action Server
 """
 
-import time as _wtime
+import time
 from math import fabs
 
 import rclpy
 from control_msgs.action import GripperCommand
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.action import ActionServer
 from rclpy.callback_groups import ReentrantCallbackGroup
 from rclpy.node import Node
@@ -46,6 +47,14 @@ class GripperActionServer(object):
         self._node = node
         self._dyn = self._load_params(node, gripper)
         self._ee = gripper + '_gripper'
+
+        def _on_set_parameters(params):
+            for param in params:
+                if param.name in self._dyn:
+                    self._dyn[param.name] = param.value
+            return SetParametersResult(successful=True)
+
+        node.add_on_set_parameters_callback(_on_set_parameters)
         self._ns = 'robot/end_effector/' + self._ee + '/gripper_action'
         self._gripper = baxter_interface.Gripper(gripper, node=self._node)
         self._type = self._gripper.type()
@@ -190,7 +199,7 @@ class GripperActionServer(object):
             return self._node.get_clock().now().nanoseconds * 1e-9 - start
 
         while (now_from_start(start_time) < self._timeout or self._timeout < 0.0) and rclpy.ok():
-            _iter_start = _wtime.time()
+            _iter_start = time.time()
             if goal_handle.is_cancel_requested:
                 self._gripper.stop()
                 self._node.get_logger().info('%s: Gripper Action Preempted' % (self._action_name,))
@@ -201,9 +210,9 @@ class GripperActionServer(object):
                 goal_handle.succeed()
                 return self._result
             self._command_gripper(position)
-            _remaining = _period - (_wtime.time() - _iter_start)
+            _remaining = _period - (time.time() - _iter_start)
             if _remaining > 0.0:
-                _wtime.sleep(_remaining)
+                time.sleep(_remaining)
 
         self._gripper.stop()
         if rclpy.ok():

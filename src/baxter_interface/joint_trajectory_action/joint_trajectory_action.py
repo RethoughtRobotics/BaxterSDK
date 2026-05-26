@@ -32,13 +32,15 @@ Baxter RSDK Joint Trajectory Action Server
 import bisect
 import math
 import operator
-import time as _wtime
+import time
 from copy import deepcopy
 
+import baxter_control
 import numpy as np
 import rclpy
 from builtin_interfaces.msg import Duration
 from control_msgs.action import FollowJointTrajectory
+from rcl_interfaces.msg import SetParametersResult
 from rclpy.action import ActionServer
 from rclpy.callback_groups import ReentrantCallbackGroup
 from std_msgs.msg import (
@@ -54,9 +56,17 @@ from . import bezier, minjerk
 
 
 class JointTrajectoryActionServer(object):
-    def __init__(self, limb, reconfig_server=None, node=None, rate=100.0, mode='position_w_id', interpolation='bezier'):
+    def __init__(self, limb, node=None, rate=100.0, mode='position_w_id', interpolation='bezier'):
         self._dyn = self._load_params(node)
         self._node = node
+
+        def _on_set_parameters(params):
+            for param in params:
+                if param.name in self._dyn:
+                    self._dyn[param.name] = param.value
+            return SetParametersResult(successful=True)
+
+        node.add_on_set_parameters_callback(_on_set_parameters)
         self._ns = 'robot/limb/' + limb
         self._fjt_ns = limb + '_arm/follow_joint_trajectory'
         self._server = ActionServer(
@@ -67,9 +77,6 @@ class JointTrajectoryActionServer(object):
             callback_group=ReentrantCallbackGroup(),
         )
         self._action_name = self._node.get_name()
-        # All I/O on the main node — rmw_zenoh_cpp only flushes
-        # publishes when the publisher's node is on the same executor
-        # and NOT on a separate _io_node.
         self._limb = baxter_interface.Limb(limb, self._node)
         self._enable = baxter_interface.RobotEnable(node=self._node)
         self._name = limb
@@ -104,6 +111,11 @@ class JointTrajectoryActionServer(object):
         self._stopped_velocity = 0.0
         self._goal_error = dict()
         self._path_thresh = dict()
+
+        # Create our PID controllers
+        self._pid = dict()
+        for joint in self._limb.joint_names():
+            self._pid[joint] = baxter_control.PID()
 
         # Create our spline coefficients
         self._coeff = [None] * len(self._limb.joint_names())
@@ -211,6 +223,13 @@ class JointTrajectoryActionServer(object):
                             self._goal_error[jnt] = goal_error
             else:
                 self._goal_error[jnt] = goal_error
+
+            # PID gains if executing using the velocity (integral) controller
+            if self._mode == 'velocity':
+                self._pid[jnt].set_kp(self._dyn[jnt + '_kp'])
+                self._pid[jnt].set_ki(self._dyn[jnt + '_ki'])
+                self._pid[jnt].set_kd(self._dyn[jnt + '_kd'])
+                self._pid[jnt].initialize()
         return True
 
     def _get_current_position(self, joint_names):
@@ -302,6 +321,8 @@ class JointTrajectoryActionServer(object):
                 goal_handle.abort()
                 self._command_stop(joint_names, self._limb.joint_angles(), start_time, dimensions_dict)
                 return False
+            if self._mode == 'velocity':
+                velocities.append(self._pid[delta[0]].compute_output(delta[1], 1.0 / self._control_rate))
         if (self._mode == 'position' or self._mode == 'position_w_id') and self._alive:
             cmd = dict(zip(joint_names, point.positions))
             raw_pos_mode = self._mode == 'position_w_id'
@@ -481,32 +502,41 @@ class JointTrajectoryActionServer(object):
             start_time = self._node.get_clock().now().nanoseconds * 1e-9
 
         while self._node.get_clock().now().nanoseconds * 1e-9 < start_time and rclpy.ok():
-            _wtime.sleep(0.001)
+            time.sleep(0.001)
 
         _period = 1.0 / self._control_rate
 
         now_from_start = self._node.get_clock().now().nanoseconds * 1e-9 - start_time
         while now_from_start < pnt_times[-1] and rclpy.ok() and self.robot_is_enabled():
-            _iter_start = _wtime.time()
-            idx = bisect.bisect_left(pnt_times, now_from_start) - 1
-            idx = max(0, min(idx, len(pnt_times) - 2))
-            t_seg_start = pnt_times[idx]
-            t_seg_end = pnt_times[idx + 1]
-            seg_dur = t_seg_end - t_seg_start
-            t = (now_from_start - t_seg_start) / seg_dur if seg_dur > 0.0 else 0.0
-            t = max(0.0, min(1.0, t))
+            _iter_start = time.time()
+            now = self._node.get_clock().now().nanoseconds * 1e-9
+            now_from_start = now - start_time
+            idx = bisect.bisect(pnt_times, now_from_start)
+            # Calculate percentage of time passed in this interval
+            if idx >= num_points:
+                cmd_time = now_from_start - pnt_times[-1]
+                t = 1.0
+            elif idx >= 0:
+                cmd_time = now_from_start - pnt_times[idx - 1]
+                t = cmd_time / (pnt_times[idx] - pnt_times[idx - 1])
+            else:
+                cmd_time = 0
+                t = 0
 
             if self._interpolation == 'minjerk':
-                pnt = self._get_minjerk_point(m_matrix, idx, t, now_from_start, dimensions_dict)
+                point = self._get_minjerk_point(m_matrix, idx, t, cmd_time, dimensions_dict)
             else:
-                pnt = self._get_bezier_point(b_matrix, idx, t, now_from_start, dimensions_dict)
+                point = self._get_bezier_point(b_matrix, idx, t, cmd_time, dimensions_dict)
 
-            if not self._command_joints(joint_names, pnt, start_time, dimensions_dict, goal_handle):
+            # Command Joint Position, Velocity, Acceleration
+            command_executed = self._command_joints(joint_names, point, start_time, dimensions_dict, goal_handle)
+            self._update_feedback(deepcopy(point), joint_names, now_from_start, goal_handle)
+            # Release the Mutex
+            if not command_executed:
                 return self._result
-            self._update_feedback(pnt, joint_names, now_from_start, goal_handle)
-            _remaining = _period - (_wtime.time() - _iter_start)
+            _remaining = _period - (time.time() - _iter_start)
             if _remaining > 0.0:
-                _wtime.sleep(_remaining)
+                time.sleep(_remaining)
             now_from_start = self._node.get_clock().now().nanoseconds * 1e-9 - start_time
 
         last = trajectory_points[-1]
@@ -527,14 +557,14 @@ class JointTrajectoryActionServer(object):
 
         now_from_start = self._node.get_clock().now().nanoseconds * 1e-9 - start_time
         while now_from_start < (last_time + self._goal_time) and rclpy.ok() and self.robot_is_enabled():
-            _iter_start = _wtime.time()
+            _iter_start = time.time()
             if not self._command_joints(joint_names, last, start_time, dimensions_dict, goal_handle):
                 return self._result
             now_from_start = self._node.get_clock().now().nanoseconds * 1e-9 - start_time
             self._update_feedback(deepcopy(last), joint_names, now_from_start, goal_handle)
-            _remaining = _period - (_wtime.time() - _iter_start)
+            _remaining = _period - (time.time() - _iter_start)
             if _remaining > 0.0:
-                _wtime.sleep(_remaining)
+                time.sleep(_remaining)
 
         now_from_start = self._node.get_clock().now().nanoseconds * 1e-9 - start_time
         self._update_feedback(deepcopy(last), joint_names, now_from_start, goal_handle)

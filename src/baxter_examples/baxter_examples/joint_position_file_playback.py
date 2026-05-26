@@ -54,34 +54,9 @@ class JointPosePlayback:
         self._right = None
         self._grip_left = None
         self._grip_right = None
+        self._last_lg = None
+        self._last_rg = None
         self._timer = None
-        self._lg_targets = []
-        self._rg_targets = []
-
-    @staticmethod
-    def _compute_gripper_targets(frames, key):
-        """Convert recorded position stream to stable open/close targets.
-
-        The recording captures actual gripper position during physical movement.
-        The controller only responds to stable endpoint targets (like cuff buttons),
-        not to rapidly changing intermediate positions. We detect open/close
-        transitions by watching when position crosses 50%.
-        """
-        targets = []
-        current = None
-        for _ts, cmd, _lcmd, _rcmd in frames:
-            pos = cmd.get(key)
-            if pos is None:
-                targets.append(current)
-                continue
-            if current is None:
-                current = 100.0 if pos >= 50.0 else 0.0
-            elif current == 100.0 and pos < 50.0:
-                current = 0.0
-            elif current == 0.0 and pos >= 50.0:
-                current = 100.0
-            targets.append(current)
-        return targets
 
     @staticmethod
     def try_float(x):
@@ -105,9 +80,13 @@ class JointPosePlayback:
         grip_left = baxter_interface.Gripper('left', node=self._node)
         grip_right = baxter_interface.Gripper('right', node=self._node)
 
-        if grip_left.type() != 'custom' and not grip_left.calibrated():
-            print('Left gripper is not calibrated. Run gripper calibration before playback.')
-            return False
+        for grip, name in [(grip_left, 'left'), (grip_right, 'right')]:
+            if grip.type() == 'custom':
+                continue
+            print('Calibrating %s gripper...' % name)
+            if not grip.calibrate():
+                print('Failed to calibrate %s gripper.' % name)
+                return False
 
         print('Playing back: %s' % (filename,))
         with open(filename, 'r') as f:
@@ -130,13 +109,18 @@ class JointPosePlayback:
         grip_left.set_parameters(defaults=True)
         grip_right.set_parameters(defaults=True)
 
+        # Diagnostic: verify CMD_GO works right NOW (before joint commands start).
+        # If this moves the gripper, joint commands during _tick are the problem.
+        # If this also fails, the issue is something earlier (bridge state, firmware).
+        print('DIAG: sending blocking CMD_GO to left gripper (position=50)...')
+        ok = grip_left.command_position(50.0, block=True, timeout=4.0)
+        print('DIAG: CMD_GO result: %s  actual position: %.2f' % (ok, grip_left.position()))
+
         self._left = left
         self._right = right
         self._grip_left = grip_left
         self._grip_right = grip_right
         self._frames = frames
-        self._lg_targets = self._compute_gripper_targets(frames, 'left_gripper')
-        self._rg_targets = self._compute_gripper_targets(frames, 'right_gripper')
         self._loops = loops
         self._loop_count = 0
         self._frame_idx = 0
@@ -159,12 +143,16 @@ class JointPosePlayback:
             self._left.set_joint_positions(lcmd)
         if len(rcmd):
             self._right.set_joint_positions(rcmd)
-        lg = self._lg_targets[self._frame_idx]
+        lg = cmd.get('left_gripper')
         if lg is not None and self._grip_left.type() != 'custom':
-            self._grip_left.command_position(lg)
-        rg = self._rg_targets[self._frame_idx]
+            if self._last_lg is None or abs(lg - self._last_lg) > 1.0:
+                self._grip_left.command_position(lg)
+                self._last_lg = lg
+        rg = cmd.get('right_gripper')
         if rg is not None and self._grip_right.type() != 'custom':
-            self._grip_right.command_position(rg)
+            if self._last_rg is None or abs(rg - self._last_rg) > 1.0:
+                self._grip_right.command_position(rg)
+                self._last_rg = rg
 
         loopstr = str(self._loops) if self._loops > 0 else 'forever'
         sys.stdout.write(
