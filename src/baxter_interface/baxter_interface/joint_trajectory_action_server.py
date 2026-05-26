@@ -1,5 +1,3 @@
-import time
-
 import rclpy
 from joint_trajectory_action.joint_trajectory_action import JointTrajectoryActionServer
 from rclpy.executors import MultiThreadedExecutor
@@ -15,12 +13,6 @@ def main():
 
     JointTrajectoryActionServer('left', mode='position', node=node)
     JointTrajectoryActionServer('right', mode='position', node=node)
-
-    # Warm up: let publishers discover the bridge
-    log.info('Warming up (5s)...')
-    t0 = time.time()
-    while time.time() - t0 < 5.0:
-        rclpy.spin_once(node, timeout_sec=0.05)
 
     # SingleThreadedExecutor — everything on one node.
     executor = MultiThreadedExecutor()

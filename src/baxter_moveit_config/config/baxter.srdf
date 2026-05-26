@@ -74,6 +74,23 @@
         <joint name="left_w1" value="1.03"/>
         <joint name="left_w2" value="-0.5"/>
     </group_state>
+    <group_state name="untuck" group="both_arms">
+        <joint name="left_e0" value="-1.19"/>
+        <joint name="left_e1" value="1.94"/>
+        <joint name="left_s0" value="-0.08"/>
+        <joint name="left_s1" value="-1"/>
+        <joint name="left_w0" value="0.67"/>
+        <joint name="left_w1" value="1.03"/>
+        <joint name="left_w2" value="-0.5"/>
+        <joint name="right_e0" value="1.19"/>
+        <joint name="right_e1" value="1.94"/>
+        <joint name="right_s0" value="0.08"/>
+        <joint name="right_s1" value="-1"/>
+        <joint name="right_w0" value="-0.67"/>
+        <joint name="right_w1" value="1.03"/>
+        <joint name="right_w2" value="0.5"/>
+    </group_state>
+
     <!--END EFFECTOR: Purpose: Represent information about an end effector.-->
     <end_effector name="left_hand_eef" parent_link="left_wrist" group="left_hand" parent_group="left_arm"/>
     <end_effector name="right_hand_eef" parent_link="right_wrist" group="right_hand" parent_group="right_arm"/>

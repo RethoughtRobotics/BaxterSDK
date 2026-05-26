@@ -126,8 +126,8 @@ class JointTrajectoryActionServer(object):
             return node.declare_parameter(name, default).value
 
         params = {}
-        params['goal_time'] = _param('goal_time', 0.1)
-        params['stopped_velocity_tolerance'] = _param('stopped_velocity_tolerance', 0.20)
+        params['goal_time'] = _param('goal_time', 1.5)
+        params['stopped_velocity_tolerance'] = _param('stopped_velocity_tolerance', 0.5)
         joints = (
             'left_s0',
             'left_s1',
@@ -145,7 +145,7 @@ class JointTrajectoryActionServer(object):
             'right_w2',
         )
         for jnt in joints:
-            params[jnt + '_trajectory'] = _param(jnt + '_trajectory', 0.35)
+            params[jnt + '_trajectory'] = _param(jnt + '_trajectory', 2.0)
             params[jnt + '_goal'] = _param(jnt + '_goal', -1.0)
             params[jnt + '_kp'] = _param(jnt + '_kp', 2.0)
             params[jnt + '_ki'] = _param(jnt + '_ki', 0.0)

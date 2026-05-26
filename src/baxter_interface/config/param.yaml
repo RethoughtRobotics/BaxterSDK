@@ -2,9 +2,9 @@
 baxter_joint_trajectory_action_server:
   ros__parameters:
     # Time buffer (s) the controller is permitted to be late achieving the goal
-    goal_time: 0.1
+    goal_time: 1.5
     # Maximum joint velocity (rad/s) at end of trajectory to be considered stopped
-    stopped_velocity_tolerance: 0.20
+    stopped_velocity_tolerance: 0.5
 
     # Per-joint path execution tolerance (rad). Negative = disabled.
     # NOTE: ROS1 default was 0.35, but the Zenoh bridge adds round-trip

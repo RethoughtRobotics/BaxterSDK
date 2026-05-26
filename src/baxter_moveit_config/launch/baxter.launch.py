@@ -33,6 +33,19 @@ def generate_launch_description():
         )
     )
 
+    # Connect the bridge's reference/* TF tree to the main tree.
+    # Baxter publishes a "reference" (commanded) state as a separate TF tree
+    # rooted at reference/base. It's at the same physical location as base,
+    # so a zero-offset static transform is correct. Without this, move_group's
+    # planning_scene_monitor floods the log with transform warnings.
+    ld.add_action(
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            arguments=['0', '0', '0', '0', '0', '0', 'base', 'reference/base'],
+        )
+    )
+
     # Robot state publisher fed by real joint states.
     # ignore_timestamp avoids TF_OLD_DATA conflicts with the bridge's own TF.
     ld.add_action(
@@ -48,14 +61,6 @@ def generate_launch_description():
         )
     )
 
-    # move_group — same publish flags as generate_move_group_launch, plus
-    # moveit_manage_controllers=False since we have no ros2_control stack.
-    # trajectory_execution tolerances match the original Baxter MoveIt config.
-    # planning_scene_monitor log level set to ERROR to suppress the flood of
-    # "unable to transform reference/* frames" warnings from the Docker bridge
-    # (the bridge publishes ~50 reference frames as independent TF roots with
-    # no connection to the planning frame; they're internal commanded-state
-    # frames that don't affect planning or execution).
     ld.add_action(
         Node(
             name='move_group',
@@ -63,7 +68,6 @@ def generate_launch_description():
             executable='move_group',
             output='screen',
             remappings=[('/joint_states', '/robot/joint_states')],
-            arguments=['--ros-args', '--log-level', 'moveit.ros.planning_scene_monitor:=ERROR'],
             parameters=[
                 moveit_config.to_dict(),
                 {
