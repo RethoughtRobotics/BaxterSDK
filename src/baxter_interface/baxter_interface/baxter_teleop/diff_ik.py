@@ -45,6 +45,28 @@ class DiffIKSolver:
             qdot_null *= self.max_null_velocity / norm
         return qdot_null
 
+    def joint_velocity(self, q, jacobian, v_ee, q_rest=None, joint_velocity_limits=None):
+        """Joint velocities (rad/s) realizing EE twist v_ee plus the nullspace posture term.
+
+        The whole vector is scaled uniformly so every joint stays within its
+        velocity limit, which preserves the end-effector direction of motion.
+        """
+        J = np.asarray(jacobian, dtype=np.float32)
+        q_np = np.asarray(q, dtype=np.float32)
+        J_pinv, N = self._pinv_and_nullspace(J)
+
+        qdot = J_pinv @ np.asarray(v_ee, dtype=np.float32) + self._nullspace_velocity(N, q_np, q_rest)
+
+        limits = (
+            np.full_like(qdot, self.max_joint_velocity)
+            if joint_velocity_limits is None
+            else np.asarray(joint_velocity_limits, dtype=np.float32)
+        )
+        ratio = float(np.max(np.abs(qdot) / limits))
+        if ratio > 1.0:
+            qdot /= ratio
+        return qdot
+
     def step_delta(self, q, jacobian, delta_cartesian, q_rest=None):
         """Compute next joint vector from a cartesian delta input.
 
