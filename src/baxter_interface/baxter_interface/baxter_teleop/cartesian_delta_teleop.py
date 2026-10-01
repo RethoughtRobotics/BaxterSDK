@@ -59,6 +59,7 @@ class CartesianDeltaTeleop:
         arm='right',
         node=None,
         mode='velocity',
+        frame='tool',
         tcp_offset=None,
         linear_speed=None,
         angular_speed=None,
@@ -82,9 +83,12 @@ class CartesianDeltaTeleop:
             raise ValueError("arm must be 'left' or 'right'")
         if mode not in self.MODE_SPEEDS:
             raise ValueError("mode must be 'velocity' or 'position'")
+        if frame not in ('tool', 'base'):
+            raise ValueError("frame must be 'tool' or 'base'")
 
         self.arm = arm
         self.mode = mode
+        self.frame = frame
         self.joint_names = [f'{arm}_{suffix}' for suffix in self.JOINT_SUFFIXES]
 
         self.node = node or rclpy.create_node(f'{arm}_arm_ee_teleop')
@@ -180,10 +184,17 @@ class CartesianDeltaTeleop:
         return np.asarray(self.URDF_TCP_OFFSET, dtype=np.float32)
 
     def _hand_twist(self, q, twist):
-        """Convert a base-frame TCP twist into the base-frame twist of the hand link used by the Jacobian."""
+        """Convert a TCP twist into the base-frame twist of the hand link used by the Jacobian.
+
+        In tool frame the twist is expressed in the TCP axes; in base frame it is
+        expressed in the robot base axes. Either way rotation is about the TCP.
+        """
         R = np.asarray(self.ee_transform(jnp.asarray(q)), dtype=np.float32)[:3, :3]
         v = np.asarray(twist[:3], dtype=np.float32)
         w = np.asarray(twist[3:], dtype=np.float32)
+        if self.frame == 'tool':
+            v = R @ v
+            w = R @ w
         # v_tcp = v_hand + w x r, with r the hand-to-TCP vector in base frame.
         v_hand = v - np.cross(w, R @ self.tcp_offset)
         return np.concatenate([v_hand, w]).astype(np.float32)
@@ -386,7 +397,7 @@ class CartesianDeltaTeleop:
     def spin(self):
         print(f'\n{self.arm.capitalize()} arm cartesian-delta teleop (frax diff-IK, {self.mode} mode)')
         print(f'speed {self.linear_speed:.2f} m/s, {self.angular_speed:.2f} rad/s')
-        print(f'TCP offset in hand frame {np.round(self.tcp_offset, 3)} m')
+        print(f'{self.frame} frame, TCP offset in hand frame {np.round(self.tcp_offset, 3)} m')
         print('W/S X, A/D Y, R/F Z, Q/E yaw, Z/C pitch, X/V roll, SPACE stop, ESC quit')
         print('T/Y swing elbow, H go to rest posture')
         print('[/ ] gripper delta, G calibrate gripper')
@@ -406,6 +417,7 @@ def main():
     parser = argparse.ArgumentParser(description='Baxter cartesian-delta teleop')
     parser.add_argument('--arm', choices=['left', 'right'], default='right', help='arm to control (default: right)')
     parser.add_argument('--mode', choices=['velocity', 'position'], default='velocity', help='joint control mode')
+    parser.add_argument('--frame', choices=['tool', 'base'], default='tool', help='frame keys are expressed in')
     parser.add_argument(
         '--tcp-offset',
         type=float,
@@ -436,6 +448,7 @@ def main():
     teleop = CartesianDeltaTeleop(
         arm=args.arm,
         mode=args.mode,
+        frame=args.frame,
         tcp_offset=args.tcp_offset,
         linear_speed=args.linear_speed,
         angular_speed=args.angular_speed,
