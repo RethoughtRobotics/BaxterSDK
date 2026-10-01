@@ -28,6 +28,7 @@
 from .analog_io import AnalogIO as AnalogIO
 from .base import BaxterInterface as BaxterInterface
 from .base import BaxterNode as BaxterNode
+from .baxter_teleop import CartesianDeltaTeleop as CartesianDeltaTeleop
 from .camera import CameraController as CameraController
 from .digital_io import DigitalIO as DigitalIO
 from .gripper import Gripper as Gripper
