@@ -101,6 +101,8 @@ class CartesianDeltaTeleop:
         self.robot = manipulator_cls.Manipulator(arm_urdf, joint_ordering=self.joint_names)
         self.ee_jacobian = jax.jit(self.robot.ee_jacobian)
         self.ee_transform = jax.jit(self.robot.ee_transform)
+        # Compile now so the first keypress does not stall the control loop.
+        self.ee_jacobian(jnp.asarray(self.REST_POSTURE, dtype=jnp.float32)).block_until_ready()
 
         self.dt = 0.01
         self.ik = DiffIKSolver(
