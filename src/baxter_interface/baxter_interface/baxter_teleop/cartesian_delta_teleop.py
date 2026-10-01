@@ -39,11 +39,18 @@ class CartesianDeltaTeleop:
     """
 
     JOINT_SUFFIXES = ['s0', 's1', 'e0', 'e1', 'w0', 'w1', 'w2']
+    # Nullspace rest posture: Baxter neutral with a more bent elbow, which roughly
+    # doubles the smallest Jacobian singular value (0.087 -> 0.15) vs neutral.
+    REST_POSTURE = [0.0, -0.55, 0.0, 1.2, 0.0, 1.26, 0.0]
+    E0_INDEX = 2
+    E0_LIMIT = 3.0
 
     def __init__(
         self,
         arm='right',
         node=None,
+        null_gain=2.0,
+        elbow_step=0.03,
         max_linear_velocity=1.40,
         max_angular_velocity=14.00,
         max_linear_delta=0.020,
@@ -96,7 +103,11 @@ class CartesianDeltaTeleop:
         self.ee_transform = jax.jit(self.robot.ee_transform)
 
         self.dt = 0.01
-        self.ik = DiffIKSolver(dt=self.dt, damping=0.05, max_joint_step=0.04, max_joint_velocity=6.0)
+        self.ik = DiffIKSolver(
+            dt=self.dt, damping=0.05, max_joint_step=0.04, max_joint_velocity=6.0, null_gain=null_gain
+        )
+        self.q_rest = np.asarray(self.REST_POSTURE, dtype=np.float32)
+        self.elbow_step = float(elbow_step)
         # Commanded target accumulates while input streams, so steps add up instead of
         # restarting from the (lagging) measured position each cycle.
         self.q_cmd = None
@@ -129,10 +140,15 @@ class CartesianDeltaTeleop:
         self.last_cmd_time = now
 
         J = self.ee_jacobian(jnp.asarray(self.q_cmd))
-        q_next = self.ik.step_delta(q=self.q_cmd, jacobian=J, delta_cartesian=delta_cartesian)
+        q_next = self.ik.step_delta(q=self.q_cmd, jacobian=J, delta_cartesian=delta_cartesian, q_rest=self.q_rest)
         q_next = np.clip(q_next, q_meas - self.max_cmd_lead, q_meas + self.max_cmd_lead)
         self.q_cmd = q_next
         self.limb.set_joint_positions({name: float(q_next[i]) for i, name in enumerate(self.joint_names)})
+
+    def _shift_elbow(self, direction):
+        """Swing the elbow by moving the e0 rest target; the nullspace term follows it."""
+        e0 = self.q_rest[self.E0_INDEX] + direction * self.elbow_step
+        self.q_rest[self.E0_INDEX] = float(np.clip(e0, -self.E0_LIMIT, self.E0_LIMIT))
 
     def _apply_gripper_delta(self, delta_percent):
         if self.gripper is None:
@@ -206,6 +222,7 @@ class CartesianDeltaTeleop:
     def spin(self):
         print(f'\n{self.arm.capitalize()} arm cartesian-delta teleop (frax diff-IK)')
         print('W/S X, A/D Y, R/F Z, Q/E yaw, Z/C pitch, X/V roll, SPACE stop, ESC quit')
+        print('T/Y swing elbow')
         print('[/ ] gripper delta, G calibrate gripper')
 
         def keyboard_delta_source():
@@ -219,6 +236,11 @@ class CartesianDeltaTeleop:
             if key == ' ':
                 self.q_cmd = None
                 self.limb.set_joint_positions(self.limb.joint_angles())
+                return None
+            if key in ('t', 'y'):
+                # Nullspace-only step: zero EE delta, elbow follows the shifted rest target.
+                self._shift_elbow(1.0 if key == 't' else -1.0)
+                self.apply_delta_cartesian(np.zeros(6, dtype=np.float32))
                 return None
 
             v_ee = twist_from_key(key, self.linear_speed, self.angular_speed)
@@ -235,6 +257,9 @@ def main():
 
     parser = argparse.ArgumentParser(description='Baxter cartesian-delta teleop')
     parser.add_argument('--arm', choices=['left', 'right'], default='right', help='arm to control (default: right)')
+    parser.add_argument(
+        '--null-gain', type=float, default=2.0, help='nullspace pull toward rest posture in 1/s (0 disables)'
+    )
     parser.add_argument('--max-linear-velocity', type=float, default=1.40, help='max linear velocity in m/s')
     parser.add_argument('--max-angular-velocity', type=float, default=14.00, help='max angular velocity in rad/s')
     parser.add_argument('--max-linear-delta', type=float, default=0.020, help='max linear delta per cycle in meters')
@@ -250,6 +275,7 @@ def main():
     rclpy.init(args=[sys.argv[0], *ros_args])
     teleop = CartesianDeltaTeleop(
         arm=args.arm,
+        null_gain=args.null_gain,
         max_linear_velocity=args.max_linear_velocity,
         max_angular_velocity=args.max_angular_velocity,
         max_linear_delta=args.max_linear_delta,
