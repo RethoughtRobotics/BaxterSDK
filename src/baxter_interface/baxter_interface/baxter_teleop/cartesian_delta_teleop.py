@@ -4,6 +4,7 @@
 
 import argparse
 import sys
+import time
 
 import numpy as np
 import rclpy
@@ -96,6 +97,12 @@ class CartesianDeltaTeleop:
 
         self.dt = 0.01
         self.ik = DiffIKSolver(dt=self.dt, damping=0.05, max_joint_step=0.02, max_joint_velocity=1.5)
+        # Commanded target accumulates while input streams, so steps add up instead of
+        # restarting from the (lagging) measured position each cycle.
+        self.q_cmd = None
+        self.last_cmd_time = 0.0
+        self.cmd_idle_reset = 0.2  # seconds without input before re-syncing to measured
+        self.max_cmd_lead = 0.2  # max rad any joint target may lead the measured arm
         self.linear_speed = 0.06
         self.angular_speed = 0.6
 
@@ -115,9 +122,16 @@ class CartesianDeltaTeleop:
 
     def apply_delta_cartesian(self, delta_cartesian):
         """Apply a 6D cartesian delta from any input modality."""
-        q = self._current_q()
-        J = self.ee_jacobian(q)
-        q_next = self.ik.step_delta(q=q, jacobian=J, delta_cartesian=delta_cartesian)
+        q_meas = np.asarray(self._current_q(), dtype=np.float32)
+        now = time.monotonic()
+        if self.q_cmd is None or now - self.last_cmd_time > self.cmd_idle_reset:
+            self.q_cmd = q_meas
+        self.last_cmd_time = now
+
+        J = self.ee_jacobian(jnp.asarray(self.q_cmd))
+        q_next = self.ik.step_delta(q=self.q_cmd, jacobian=J, delta_cartesian=delta_cartesian)
+        q_next = np.clip(q_next, q_meas - self.max_cmd_lead, q_meas + self.max_cmd_lead)
+        self.q_cmd = q_next
         self.limb.set_joint_positions({name: float(q_next[i]) for i, name in enumerate(self.joint_names)})
 
     def _apply_gripper_delta(self, delta_percent):
@@ -203,6 +217,7 @@ class CartesianDeltaTeleop:
             if self._handle_keyboard_key(key):
                 return None
             if key == ' ':
+                self.q_cmd = None
                 self.limb.set_joint_positions(self.limb.joint_angles())
                 return None
 
