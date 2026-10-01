@@ -1,13 +1,22 @@
 #!/bin/bash
 # Launch Baxter cartesian-delta teleop in its own window that reads key input.
-# Usage: scripts/run_teleop.sh [--arm right|left] [--linear-speed 0.2] ...
+# Usage: scripts/run_teleop.sh [--left|--right] [--linear-speed 0.2] ...
 # Opens a Terminator window if a display is available, otherwise a tmux window.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-ARGS="${*:---arm right}"
+# --left / --right are shorthands for --arm left / --arm right
+ARGS=""
+for a in "$@"; do
+    case "$a" in
+        --left)  ARGS+=" --arm left" ;;
+        --right) ARGS+=" --arm right" ;;
+        *)       ARGS+=" $a" ;;
+    esac
+done
+ARGS="${ARGS:- --arm right}"
 
 # .venv-ros is Python 3.12 (matches ROS Kilted rclpy) with frax + jax installed
 CMD="cd '${WS_DIR}' \
