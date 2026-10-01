@@ -51,6 +51,24 @@ Keyboard gripper control is included in this runtime:
 
 The delta size defaults to 2 percent per keypress and can be changed with `--gripper-step`.
 
+Posture keys:
+
+- `T` / `Y` swing the elbow (redundant 7th DOF) without moving the hand
+- `H` moves the arm to the rest posture (slow, blocking)
+
+## Redundancy resolution
+
+Baxter has 7 joints for a 6-DOF hand task. Like the Franka cartesian impedance
+controller, the spare DOF is resolved with a nullspace posture attractor:
+
+```
+qdot = J⁺·v + (I − J⁺J)·k·(q_rest − q)
+```
+
+`q_rest` is Baxter neutral with a more bent elbow (`e1 = 1.2`), which is better
+conditioned than neutral. `--null-gain` sets `k` in 1/s (`0` disables). The
+elbow keys move `q_rest[e0]`.
+
 ## Safety limits
 
 The runtime enforces both velocity and delta limits before each command is applied.
