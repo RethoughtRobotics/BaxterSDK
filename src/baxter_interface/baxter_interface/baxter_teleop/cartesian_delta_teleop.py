@@ -32,25 +32,37 @@ from .urdf_tools import extract_arm_chain_urdf, resolve_baxter_urdf
 
 
 class CartesianDeltaTeleop:
-    """Runtime that maps cartesian deltas to Baxter joint position commands.
+    """Runtime that maps cartesian deltas to Baxter joint commands.
 
     This class is intentionally modality agnostic. Any input source can be used
     as long as it yields a six element cartesian delta vector.
+
+    Two control modes are supported:
+      velocity  joint velocity commands from the measured state (default)
+      position  accumulated joint position targets
     """
 
     JOINT_SUFFIXES = ['s0', 's1', 'e0', 'e1', 'w0', 'w1', 'w2']
     # Nullspace rest posture: Baxter neutral with a more bent elbow, which roughly
     # doubles the smallest Jacobian singular value (0.087 -> 0.15) vs neutral.
     REST_POSTURE = [0.0, -0.55, 0.0, 1.2, 0.0, 1.26, 0.0]
+    # URDF joint velocity limits (rad/s) scaled by 0.8 for margin.
+    JOINT_VELOCITY_LIMITS = [1.2, 1.2, 1.2, 1.2, 3.2, 3.2, 3.2]
     E0_INDEX = 2
     E0_LIMIT = 3.0
+    MODE_SPEEDS = {'velocity': (0.20, 0.8), 'position': (1.20, 12.0)}
 
     def __init__(
         self,
         arm='right',
         node=None,
+        mode='velocity',
+        linear_speed=None,
+        angular_speed=None,
         null_gain=2.0,
         elbow_step=0.03,
+        key_hold_initial=0.55,
+        key_hold_repeat=0.10,
         max_linear_velocity=1.40,
         max_angular_velocity=14.00,
         max_linear_delta=0.020,
@@ -65,8 +77,11 @@ class CartesianDeltaTeleop:
 
         if arm not in ('left', 'right'):
             raise ValueError("arm must be 'left' or 'right'")
+        if mode not in self.MODE_SPEEDS:
+            raise ValueError("mode must be 'velocity' or 'position'")
 
         self.arm = arm
+        self.mode = mode
         self.joint_names = [f'{arm}_{suffix}' for suffix in self.JOINT_SUFFIXES]
 
         self.node = node or rclpy.create_node(f'{arm}_arm_ee_teleop')
@@ -109,15 +124,21 @@ class CartesianDeltaTeleop:
             dt=self.dt, damping=0.05, max_joint_step=0.04, max_joint_velocity=6.0, null_gain=null_gain
         )
         self.q_rest = np.asarray(self.REST_POSTURE, dtype=np.float32)
+        self.joint_velocity_limits = np.asarray(self.JOINT_VELOCITY_LIMITS, dtype=np.float32)
         self.elbow_step = float(elbow_step)
         # Commanded target accumulates while input streams, so steps add up instead of
-        # restarting from the (lagging) measured position each cycle.
+        # restarting from the (lagging) measured position each cycle. Position mode only.
         self.q_cmd = None
         self.last_cmd_time = 0.0
         self.cmd_idle_reset = 0.2  # seconds without input before re-syncing to measured
         self.max_cmd_lead = 0.2  # max rad any joint target may lead the measured arm
-        self.linear_speed = 1.20
-        self.angular_speed = 12.0
+        # A terminal cannot see key release, so a key stays active for a hold window after
+        # each character. The first window covers the OS auto-repeat delay (500 ms default).
+        self.key_hold_initial = float(key_hold_initial)
+        self.key_hold_repeat = float(key_hold_repeat)
+        default_linear, default_angular = self.MODE_SPEEDS[mode]
+        self.linear_speed = default_linear if linear_speed is None else float(linear_speed)
+        self.angular_speed = default_angular if angular_speed is None else float(angular_speed)
 
         self.delta_guard = CartesianDeltaGuard(
             dt=self.dt,
@@ -134,7 +155,7 @@ class CartesianDeltaTeleop:
         return jnp.array([angles[name] for name in self.joint_names], dtype=jnp.float32)
 
     def apply_delta_cartesian(self, delta_cartesian):
-        """Apply a 6D cartesian delta from any input modality."""
+        """Apply a 6D cartesian delta from any input modality (position mode)."""
         q_meas = np.asarray(self._current_q(), dtype=np.float32)
         now = time.monotonic()
         if self.q_cmd is None or now - self.last_cmd_time > self.cmd_idle_reset:
@@ -147,6 +168,15 @@ class CartesianDeltaTeleop:
         self.q_cmd = q_next
         self.limb.set_joint_positions({name: float(q_next[i]) for i, name in enumerate(self.joint_names)})
 
+    def apply_twist_velocity(self, v_ee):
+        """Command joint velocities realizing EE twist v_ee (velocity mode)."""
+        q_meas = np.asarray(self._current_q(), dtype=np.float32)
+        J = self.ee_jacobian(jnp.asarray(q_meas))
+        qdot = self.ik.joint_velocity(
+            q=q_meas, jacobian=J, v_ee=v_ee, q_rest=self.q_rest, joint_velocity_limits=self.joint_velocity_limits
+        )
+        self.limb.set_joint_velocities({name: float(qdot[i]) for i, name in enumerate(self.joint_names)})
+
     def _shift_elbow(self, direction):
         """Swing the elbow by moving the e0 rest target; the nullspace term follows it."""
         e0 = self.q_rest[self.E0_INDEX] + direction * self.elbow_step
@@ -155,6 +185,7 @@ class CartesianDeltaTeleop:
     def _go_home(self):
         """Move to the rest posture with a slow, blocking position move."""
         self.q_cmd = None
+        self.limb.exit_control_mode()
         self.q_rest = np.asarray(self.REST_POSTURE, dtype=np.float32)
         self.node.get_logger().info('Moving to rest posture...')
         self.limb.set_joint_position_speed(0.3)
@@ -210,7 +241,7 @@ class CartesianDeltaTeleop:
         return False
 
     def run_delta_source(self, delta_source):
-        """Run control loop for any modality that yields cartesian deltas.
+        """Run control loop for any modality that yields cartesian deltas (position mode).
 
         The callback may return None for no command, a six element vector for a
         command, or the string quit to stop the loop.
@@ -238,12 +269,7 @@ class CartesianDeltaTeleop:
             self.apply_delta_cartesian(delta)
             self.delta_guard.mark_accepted(delta)
 
-    def spin(self):
-        print(f'\n{self.arm.capitalize()} arm cartesian-delta teleop (frax diff-IK)')
-        print('W/S X, A/D Y, R/F Z, Q/E yaw, Z/C pitch, X/V roll, SPACE stop, ESC quit')
-        print('T/Y swing elbow, H go to rest posture')
-        print('[/ ] gripper delta, G calibrate gripper')
-
+    def _spin_position(self):
         def keyboard_delta_source():
             key = getch(timeout=self.dt)
             if key is None:
@@ -267,6 +293,69 @@ class CartesianDeltaTeleop:
 
         self.run_delta_source(keyboard_delta_source)
 
+    def _spin_velocity(self):
+        twist = np.zeros(6, dtype=np.float32)
+        active_key = None
+        active_until = 0.0
+        moving = False
+        self.limb.set_command_timeout(0.2)
+        try:
+            while rclpy.ok():
+                rclpy.spin_once(self.node, timeout_sec=0.0)
+                key = getch(timeout=self.dt)
+                now = time.monotonic()
+
+                if key is not None:
+                    if key == '\x1b':
+                        break
+                    if key == 'h':
+                        moving = False
+                        active_until = 0.0
+                    if self._handle_keyboard_key(key):
+                        continue
+                    if key == ' ':
+                        active_until = 0.0
+                    else:
+                        if key in ('t', 'y'):
+                            self._shift_elbow(1.0 if key == 't' else -1.0)
+                            v = np.zeros(6, dtype=np.float32)
+                        else:
+                            v = twist_from_key(key, self.linear_speed, self.angular_speed)
+                            if np.linalg.norm(v) < 1e-9:
+                                continue
+                            if not self.delta_guard.validate(v * self.dt, logger=self.node.get_logger()):
+                                continue
+                            self.delta_guard.mark_accepted(v * self.dt)
+                        repeating = key == active_key and now <= active_until
+                        twist = v
+                        active_key = key
+                        active_until = now + (self.key_hold_repeat if repeating else self.key_hold_initial)
+
+                if now < active_until:
+                    self.apply_twist_velocity(twist)
+                    moving = True
+                elif moving:
+                    # Back to position mode holding the current pose.
+                    self.limb.exit_control_mode()
+                    self.delta_guard.mark_accepted(np.zeros(6, dtype=np.float32))
+                    active_key = None
+                    moving = False
+        finally:
+            if moving:
+                self.limb.exit_control_mode()
+
+    def spin(self):
+        print(f'\n{self.arm.capitalize()} arm cartesian-delta teleop (frax diff-IK, {self.mode} mode)')
+        print(f'speed {self.linear_speed:.2f} m/s, {self.angular_speed:.2f} rad/s')
+        print('W/S X, A/D Y, R/F Z, Q/E yaw, Z/C pitch, X/V roll, SPACE stop, ESC quit')
+        print('T/Y swing elbow, H go to rest posture')
+        print('[/ ] gripper delta, G calibrate gripper')
+
+        if self.mode == 'velocity':
+            self._spin_velocity()
+        else:
+            self._spin_position()
+
 
 def main():
     if frax is None or jax is None or jnp is None:
@@ -276,8 +365,14 @@ def main():
 
     parser = argparse.ArgumentParser(description='Baxter cartesian-delta teleop')
     parser.add_argument('--arm', choices=['left', 'right'], default='right', help='arm to control (default: right)')
+    parser.add_argument('--mode', choices=['velocity', 'position'], default='velocity', help='joint control mode')
+    parser.add_argument('--linear-speed', type=float, default=None, help='key linear speed in m/s (mode default)')
+    parser.add_argument('--angular-speed', type=float, default=None, help='key angular speed in rad/s (mode default)')
     parser.add_argument(
         '--null-gain', type=float, default=2.0, help='nullspace pull toward rest posture in 1/s (0 disables)'
+    )
+    parser.add_argument(
+        '--key-hold-initial', type=float, default=0.55, help='velocity mode: seconds a first keypress stays active'
     )
     parser.add_argument('--max-linear-velocity', type=float, default=1.40, help='max linear velocity in m/s')
     parser.add_argument('--max-angular-velocity', type=float, default=14.00, help='max angular velocity in rad/s')
@@ -294,7 +389,11 @@ def main():
     rclpy.init(args=[sys.argv[0], *ros_args])
     teleop = CartesianDeltaTeleop(
         arm=args.arm,
+        mode=args.mode,
+        linear_speed=args.linear_speed,
+        angular_speed=args.angular_speed,
         null_gain=args.null_gain,
+        key_hold_initial=args.key_hold_initial,
         max_linear_velocity=args.max_linear_velocity,
         max_angular_velocity=args.max_angular_velocity,
         max_linear_delta=args.max_linear_delta,
