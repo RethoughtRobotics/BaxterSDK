@@ -150,6 +150,20 @@ class CartesianDeltaTeleop:
         e0 = self.q_rest[self.E0_INDEX] + direction * self.elbow_step
         self.q_rest[self.E0_INDEX] = float(np.clip(e0, -self.E0_LIMIT, self.E0_LIMIT))
 
+    def _go_home(self):
+        """Move to the rest posture with a slow, blocking position move."""
+        self.q_cmd = None
+        self.q_rest = np.asarray(self.REST_POSTURE, dtype=np.float32)
+        self.node.get_logger().info('Moving to rest posture...')
+        self.limb.set_joint_position_speed(0.3)
+        try:
+            self.limb.move_to_joint_positions(
+                {name: float(self.q_rest[i]) for i, name in enumerate(self.joint_names)}, timeout=15.0
+            )
+        finally:
+            self.limb.set_joint_position_speed(1.0)
+        self.node.get_logger().info('At rest posture.')
+
     def _apply_gripper_delta(self, delta_percent):
         if self.gripper is None:
             self.node.get_logger().warn('Gripper control is unavailable.')
@@ -188,6 +202,9 @@ class CartesianDeltaTeleop:
         if key == ']':
             self._apply_gripper_delta(self.gripper_step)
             return True
+        if key == 'h':
+            self._go_home()
+            return True
         return False
 
     def run_delta_source(self, delta_source):
@@ -222,7 +239,7 @@ class CartesianDeltaTeleop:
     def spin(self):
         print(f'\n{self.arm.capitalize()} arm cartesian-delta teleop (frax diff-IK)')
         print('W/S X, A/D Y, R/F Z, Q/E yaw, Z/C pitch, X/V roll, SPACE stop, ESC quit')
-        print('T/Y swing elbow')
+        print('T/Y swing elbow, H go to rest posture')
         print('[/ ] gripper delta, G calibrate gripper')
 
         def keyboard_delta_source():
