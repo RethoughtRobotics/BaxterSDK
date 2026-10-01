@@ -1,0 +1,95 @@
+# baxter_teleop
+This package provides cartesian delta teleoperation for Baxter arms.
+
+## Design intent
+
+The runtime is modality agnostic.
+It consumes cartesian deltas and maps them to joint position commands through differential inverse kinematics.
+Keyboard is only one adapter.
+VR or learned policies can plug into the same runtime path.
+
+## Module layout
+
+- `cartesian_delta_teleop.py`
+  - Runtime orchestration.
+  - Builds arm specific model from Baxter URDF.
+  - Exposes `apply_delta_cartesian` and `run_delta_source`.
+- `diff_ik.py`
+  - Differential IK solver.
+  - Damped least squares with bounded joint step.
+- `delta_guard.py`
+  - Validation policy for modality delta streams.
+  - Enforces velocity, magnitude, and jump constraints.
+- `keymap.py`
+  - Keyboard to cartesian delta mapping.
+- `urdf_tools.py`
+  - Baxter URDF discovery and arm chain extraction.
+
+## Data contract for modalities
+
+A modality source should provide one of:
+
+- `None` when no command is available
+- `np.ndarray` with shape `(6,)` as `[dx, dy, dz, droll, dpitch, dyaw]`
+- `'quit'` to stop the loop
+
+## Using keyboard mode
+
+From the workspace root:
+
+```bash
+source install/setup.bash
+ros2 run baxter_interface baxter_teleop --arm right
+```
+
+Use `--arm left` for the left arm.
+Keyboard gripper control is included in this runtime:
+
+- `[` decreases gripper opening by a small delta
+- `]` increases gripper opening by a small delta
+- `G` calibrates the gripper before delta control is used
+
+The delta size defaults to 2 percent per keypress and can be changed with `--gripper-step`.
+
+## Safety limits
+
+The runtime enforces both velocity and delta limits before each command is applied.
+
+- linear velocity limit in m/s
+- angular velocity limit in rad/s
+- linear delta limit per cycle in meters
+- angular delta limit per cycle in radians
+- maximum jump between consecutive deltas
+
+These are configurable from CLI:
+
+```bash
+ros2 run baxter_interface baxter_teleop \
+  --arm right \
+  --max-linear-velocity 0.20 \
+  --max-angular-velocity 1.50 \
+  --max-linear-delta 0.010 \
+  --max-angular-delta 0.200 \
+  --max-delta-jump 0.050
+```
+
+If a command exceeds any threshold it is rejected and a warning is logged.
+
+## URDF resolution
+
+The runtime resolves the Baxter URDF in this order:
+
+1. `BAXTER_FRAX_URDF` environment variable
+2. `baxter_description` package share via ROS index
+3. workspace relative discovery from source checkout
+
+## Extending to another modality
+
+Create a callback that returns the modality delta in the contract format and pass it to `run_delta_source`.
+
+```python
+teleop = CartesianDeltaTeleop(arm='right')
+teleop.run_delta_source(my_delta_source)
+```
+
+No changes are needed in the IK solver for new modalities.
