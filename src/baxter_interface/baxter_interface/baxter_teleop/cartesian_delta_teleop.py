@@ -169,19 +169,29 @@ class CartesianDeltaTeleop:
         angles = self.limb.joint_angles()
         return jnp.array([angles[name] for name in self.joint_names], dtype=jnp.float32)
 
-    def _measure_tcp_offset(self, timeout=3.0):
-        """Return the robot endpoint position expressed in the hand frame."""
+    def _measure_tcp_offset(self, num_samples=10, sample_period=0.02, timeout=3.0):
+        """Return the robot endpoint position expressed in the hand frame, averaged over samples."""
+        samples = []
         deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            rclpy.spin_once(self.node, timeout_sec=0.05)
+        next_sample = time.monotonic()
+        while len(samples) < num_samples and time.monotonic() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.005)
+            if time.monotonic() < next_sample:
+                continue
             pose = self.limb.endpoint_pose()
             if pose and 'position' in pose:
                 q = jnp.asarray(self._current_q())
                 T = np.asarray(self.ee_transform(q), dtype=np.float32)
                 p = np.asarray(pose['position'], dtype=np.float32)
-                return T[:3, :3].T @ (p - T[:3, 3])
-        self.node.get_logger().warn('No endpoint state received; using URDF gripper frame as TCP.')
-        return np.asarray(self.URDF_TCP_OFFSET, dtype=np.float32)
+                samples.append(T[:3, :3].T @ (p - T[:3, 3]))
+                next_sample = time.monotonic() + sample_period
+        if not samples:
+            self.node.get_logger().warn('No endpoint state received; using URDF gripper frame as TCP.')
+            return np.asarray(self.URDF_TCP_OFFSET, dtype=np.float32)
+        samples = np.asarray(samples)
+        spread_mm = float(np.max(np.linalg.norm(samples - samples.mean(axis=0), axis=1))) * 1000.0
+        self.node.get_logger().info(f'TCP offset from {len(samples)} samples, max deviation {spread_mm:.1f} mm')
+        return samples.mean(axis=0).astype(np.float32)
 
     def _hand_twist(self, q, twist):
         """Convert a TCP twist into the base-frame twist of the hand link used by the Jacobian.
