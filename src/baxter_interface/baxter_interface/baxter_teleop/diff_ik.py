@@ -4,30 +4,63 @@ import numpy as np
 
 
 class DiffIKSolver:
-    """Damped least-squares differential IK stepper."""
+    """Damped least-squares differential IK with a nullspace posture attractor.
 
-    def __init__(self, dt=0.01, damping=0.05, max_joint_step=0.02, max_joint_velocity=1.5):
+    Baxter has 7 joints for a 6-DOF end-effector task, leaving one redundant
+    degree of freedom (mostly elbow swing: e0 with s0/w0). Like the Franka
+    cartesian impedance controller, the redundancy is resolved by pulling the
+    joints toward a rest posture inside the Jacobian nullspace, which does not
+    disturb the end-effector motion.
+    """
+
+    def __init__(
+        self,
+        dt=0.01,
+        damping=0.05,
+        max_joint_step=0.02,
+        max_joint_velocity=1.5,
+        null_gain=0.0,
+        max_null_velocity=0.5,
+    ):
         self.dt = float(dt)
         self.damping = float(damping)
         self.max_joint_step = float(max_joint_step)
         self.max_joint_velocity = float(max_joint_velocity)
+        self.null_gain = float(null_gain)  # 1/s, rate of pull toward the rest posture
+        self.max_null_velocity = float(max_null_velocity)  # rad/s cap on the nullspace term
 
-    def step_delta(self, q, jacobian, delta_cartesian):
+    def _pinv_and_nullspace(self, J):
+        # Damped least squares remains stable near singular Jacobians.
+        JJT = J @ J.T + (self.damping**2) * np.eye(J.shape[0], dtype=np.float32)
+        J_pinv = J.T @ np.linalg.inv(JJT)
+        N = np.eye(J.shape[1], dtype=np.float32) - J_pinv @ J
+        return J_pinv, N
+
+    def _nullspace_velocity(self, N, q, q_rest):
+        if q_rest is None or self.null_gain <= 0.0:
+            return np.zeros(N.shape[0], dtype=np.float32)
+        qdot_null = N @ (self.null_gain * (np.asarray(q_rest, dtype=np.float32) - q))
+        norm = np.linalg.norm(qdot_null)
+        if norm > self.max_null_velocity:
+            qdot_null *= self.max_null_velocity / norm
+        return qdot_null
+
+    def step_delta(self, q, jacobian, delta_cartesian, q_rest=None):
         """Compute next joint vector from a cartesian delta input.
 
         Args:
             q: current joint configuration (n,)
             jacobian: end-effector Jacobian (6,n)
             delta_cartesian: desired EE delta [dx,dy,dz,droll,dpitch,dyaw] (6,)
+            q_rest: optional rest posture for the nullspace attractor (n,)
         """
         # Keep all math in float32 to match JAX tensors used in the runtime.
         J = np.asarray(jacobian, dtype=np.float32)
         q_np = np.asarray(q, dtype=np.float32)
-        delta_np = np.asarray(delta_cartesian, dtype=np.float32)
+        J_pinv, N = self._pinv_and_nullspace(J)
 
-        # Damped least squares remains stable near singular Jacobians.
-        JJT = J @ J.T + (self.damping**2) * np.eye(6, dtype=np.float32)
-        dq = J.T @ np.linalg.solve(JJT, delta_np)
+        dq = J_pinv @ np.asarray(delta_cartesian, dtype=np.float32)
+        dq += self._nullspace_velocity(N, q_np, q_rest) * self.dt
 
         # Enforce bounded joint increments per control cycle.
         vel_step_limit = self.max_joint_velocity * self.dt
