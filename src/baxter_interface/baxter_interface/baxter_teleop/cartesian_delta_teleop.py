@@ -51,12 +51,15 @@ class CartesianDeltaTeleop:
     E0_INDEX = 2
     E0_LIMIT = 3.0
     MODE_SPEEDS = {'velocity': (0.20, 0.8), 'position': (1.20, 12.0)}
+    # URDF {arm}_gripper frame, used when the robot endpoint cannot be read.
+    URDF_TCP_OFFSET = [0.0, 0.0, 0.025]
 
     def __init__(
         self,
         arm='right',
         node=None,
         mode='velocity',
+        tcp_offset=None,
         linear_speed=None,
         angular_speed=None,
         null_gain=2.0,
@@ -118,6 +121,14 @@ class CartesianDeltaTeleop:
         self.ee_transform = jax.jit(self.robot.ee_transform)
         # Compile now so the first keypress does not stall the control loop.
         self.ee_jacobian(jnp.asarray(self.REST_POSTURE, dtype=jnp.float32)).block_until_ready()
+        self.ee_transform(jnp.asarray(self.REST_POSTURE, dtype=jnp.float32)).block_until_ready()
+
+        # TCP as an offset in the {arm}_hand frame. By default it is measured from the
+        # robot's own endpoint, which includes the configured gripper and fingers.
+        if tcp_offset is None:
+            self.tcp_offset = self._measure_tcp_offset()
+        else:
+            self.tcp_offset = np.array([0.0, 0.0, float(tcp_offset)], dtype=np.float32)
 
         self.dt = 0.01
         self.ik = DiffIKSolver(
@@ -154,6 +165,29 @@ class CartesianDeltaTeleop:
         angles = self.limb.joint_angles()
         return jnp.array([angles[name] for name in self.joint_names], dtype=jnp.float32)
 
+    def _measure_tcp_offset(self, timeout=3.0):
+        """Return the robot endpoint position expressed in the hand frame."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            rclpy.spin_once(self.node, timeout_sec=0.05)
+            pose = self.limb.endpoint_pose()
+            if pose and 'position' in pose:
+                q = jnp.asarray(self._current_q())
+                T = np.asarray(self.ee_transform(q), dtype=np.float32)
+                p = np.asarray(pose['position'], dtype=np.float32)
+                return T[:3, :3].T @ (p - T[:3, 3])
+        self.node.get_logger().warn('No endpoint state received; using URDF gripper frame as TCP.')
+        return np.asarray(self.URDF_TCP_OFFSET, dtype=np.float32)
+
+    def _hand_twist(self, q, twist):
+        """Convert a base-frame TCP twist into the base-frame twist of the hand link used by the Jacobian."""
+        R = np.asarray(self.ee_transform(jnp.asarray(q)), dtype=np.float32)[:3, :3]
+        v = np.asarray(twist[:3], dtype=np.float32)
+        w = np.asarray(twist[3:], dtype=np.float32)
+        # v_tcp = v_hand + w x r, with r the hand-to-TCP vector in base frame.
+        v_hand = v - np.cross(w, R @ self.tcp_offset)
+        return np.concatenate([v_hand, w]).astype(np.float32)
+
     def apply_delta_cartesian(self, delta_cartesian):
         """Apply a 6D cartesian delta from any input modality (position mode)."""
         q_meas = np.asarray(self._current_q(), dtype=np.float32)
@@ -163,7 +197,8 @@ class CartesianDeltaTeleop:
         self.last_cmd_time = now
 
         J = self.ee_jacobian(jnp.asarray(self.q_cmd))
-        q_next = self.ik.step_delta(q=self.q_cmd, jacobian=J, delta_cartesian=delta_cartesian, q_rest=self.q_rest)
+        delta_hand = self._hand_twist(self.q_cmd, delta_cartesian)
+        q_next = self.ik.step_delta(q=self.q_cmd, jacobian=J, delta_cartesian=delta_hand, q_rest=self.q_rest)
         q_next = np.clip(q_next, q_meas - self.max_cmd_lead, q_meas + self.max_cmd_lead)
         self.q_cmd = q_next
         self.limb.set_joint_positions({name: float(q_next[i]) for i, name in enumerate(self.joint_names)})
@@ -173,7 +208,11 @@ class CartesianDeltaTeleop:
         q_meas = np.asarray(self._current_q(), dtype=np.float32)
         J = self.ee_jacobian(jnp.asarray(q_meas))
         qdot = self.ik.joint_velocity(
-            q=q_meas, jacobian=J, v_ee=v_ee, q_rest=self.q_rest, joint_velocity_limits=self.joint_velocity_limits
+            q=q_meas,
+            jacobian=J,
+            v_ee=self._hand_twist(q_meas, v_ee),
+            q_rest=self.q_rest,
+            joint_velocity_limits=self.joint_velocity_limits,
         )
         self.limb.set_joint_velocities({name: float(qdot[i]) for i, name in enumerate(self.joint_names)})
 
@@ -347,6 +386,7 @@ class CartesianDeltaTeleop:
     def spin(self):
         print(f'\n{self.arm.capitalize()} arm cartesian-delta teleop (frax diff-IK, {self.mode} mode)')
         print(f'speed {self.linear_speed:.2f} m/s, {self.angular_speed:.2f} rad/s')
+        print(f'TCP offset in hand frame {np.round(self.tcp_offset, 3)} m')
         print('W/S X, A/D Y, R/F Z, Q/E yaw, Z/C pitch, X/V roll, SPACE stop, ESC quit')
         print('T/Y swing elbow, H go to rest posture')
         print('[/ ] gripper delta, G calibrate gripper')
@@ -366,6 +406,12 @@ def main():
     parser = argparse.ArgumentParser(description='Baxter cartesian-delta teleop')
     parser.add_argument('--arm', choices=['left', 'right'], default='right', help='arm to control (default: right)')
     parser.add_argument('--mode', choices=['velocity', 'position'], default='velocity', help='joint control mode')
+    parser.add_argument(
+        '--tcp-offset',
+        type=float,
+        default=None,
+        help='TCP distance along hand z in meters (default: measured from robot endpoint)',
+    )
     parser.add_argument('--linear-speed', type=float, default=None, help='key linear speed in m/s (mode default)')
     parser.add_argument('--angular-speed', type=float, default=None, help='key angular speed in rad/s (mode default)')
     parser.add_argument(
@@ -390,6 +436,7 @@ def main():
     teleop = CartesianDeltaTeleop(
         arm=args.arm,
         mode=args.mode,
+        tcp_offset=args.tcp_offset,
         linear_speed=args.linear_speed,
         angular_speed=args.angular_speed,
         null_gain=args.null_gain,
