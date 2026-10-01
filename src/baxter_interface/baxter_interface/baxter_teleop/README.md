@@ -56,6 +56,21 @@ Posture keys:
 - `T` / `Y` swing the elbow (redundant 7th DOF) without moving the hand
 - `H` moves the arm to the rest posture (slow, blocking)
 
+## Control modes
+
+- `--mode velocity` (default): joint velocity commands computed from the measured
+  state each cycle. Baxter's own controller handles gravity, and the arm stops
+  within `0.1 s` of the last key repeat. Speeds are real: `--linear-speed` (m/s,
+  default `0.20`) and `--angular-speed` (rad/s, default `0.8`).
+- `--mode position`: accumulated joint position targets, bounded to lead the
+  measured arm by at most `0.2 rad` per joint.
+
+A terminal cannot detect key release, so the first keypress stays active for
+`--key-hold-initial` seconds (default `0.55`) to bridge the OS auto-repeat delay.
+A single tap therefore moves for about half a second. Lowering the OS repeat
+delay (e.g. `gsettings set org.gnome.desktop.peripherals.keyboard delay 200`)
+lets you lower `--key-hold-initial` to match.
+
 ## Redundancy resolution
 
 Baxter has 7 joints for a 6-DOF hand task. Like the Franka cartesian impedance
