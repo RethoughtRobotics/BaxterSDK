@@ -64,7 +64,7 @@ class CartesianDeltaTeleop:
 
         self.node = node or rclpy.create_node(f'{arm}_arm_ee_teleop')
         self.limb = baxter_interface.Limb(arm, node=self.node)
-        self.limb.set_joint_position_speed(0.3)
+        self.limb.set_joint_position_speed(1.0)
         self.gripper_step = float(gripper_step)
         self.gripper = None
         self.gripper_target = None
@@ -96,7 +96,7 @@ class CartesianDeltaTeleop:
         self.ee_transform = jax.jit(self.robot.ee_transform)
 
         self.dt = 0.01
-        self.ik = DiffIKSolver(dt=self.dt, damping=0.05, max_joint_step=0.02, max_joint_velocity=1.5)
+        self.ik = DiffIKSolver(dt=self.dt, damping=0.05, max_joint_step=0.04, max_joint_velocity=6.0)
         # Commanded target accumulates while input streams, so steps add up instead of
         # restarting from the (lagging) measured position each cycle.
         self.q_cmd = None
