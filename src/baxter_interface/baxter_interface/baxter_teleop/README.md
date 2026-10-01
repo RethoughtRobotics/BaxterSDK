@@ -71,6 +71,17 @@ A single tap therefore moves for about half a second. Lowering the OS repeat
 delay (e.g. `gsettings set org.gnome.desktop.peripherals.keyboard delay 200`)
 lets you lower `--key-hold-initial` to match.
 
+## Command frame and TCP
+
+- `--frame tool` (default): keys are expressed in the TCP axes. Baxter's hand
+  z axis points out through the gripper, so `R`/`F` approach and retract.
+- `--frame base`: keys are expressed in the robot base axes (x forward, y left, z up).
+
+In both frames rotations pivot about the TCP. The TCP is measured at startup
+from the robot's `endpoint_state` (which includes the configured gripper and
+fingers) and expressed in the `{arm}_hand` frame. Override it with
+`--tcp-offset <meters along hand z>`.
+
 ## Redundancy resolution
 
 Baxter has 7 joints for a 6-DOF hand task. Like the Franka cartesian impedance
