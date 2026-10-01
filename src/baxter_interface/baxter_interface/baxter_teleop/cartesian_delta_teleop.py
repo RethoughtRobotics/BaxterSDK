@@ -44,11 +44,11 @@ class CartesianDeltaTeleop:
         self,
         arm='right',
         node=None,
-        max_linear_velocity=0.20,
-        max_angular_velocity=1.50,
-        max_linear_delta=0.010,
+        max_linear_velocity=1.40,
+        max_angular_velocity=14.00,
+        max_linear_delta=0.020,
         max_angular_delta=0.200,
-        max_delta_jump=0.050,
+        max_delta_jump=0.300,
         gripper_step=2.0,
     ):
         if frax is None or jax is None or jnp is None:
@@ -103,8 +103,8 @@ class CartesianDeltaTeleop:
         self.last_cmd_time = 0.0
         self.cmd_idle_reset = 0.2  # seconds without input before re-syncing to measured
         self.max_cmd_lead = 0.2  # max rad any joint target may lead the measured arm
-        self.linear_speed = 0.06
-        self.angular_speed = 0.6
+        self.linear_speed = 1.20
+        self.angular_speed = 12.0
 
         self.delta_guard = CartesianDeltaGuard(
             dt=self.dt,
@@ -235,12 +235,12 @@ def main():
 
     parser = argparse.ArgumentParser(description='Baxter cartesian-delta teleop')
     parser.add_argument('--arm', choices=['left', 'right'], default='right', help='arm to control (default: right)')
-    parser.add_argument('--max-linear-velocity', type=float, default=0.20, help='max linear velocity in m/s')
-    parser.add_argument('--max-angular-velocity', type=float, default=1.50, help='max angular velocity in rad/s')
-    parser.add_argument('--max-linear-delta', type=float, default=0.010, help='max linear delta per cycle in meters')
+    parser.add_argument('--max-linear-velocity', type=float, default=1.40, help='max linear velocity in m/s')
+    parser.add_argument('--max-angular-velocity', type=float, default=14.00, help='max angular velocity in rad/s')
+    parser.add_argument('--max-linear-delta', type=float, default=0.020, help='max linear delta per cycle in meters')
     parser.add_argument('--max-angular-delta', type=float, default=0.200, help='max angular delta per cycle in radians')
     parser.add_argument(
-        '--max-delta-jump', type=float, default=0.050, help='max Euclidean jump between consecutive deltas'
+        '--max-delta-jump', type=float, default=0.300, help='max Euclidean jump between consecutive deltas'
     )
     parser.add_argument(
         '--gripper-step', type=float, default=2.0, help='gripper position delta per keypress in percent'
