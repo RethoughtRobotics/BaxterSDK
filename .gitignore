@@ -57,3 +57,8 @@ qtcreator-*
 CATKIN_IGNORE
 
 .python-version
+
+# Local recordings and captured media
+recordings/
+assets/kasina_jyothi1.jpg
+assets/shuttingdown.gif
