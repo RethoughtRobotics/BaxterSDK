@@ -13,6 +13,7 @@ import numpy as np
 import rclpy
 from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import PoseStamped, TwistStamped
+from rclpy.executors import TimeoutException
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Empty, Float32, String
@@ -114,6 +115,10 @@ class CartesianDeltaTeleop:
         self.joint_names = [f'{arm}_{suffix}' for suffix in self.JOINT_SUFFIXES]
 
         self.node = node or rclpy.create_node(f'{arm}_arm_ee_teleop')
+        # Kept on the global executor, so rclpy.spin_once (e.g. in Limb waits) no longer adds and
+        # removes it, which would discard the callbacks still pending; see _spin_pending.
+        self.executor = rclpy.get_global_executor()
+        self.executor.add_node(self.node)
         self.limb = baxter_interface.Limb(arm, node=self.node)
         self.limb.set_joint_position_speed(1.0)
         self.key_source = getch  # (timeout) -> character or None; key_replay swaps in recorded keys
@@ -211,6 +216,23 @@ class CartesianDeltaTeleop:
             max_angular_delta=max_angular_delta,
             max_delta_jump=max_delta_jump,
         )
+
+    def _spin_pending(self):
+        """Run every callback that is ready now. One per cycle (rclpy.spin_once) falls behind the
+        VR target, trigger, joint states and endpoint state together, and the servo then acts on
+        joint angles 0.1-0.3 s old, which on the real arm's lag makes the loop unstable. Each wait
+        takes one message per subscription, so wait again until a wait finds nothing."""
+        ran = True
+        while ran:
+            ran = False
+            try:
+                while True:
+                    handler, _, _ = self.executor.wait_for_ready_callbacks(timeout_sec=0.0)
+                    handler()
+                    handler.result()  # raise any exception from the callback
+                    ran = True
+            except TimeoutException:
+                pass
 
     def _read_key(self):
         key = self.key_source(timeout=self.dt)
@@ -412,7 +434,7 @@ class CartesianDeltaTeleop:
         command, or the string quit to stop the loop.
         """
         while rclpy.ok():
-            rclpy.spin_once(self.node, timeout_sec=0.0)
+            self._spin_pending()
             delta = delta_source()
             if delta is None:
                 continue
@@ -463,7 +485,7 @@ class CartesianDeltaTeleop:
         moving = False
         try:
             while rclpy.ok():
-                rclpy.spin_once(self.node, timeout_sec=0.0)
+                self._spin_pending()
                 injected = on_cycle() if on_cycle is not None else None
                 key = self._read_key() or injected
                 if key == '\x1b':
