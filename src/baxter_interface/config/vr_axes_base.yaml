@@ -10,21 +10,26 @@ linear_frame: base
 # (the map felt on its first stroke, snapped to axes; vr_replay prints it): confirm on the robot
 # by clutching and pushing forward, left and up, then fix the signs. Press A holding the
 # controller the same way each time, since the anchor frame is the reference.
-linear_axes: [-z, +x, -y]
-# Proposed with the gravity-levelled anchor (not active): ['-x', '-y', '+z'].
-# This is the stance-aware map inferred from the prior session: when facing Baxter at the A
-# press, hand forward/left/up maps to robot base -x/-y/+z. Keep the active mapping above until
-# those directions have been confirmed on the real robot.
-# Controller rotation -> TCP rotation, as vr_axes.yaml but a proper rotation (det +1): with a
-# mirrored axis the TCP turns the opposite way about it.
-angular_axes: [+z, -x, -y]
+# linear_axes: [-z, +x, -y]
+linear_axes: [-x, -y, +z]
+# Identity with the gravity-levelled anchor (libsurvive_ros2): the anchor is x = the
+# controller's pointing direction at the A press (flattened), y = its left, z = up, so your
+# forward/left/up at the A press is Baxter's forward/left/up: your right is Baxter's right
+# however you stand, and pressing A again re-references it. (Facing Baxter, its right is your
+# left in the room, so it mirrors you.) The commented-out maps were fitted to the old,
+# unlevelled anchor. Confirm on the robot: press A, push forward/left/up, fix any sign here.
+# Rotation, same frame: a wrist turn about your forward/left/up (in anchor axes) turns the TCP
+# about the base axis it maps to. Must be a proper rotation (det +1): with a mirrored axis the
+# TCP turns the opposite way about it. Confirm by twisting about each axis.
+# angular_axes: [+z, -x, -y]
+angular_axes: [-x, -y, +z]
 
 # Per TCP axis velocity scale [x, y, z], applied before the speed caps. The servo loop gain
 # is --vr-gain x scale. Baxter's TCP lags its commands by ~0.12 s (translation) and ~0.09 s
 # (rotation), so keep the loop gain under ~6/s linear and ~9/s angular or the arm rings
 # (circle_clockwise_20261001_184937: gain 15/s on rotation rang the wrist at 2-2.3 Hz).
-linear_scale: [2.0, 2.0, 2.0]
-angular_scale: [1.5, 1.5, 1.5]
+linear_scale: [1.0, 1.0, 1.0]
+angular_scale: [1.0, 1.0, 1.0]
 
 # Per TCP axis deadband [x, y, z], subtracted from the stroke delta (since the clutch
 # engaged) so off-axis drift is ignored without a jump at the edge: d -> sign(d)*max(|d|-band, 0).
