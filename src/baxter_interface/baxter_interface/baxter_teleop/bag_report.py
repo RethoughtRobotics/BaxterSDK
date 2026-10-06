@@ -87,6 +87,7 @@ def save_joints(bag, data):
         q=data['js'][:, 1:15],
         names=data['joints'],
         empty=bool(data['sim'].get('empty', False)),
+        table=bool(data['sim'].get('table', True)),
     )
 
 
