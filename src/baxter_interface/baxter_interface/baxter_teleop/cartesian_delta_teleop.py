@@ -614,7 +614,7 @@ def main():
         help='VR mapping YAML, a path or a file in the installed config/ (default: vr_axes.yaml; '
         'vr_axes_base.yaml maps translation onto the robot base frame)',
     )
-    parser.add_argument('--vr-gain', type=float, default=3.0, help='VR pose servo gain in 1/s')
+    parser.add_argument('--vr-gain', type=float, default=1.0, help='VR pose servo gain in 1/s')
     parser.add_argument(
         '--vr-trigger-topic', default=None, help='VR trigger topic for the gripper (default: /vive/{arm}/trigger)'
     )
