@@ -49,3 +49,9 @@ qtcreator-*
 
 # Catkin custom files
 CATKIN_IGNORE
+
+# Python
+.venv/
+.pytest_cache/
+__pycache__/
+*.egg-info/

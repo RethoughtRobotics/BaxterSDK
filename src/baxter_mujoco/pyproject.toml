@@ -1,0 +1,25 @@
+[project]
+name = "baxflow-t"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "mujoco>=3.3,<3.4",
+    "robosuite>=1.5.2",
+]
+
+[dependency-groups]
+dev = ["pytest"]
+# Python deps of the sourced ROS 2 (Kilted) packages, for baxflow.baxter_ros
+ros = ["pyyaml"]
+
+[build-system]
+requires = ["uv_build>=0.8,<1"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "baxflow"
+module-root = ""
+
+[tool.pytest.ini_options]
+# ROS (if sourced) leaks its pytest plugins in via PYTHONPATH; they need deps this venv doesn't have.
+addopts = "-p no:launch_testing -p no:launch_ros"
