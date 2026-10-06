@@ -66,6 +66,8 @@ class VRTarget:
     def _on_target(self, msg):
         p, o = msg.pose.position, msg.pose.orientation
         pose = (p.x, p.y, p.z, o.x, o.y, o.z, o.w)
+        if not np.all(np.isfinite(pose)):  # lost tracking: ignore, so the target goes stale and the arm holds
+            return
         self._moving = self._pose is not None and pose != self._pose
         self._pose = pose
         self._received = time.monotonic()
