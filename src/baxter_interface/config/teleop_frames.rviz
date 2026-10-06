@@ -55,6 +55,15 @@ Visualization Manager:
         left_gripper: {Value: true}
         right_gripper: {Value: true}
       Value: true
+    - Class: rviz_default_plugins/TF
+      Name: All frames (robot + VR)
+      Show Names: false
+      Show Axes: true
+      Show Arrows: true
+      Marker Scale: 0.4
+      Frames:
+        All Enabled: true
+      Value: false
   Tools:
     - Class: rviz_default_plugins/Interact
     - Class: rviz_default_plugins/MoveCamera
