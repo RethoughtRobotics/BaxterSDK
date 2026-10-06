@@ -1,0 +1,77 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Global Options:
+    Fixed Frame: world
+    Background Color: 48; 48; 48
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Reference Frame: world
+      Cell Size: 0.25
+      Plane Cell Count: 20
+      Value: true
+    - Class: rviz_default_plugins/RobotModel
+      Name: current (tool-frame translation)
+      Alpha: 0.4
+      TF Prefix: current
+      Description Source: Topic
+      Description Topic:
+        Value: /current/robot_description
+        Durability Policy: Transient Local
+      Value: true
+    - Class: rviz_default_plugins/RobotModel
+      Name: proposed (base-frame translation)
+      Alpha: 0.4
+      TF Prefix: proposed
+      Description Source: Topic
+      Description Topic:
+        Value: /proposed/robot_description
+        Durability Policy: Transient Local
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: intent (white), TCP trail, servo goal (yellow)
+      Topic:
+        Value: /vr_replay/markers
+      Value: true
+    - Class: rviz_default_plugins/Axes
+      Name: current/base
+      Reference Frame: current/base
+      Length: 0.4
+      Radius: 0.015
+      Value: true
+    - Class: rviz_default_plugins/Axes
+      Name: proposed/base
+      Reference Frame: proposed/base
+      Length: 0.4
+      Radius: 0.015
+      Value: true
+    - Class: rviz_default_plugins/Axes
+      Name: current/left_gripper
+      Reference Frame: current/left_gripper
+      Length: 0.15
+      Radius: 0.008
+      Value: true
+    - Class: rviz_default_plugins/Axes
+      Name: proposed/left_gripper
+      Reference Frame: proposed/left_gripper
+      Length: 0.15
+      Radius: 0.008
+      Value: true
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Current View
+      Target Frame: world
+      Distance: 4.5
+      Focal Point: {X: 0.5, Y: 0, Z: 0.3}
+      Pitch: 0.5
+      Yaw: 3.14
+Window Geometry:
+  Width: 1600
+  Height: 950

@@ -1,0 +1,73 @@
+Panels:
+  - Class: rviz_common/Displays
+    Name: Displays
+Visualization Manager:
+  Global Options:
+    Fixed Frame: base
+    Background Color: 48; 48; 48
+  Displays:
+    - Class: rviz_default_plugins/Grid
+      Name: Grid
+      Reference Frame: base
+      Cell Size: 0.25
+      Plane Cell Count: 12
+      Value: true
+    - Class: rviz_default_plugins/RobotModel
+      Name: Baxter
+      Alpha: 0.35
+      Description Source: Topic
+      Description Topic:
+        Value: /robot_description
+        Durability Policy: Transient Local
+      Value: true
+    - Class: rviz_default_plugins/MarkerArray
+      Name: Sim scene (table, objects)
+      Topic:
+        Value: /sim/scene
+      Value: true
+    - Class: rviz_default_plugins/Axes
+      Name: base (proposed translation frame)
+      Reference Frame: base
+      Length: 0.6
+      Radius: 0.025
+      Value: true
+    - Class: rviz_default_plugins/Axes
+      Name: left_gripper (current TCP frame)
+      Reference Frame: left_gripper
+      Length: 0.25
+      Radius: 0.012
+      Value: true
+    - Class: rviz_default_plugins/Axes
+      Name: right_gripper (current TCP frame)
+      Reference Frame: right_gripper
+      Length: 0.25
+      Radius: 0.012
+      Value: true
+    - Class: rviz_default_plugins/TF
+      Name: Frame names
+      Show Names: true
+      Show Axes: false
+      Show Arrows: false
+      Marker Scale: 1.5
+      Frames:
+        All Enabled: false
+        base: {Value: true}
+        left_gripper: {Value: true}
+        right_gripper: {Value: true}
+      Value: true
+  Tools:
+    - Class: rviz_default_plugins/Interact
+    - Class: rviz_default_plugins/MoveCamera
+    - Class: rviz_default_plugins/Select
+  Views:
+    Current:
+      Class: rviz_default_plugins/Orbit
+      Name: Current View
+      Target Frame: base
+      Distance: 3.2
+      Focal Point: {X: 0.4, Y: 0, Z: 0.2}
+      Pitch: 0.45
+      Yaw: 3.6
+Window Geometry:
+  Width: 1400
+  Height: 900
