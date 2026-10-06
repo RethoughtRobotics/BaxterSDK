@@ -15,7 +15,7 @@ from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from sensor_msgs.msg import JointState
-from std_msgs.msg import String
+from std_msgs.msg import Empty, Float32, String
 
 import baxter_interface
 
@@ -65,6 +65,7 @@ class CartesianDeltaTeleop:
         [1.70168, 1.047, 3.05418, 2.618, 3.059, 2.094, 3.059],
     )
     MODE_SPEEDS = {'velocity': (0.20, 0.8), 'position': (1.20, 12.0)}
+    GRIPPER_VELOCITY = 80.0  # % of the electric gripper's max speed (SDK default 50)
     # VR servo speed caps (m/s, rad/s): above the speeds reached in circle_clockwise_20261001_184937
     # (1.46 m/s, 4.1 rad/s) so they rarely bind; the joint velocity limits still do.
     VR_SPEEDS = (2.0, 5.0)
@@ -137,10 +138,12 @@ class CartesianDeltaTeleop:
                 self.node.get_logger().info(
                     f'Gripper delta control only supports electric grippers; detected {self.gripper.type()}.'
                 )
-            elif self.gripper.calibrated():
-                self.gripper_target = float(self.gripper.position())
             else:
-                self.node.get_logger().info('Gripper is not calibrated; press G before using delta controls.')
+                self.gripper.set_velocity(self.GRIPPER_VELOCITY)
+                if self.gripper.calibrated():
+                    self.gripper_target = float(self.gripper.position())
+                else:
+                    self.node.get_logger().info('Gripper is not calibrated; press G before using delta controls.')
 
         baxter_urdf = resolve_baxter_urdf()
         arm_urdf = extract_arm_chain_urdf(baxter_urdf, arm, self.joint_names)
@@ -449,18 +452,20 @@ class CartesianDeltaTeleop:
 
         self.run_delta_source(keyboard_delta_source)
 
-    def spin_target(self, target, on_key=None):
+    def spin_target(self, target, on_key=None, on_cycle=None):
         """Servo the TCP to a target pose with velocity commands, for any input: KeyTarget
         (keyboard) or VRTarget. target.twist() gives the base-frame twist toward target.goal, or
         None to hold position. The keyboard keeps gripper keys, H (home), SPACE (stop) and ESC;
-        other keys go to on_key.
+        other keys go to on_key. on_cycle runs once per control cycle (e.g. the VR gripper) and may
+        return a key to act on as if typed (e.g. 'h' for the controller's B button).
         """
         self.limb.set_command_timeout(0.2)
         moving = False
         try:
             while rclpy.ok():
                 rclpy.spin_once(self.node, timeout_sec=0.0)
-                key = self._read_key()
+                injected = on_cycle() if on_cycle is not None else None
+                key = self._read_key() or injected
                 if key == '\x1b':
                     break
                 if key is not None:
@@ -501,11 +506,59 @@ class CartesianDeltaTeleop:
 
         self.spin_target(target, on_key)
 
-    def spin_vr(self, target):
-        """Follow a VRTarget; the keyboard keeps gripper/home/ESC."""
+    def spin_vr(self, target, trigger_topic, b_button_topic):
+        """Follow a VRTarget; the controller's analog trigger sets the gripper opening (released
+        open, pulled closed) and its B button sends the arm home (as H); the keyboard keeps
+        gripper/home/ESC."""
         print(f'\n{self.arm.capitalize()} arm VR teleop ({type(self.ik).__name__}, velocity mode)')
-        print('Touch the trackpad to move, release to stop. A re-anchors. H home, ESC quit')
-        self.spin_target(target)
+        print(
+            'Touch the trackpad to move, release to stop. A re-anchors. Trigger closes the gripper. '
+            'B or H home, ESC quit'
+        )
+        self._trigger = None  # (value 0..1, receive time)
+        self.node.create_subscription(
+            Float32, trigger_topic, lambda msg: setattr(self, '_trigger', (msg.data, time.monotonic())), 10
+        )
+        if self.gripper is not None and self.gripper.type() == 'electric' and not self.gripper.calibrated():
+            self.node.get_logger().info('Calibrating the gripper for VR control...')
+            self._calibrate_gripper()
+        self._b_pressed = False
+        self.node.create_subscription(Empty, b_button_topic, lambda msg: setattr(self, '_b_pressed', True), 10)
+        self._grip_filtered = self._grip_sent = self._grip_time = None
+
+        def on_cycle():
+            self._follow_trigger()
+            if self._b_pressed:  # the controller's B button: home, as the H key
+                self._b_pressed = False
+                return 'h'
+            return None
+
+        self.spin_target(target, on_cycle=on_cycle)
+
+    def _follow_trigger(self, smoothing=0.05, min_step=0.5, min_period=0.02, stale=0.5):
+        """Gripper opening from the trigger, continuously: first-order filtered (smoothing, s) and
+        sent when it changed by min_step (%) at most every min_period (s); holds when stale."""
+        if self._trigger is None or self.gripper is None or self.gripper.type() != 'electric':
+            return
+        if not self.gripper.calibrated():
+            return
+        value, received = self._trigger
+        now = time.monotonic()
+        if now - received > stale:
+            return
+        goal = 100.0 * (1.0 - float(np.clip(value, 0.0, 1.0)))  # 0 closed .. 100 open
+        if self._grip_filtered is None:
+            self._grip_filtered, self._grip_sent, self._grip_time = goal, None, now
+        else:
+            self._grip_filtered += (1.0 - np.exp(-(now - self._grip_time) / smoothing)) * (goal - self._grip_filtered)
+            self._grip_time = now
+        due = self._grip_sent is None or (
+            abs(self._grip_filtered - self._grip_sent[0]) >= min_step and now - self._grip_sent[1] >= min_period
+        )
+        if due:
+            self.gripper.command_position(self._grip_filtered, block=False)
+            self._grip_sent = (self._grip_filtered, now)
+            self.gripper_target = self._grip_filtered
 
     def spin(self):
         print(f'\n{self.arm.capitalize()} arm cartesian-delta teleop (frax diff-IK, {self.mode} mode)')
@@ -540,6 +593,14 @@ def main():
         'vr_axes_base.yaml maps translation onto the robot base frame)',
     )
     parser.add_argument('--vr-gain', type=float, default=3.0, help='VR pose servo gain in 1/s')
+    parser.add_argument(
+        '--vr-trigger-topic', default=None, help='VR trigger topic for the gripper (default: /vive/{arm}/trigger)'
+    )
+    parser.add_argument(
+        '--vr-b-button-topic',
+        default=None,
+        help='VR B button topic, sends the arm home (default: /vive/{arm}/b_button)',
+    )
     parser.add_argument('--mode', choices=['velocity', 'position'], default='velocity', help='joint control mode')
     parser.add_argument(
         '--ik',
@@ -620,14 +681,16 @@ def main():
     try:
         if args.input == 'vr':
             teleop.spin_vr(
-                VRTarget(
+                trigger_topic=args.vr_trigger_topic or f'/vive/{args.arm}/trigger',
+                b_button_topic=args.vr_b_button_topic or f'/vive/{args.arm}/b_button',
+                target=VRTarget(
                     teleop.node,
                     args.vr_topic or f'/vive/{args.arm}/target',
                     args.vr_config,
                     args.vr_gain,
                     teleop.linear_speed,
                     teleop.angular_speed,
-                )
+                ),
             )
         else:
             teleop.spin()
