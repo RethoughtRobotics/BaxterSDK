@@ -29,11 +29,15 @@ class VRTarget:
     therefore means "released": the arm holds and is re-referenced so the current
     target maps onto the current TCP, and the next stroke continues from there.
 
-    Rotation is applied in TCP axes. Translation follows `linear_frame` in `config`:
-      tool (default)  controller axes at clutch -> TCP axes at clutch (config/vr_axes.yaml).
-                      The map follows the wrist, so rotating it re-aims later strokes.
-      base            anchor axes (set by pressing A) -> robot base axes, one fixed map
-                      (config/vr_axes_base.yaml). Neither the grip nor the wrist re-aims it.
+    Translation and rotation follow `linear_frame` in `config`:
+      tool (default)  controller axes at clutch -> TCP axes at clutch (config/vr_axes.yaml), for
+                      both translation and rotation. The map follows the wrist, so rotating it
+                      re-aims later strokes.
+      base            anchor axes (set by pressing A; libsurvive_ros2 levels the anchor: x your
+                      heading, y your left, z up) -> robot base axes (config/vr_axes_base.yaml),
+                      for both: a hand move or wrist turn about your forward/left/up moves or
+                      turns the TCP along/about the base axes it maps to. Neither the grip nor
+                      the wrist re-aims it; pressing A again does.
     Either way it does not depend on where the base stations are. `config` also holds the
     signed axis permutations for translation and rotation, per TCP axis velocity scales,
     per TCP axis deadbands subtracted from the stroke delta, and the smoothing applied to
@@ -101,10 +105,12 @@ class VRTarget:
         base = self.linear_frame == 'base'
         delta = np.concatenate([
             self.linear_axes @ (offset - offset0 if base else rotation0.inv().apply(offset - offset0)),
-            self.angular_axes @ (rotation0.inv() * rotation).as_rotvec(),
+            # base: the wrist turn in anchor axes; tool: in the controller's axes at clutch
+            self.angular_axes @ ((rotation * rotation0.inv()) if base else (rotation0.inv() * rotation)).as_rotvec(),
         ])
         delta = np.sign(delta) * np.maximum(np.abs(delta) - self.deadband, 0.0)
-        self.goal = (p0 + (delta[:3] if base else R0.apply(delta[:3])), R0 * Rotation.from_rotvec(delta[3:]))
+        turn = Rotation.from_rotvec(delta[3:])
+        self.goal = (p0 + delta[:3], turn * R0) if base else (p0 + R0.apply(delta[:3]), R0 * turn)
         return servo_twist(
             self.goal, tcp_position, tcp_rotation, self.gain, self.max_linear, self.max_angular, self.scale
         )
