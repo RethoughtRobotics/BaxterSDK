@@ -1,0 +1,27 @@
+---
+# VR controller
+# Robot TCP mapping for `baxter_teleop --input vr`.
+#
+# For each TCP axis [x, y, z], the controller axis that drives it, with sign.
+#   e.g. ['-y', '+x', '+z'] means TCP x follows controller -y, TCP y follows +x.
+#   Each must use x, y, z exactly once.
+# linear_axes: controller translation -> TCP translation.
+# angular_axes: controller rotation (right-hand rule about each axis) -> TCP rotation.
+linear_axes: [+z, -x, -y]
+angular_axes: [+z, -x, +y]
+
+# Per TCP axis velocity scale [x, y, z], applied before the speed caps. The servo loop gain
+# is --vr-gain x scale. Baxter's TCP lags its commands by ~0.12 s (translation) and ~0.09 s
+# (rotation), so keep the loop gain under ~6/s linear and ~9/s angular or the arm rings
+# (circle_clockwise_20261001_184937: gain 15/s on rotation rang the wrist at 2-2.3 Hz).
+linear_scale: [2.0, 2.0, 2.0]
+angular_scale: [1.5, 1.5, 1.5]
+
+# Per TCP axis deadband [x, y, z], subtracted from the stroke delta (since the clutch
+# engaged) so off-axis drift is ignored without a jump at the edge: d -> sign(d)*max(|d|-band, 0).
+linear_deadband: [0.002, 0.002, 0.002]  # m
+angular_deadband: [0.06, 0.06, 0.06]  # rad
+
+# Exponential smoothing of the target pose while clutched, per message (~140 Hz):
+# filtered = smoothing * filtered + (1 - smoothing) * new. 0 disables it.
+smoothing: 0.5

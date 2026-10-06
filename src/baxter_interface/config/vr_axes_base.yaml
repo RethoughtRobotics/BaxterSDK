@@ -1,0 +1,36 @@
+---
+# VR controller -> robot mapping for `baxter_teleop --input vr --vr-config vr_axes_base.yaml`.
+# Same as vr_axes.yaml except that translation is taken in the anchor frame (set by pressing A)
+# and mapped once onto the robot base frame, so wrist rotation never re-aims it. Drop the
+# --vr-config flag to go back to vr_axes.yaml.
+linear_frame: base
+
+# For each base axis [x forward, y robot-left, z up], the anchor axis that drives it, with sign.
+# Each must use x, y, z exactly once. Starting point from circle_clockwise_20261001_184937
+# (the map felt on its first stroke, snapped to axes; vr_replay prints it): confirm on the robot
+# by clutching and pushing forward, left and up, then fix the signs. Press A holding the
+# controller the same way each time, since the anchor frame is the reference.
+linear_axes: [-z, +x, -y]
+# Proposed with the gravity-levelled anchor (not active): ['-x', '-y', '+z'].
+# This is the stance-aware map inferred from the prior session: when facing Baxter at the A
+# press, hand forward/left/up maps to robot base -x/-y/+z. Keep the active mapping above until
+# those directions have been confirmed on the real robot.
+# Controller rotation -> TCP rotation, as vr_axes.yaml but a proper rotation (det +1): with a
+# mirrored axis the TCP turns the opposite way about it.
+angular_axes: [+z, -x, -y]
+
+# Per TCP axis velocity scale [x, y, z], applied before the speed caps. The servo loop gain
+# is --vr-gain x scale. Baxter's TCP lags its commands by ~0.12 s (translation) and ~0.09 s
+# (rotation), so keep the loop gain under ~6/s linear and ~9/s angular or the arm rings
+# (circle_clockwise_20261001_184937: gain 15/s on rotation rang the wrist at 2-2.3 Hz).
+linear_scale: [2.0, 2.0, 2.0]
+angular_scale: [1.5, 1.5, 1.5]
+
+# Per TCP axis deadband [x, y, z], subtracted from the stroke delta (since the clutch
+# engaged) so off-axis drift is ignored without a jump at the edge: d -> sign(d)*max(|d|-band, 0).
+linear_deadband: [0.002, 0.002, 0.002]  # m
+angular_deadband: [0.06, 0.06, 0.06]  # rad
+
+# Exponential smoothing of the target pose while clutched, per message (~140 Hz):
+# filtered = smoothing * filtered + (1 - smoothing) * new. 0 disables it.
+smoothing: 0.5
