@@ -14,3 +14,14 @@ uv run pytest                    # smoke test
 
 `baxflow.sim.make_env()` returns the Baxter env: 14-D action (per arm: 6-D OSC pose delta + gripper).
 MuJoCo is pinned to 3.3.x — robosuite 1.5.2 breaks on newer releases.
+
+## ROS 2 simulator
+
+With ROS 2 Kilted and the `bringbackbaxter/ros2_ws` workspace built, run:
+
+```bash
+./launch_sim.sh --ros
+```
+
+This exposes the simulated Baxter through the same joint command, state, and endpoint topics as
+the robot. Set `BAXTER_WS` if the workspace is not at `../bringbackbaxter/ros2_ws`.
