@@ -629,6 +629,17 @@ class CartesianDeltaTeleop:
                 tcp_position, tcp_rotation = tcp_pose(self.ee_transform(q_meas), self.tcp_offset)
                 # /teleop/{arm}/tcp stays the measured TCP; the servo closes on _servo_q().
                 self.tcp_pub.publish(pose_msg(tcp_position, tcp_rotation, self.node.get_clock().now().to_msg()))
+                if getattr(self, '_cuff', False):
+                    # Cuff squeezed: the operator guides the arm in Baxter's zero-g mode. Command
+                    # nothing (raw output bypasses Baxter's cuff override, so a running stream would
+                    # hold the arm against the hand), and re-anchor the target so the next stroke or
+                    # policy step continues from where the hand leaves the arm instead of pulling it back.
+                    if self.raw_output is not None:
+                        self.raw_output.stop()
+                    self._q_step = None
+                    target.reset()
+                    moving = False
+                    continue
                 if self.servo_feedback == 'setpoint':
                     tcp_position, tcp_rotation = tcp_pose(self.ee_transform(self._servo_q(q_meas)), self.tcp_offset)
                 twist = target.twist(tcp_position, tcp_rotation)
