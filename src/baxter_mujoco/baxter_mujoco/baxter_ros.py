@@ -48,6 +48,14 @@ FINGER_JOINTS = ('l_gripper_l_finger_joint', 'l_gripper_r_finger_joint', 'r_grip
                  'r_gripper_r_finger_joint')
 
 
+def remove_table(m):
+    """Take the table out of the scene: no collisions, and hidden (geom group 5 is not drawn)."""
+    body = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, 'table')
+    for g in np.flatnonzero(m.geom_bodyid == body):
+        m.geom_contype[g] = m.geom_conaffinity[g] = 0
+        m.geom_group[g] = 5
+
+
 class Arm:
     """One arm's emulated joint controller state."""
 
@@ -93,7 +101,7 @@ class Arm:
 
 
 class SimBaxter:
-    def __init__(self, node, render, empty=False):
+    def __init__(self, node, render, empty=False, table=True):
         self.node, self.render = node, render
         self.env = make_env(render=render)
         self.env.reset()
@@ -102,6 +110,8 @@ class SimBaxter:
             for j in np.flatnonzero(self.m.jnt_type == mujoco.mjtJoint.mjJNT_FREE):
                 self.d.qpos[self.m.jnt_qposadr[j]:self.m.jnt_qposadr[j] + 3] = [0.0, -3.0, 0.2]
             mujoco.mj_forward(self.m, self.d)
+        if not table:
+            remove_table(self.m)
         self.base = mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, 'robot0_base')
         self.arms = {side: Arm(self.m, self.d, side) for side in ARMS}
         self.enabled = True
@@ -130,7 +140,7 @@ class SimBaxter:
         self.scene_geoms = [g for g in range(self.m.ngeom)  # collision shapes the arms can hit
                             if self.m.geom_contype[g] and int(self.m.geom_type[g]) in SCENE_SHAPES
                             and not body(g).startswith(robot)]
-        self.config_pub.publish(String(data=json.dumps({'scene': 'TwoArmLift', 'empty': empty})))
+        self.config_pub.publish(String(data=json.dumps({'scene': 'TwoArmLift', 'empty': empty, 'table': table})))
 
     def on_command(self, arm, msg):
         index = {name: i for i, name in enumerate(arm.names)}
@@ -235,6 +245,7 @@ class SimBaxter:
             if self.render and frame % 3 == 0:
                 # robosuite's render() is a no-op for its mjviewer; update() opens the window, then syncs it
                 self.env.viewer.update()
+                self.env.viewer.update()
             next_tick += DT_PUBLISH
             time.sleep(max(0.0, next_tick - time.monotonic()))
 
@@ -244,6 +255,7 @@ def main():
 
     parser = argparse.ArgumentParser(description='Simulated Baxter on the real robot ROS 2 interface')
     parser.add_argument('--no-viewer', action='store_true', help='run without the MuJoCo viewer')
+    parser.add_argument('--no-table', action='store_true', help='no table: the arms can reach down freely')
     parser.add_argument('--empty', action='store_true', help='no objects in reach (for controller tests)')
     args, ros_args = parser.parse_known_args()
 
@@ -254,7 +266,7 @@ def main():
         rclpy.spin_once(node, timeout_sec=0.1)
     if node.count_publishers('/robot/joint_states'):
         raise SystemExit('/robot/joint_states already has a publisher (a real robot or another sim); not starting.')
-
+    sim = SimBaxter(node, render=not args.no_viewer, empty=args.empty, table=not args.no_table)
     sim = SimBaxter(node, render=not args.no_viewer, empty=args.empty)
     def spin():
         try:
@@ -267,6 +279,9 @@ def main():
     try:
         sim.run()
     except (KeyboardInterrupt, ExternalShutdownException):
+    except Exception:  # Ctrl+C shut ROS down between the loop's check and a publish
+        if rclpy.ok():
+            raise
         pass
     except Exception:  # Ctrl+C shut ROS down between the loop's check and a publish
         if rclpy.ok():

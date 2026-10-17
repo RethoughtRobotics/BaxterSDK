@@ -11,6 +11,7 @@ import sys
 import mujoco
 import numpy as np
 
+from baxflow.baxter_ros import remove_table
 from baxflow.sim import make_env
 
 TOUCH = 0.002  # m: closer than this counts as contact (recorded poses are where physics already pushed things apart)
@@ -24,6 +25,8 @@ def main(path):
     if 'empty' in data and bool(data['empty']):  # the run had objects moved out of reach (--empty)
         for j in np.flatnonzero(m.jnt_type == mujoco.mjtJoint.mjJNT_FREE):
             d.qpos[m.jnt_qposadr[j]:m.jnt_qposadr[j] + 3] = [0.0, -3.0, 0.2]
+    if 'table' in data and not bool(data['table']):  # the run had no table (--no-table)
+        remove_table(m)
     adr = [m.jnt_qposadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f'robot0_{n}')] for n in data['names']]
     body = lambda geom: mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, m.geom_bodyid[geom]) or '?'
     found = {}  # pair -> [first t, last t, samples, deepest m]
