@@ -1,0 +1,26 @@
+---
+# Policy -> robot mapping for `baxter_teleop --input vr --vr-config vr_axes_policy.yaml
+# --vr-topic /policy/{arm}/target --vr-trigger-topic /policy/{arm}/trigger` (run_teleop.sh --policy).
+# The policy (RethoughtAI `inference run`) acts as a virtual VR controller: its target is the
+# desired TCP pose in the robot base frame, so the anchor is the base frame and the map is the
+# identity. Axis maps, deadband and smoothing shaped the human's hand into the goals recorded as
+# action labels, so they are already in what the policy predicts and are not applied again.
+# The servo (gain, scales, caps) is vr_axes_base.yaml's, so the arm tracks a goal exactly as
+# during the demonstrations: keep linear_scale/angular_scale equal to it.
+linear_frame: base
+base_yaw: 0
+linear_axes: [+x, +y, +z]
+angular_axes: [+x, +y, +z]
+linear_scale: [1.5, 1.5, 1.5]
+angular_scale: [2.0, 2.0, 5.8]
+linear_deadband: [0.0, 0.0, 0.0]
+angular_deadband: [0.0, 0.0, 0.0]
+smoothing: 0.0
+# Unchanged for this long = released (re-anchor). VR uses 0.05 s; the policy's goal runs ~5 cm
+# ahead of the arm, and re-anchoring mid-motion would drop that lead, so only the runtime's own
+# freeze (deadman released, > 0.2 s) should count, not a hiccup in the 100 Hz stream. Equal to the
+# stale timeout, so a longer gap holds the arm without re-anchoring.
+release_after: 0.2
+# As vr_axes_base.yaml, so the controller you hold for this arm keeps its B button (home);
+# the explicit target/trigger topics above win over it.
+swap_hands: true
