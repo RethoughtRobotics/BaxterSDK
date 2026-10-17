@@ -124,6 +124,13 @@ def main():
     parser.add_argument('--output', choices=['velocity', 'raw', 'raw_id'], default='velocity', help='as the teleop')
     parser.add_argument('--gain', type=float, default=5.0, help='servo gain, 1/s (VR: --vr-gain x linear_scale)')
     parser.add_argument('--no-feedforward', dest='feedforward', action='store_false', help='P-only servo, as VR')
+    parser.add_argument(
+        '--feedforward',
+        dest='feedforward',
+        action='store_true',
+        default=argparse.SUPPRESS,
+        help='path velocity feedforward (the default); after --no-feedforward, the last one wins',
+    )
     parser.add_argument('--protocol', choices=['full', 'circle'], default='full')
     parser.add_argument('--radius', type=float, default=0.15, help='circle protocol: radius, m')
     parser.add_argument('--circle-speed', type=float, default=0.15, help='circle protocol: TCP speed, m/s')
