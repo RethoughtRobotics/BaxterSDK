@@ -131,8 +131,16 @@ class Tuck(object):
             return abs(head.pan()) <= baxter_interface.settings.HEAD_PAN_ANGLE_TOLERANCE
 
         self._node.get_logger().info('Moving head to neutral position')
+        # The head is cosmetic here: give up on it rather than hang if it cannot pan (e.g. a
+        # latched head_pan servo fault, which leaves it wherever it stopped).
+        deadline = time.time() + 5.0
         while not at_goal() and rclpy.ok():
             loop_start = time.time()
+            if loop_start > deadline:
+                self._node.get_logger().warn(
+                    f'Head did not reach neutral (pan {head.pan():.2f} rad); continuing without it'
+                )
+                break
             rclpy.spin_once(self._node, timeout_sec=0.005)
 
             if start_disabled:
