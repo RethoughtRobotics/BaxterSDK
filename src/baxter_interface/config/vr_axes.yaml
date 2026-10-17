@@ -25,3 +25,7 @@ angular_deadband: [0.06, 0.06, 0.06]  # rad
 # Exponential smoothing of the target pose while clutched, per message (~140 Hz):
 # filtered = smoothing * filtered + (1 - smoothing) * new. 0 disables it.
 smoothing: 0.5
+
+# Drive this arm with the other hand's controller (/vive/left/* <-> /vive/right/*), e.g. if
+# libsurvive_ros2's left_serial/right_serial are on the wrong hands. Explicit --vr-*-topic flags win.
+swap_hands: false

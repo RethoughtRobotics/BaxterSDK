@@ -11,6 +11,7 @@ import time
 
 import numpy as np
 import rclpy
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from rclpy.executors import TimeoutException
@@ -720,6 +721,10 @@ def main():
     if args.input == 'vr':
         with open(args.vr_config) as f:
             config['vr_config'] = f.read()
+    # The controller (libsurvive_ros2 /vive/{hand}/...) driving this arm; swap_hands crosses them.
+    hand = args.arm
+    if args.input == 'vr' and yaml.safe_load(config['vr_config']).get('swap_hands', False):
+        hand = {'left': 'right', 'right': 'left'}[args.arm]
     src = os.path.dirname(os.path.realpath(__file__))
     config['git'] = subprocess.run(
         ['git', '-C', src, 'describe', '--always', '--dirty'], capture_output=True, text=True
@@ -728,11 +733,11 @@ def main():
     try:
         if args.input == 'vr':
             teleop.spin_vr(
-                trigger_topic=args.vr_trigger_topic or f'/vive/{args.arm}/trigger',
-                b_button_topic=args.vr_b_button_topic or f'/vive/{args.arm}/b_button',
+                trigger_topic=args.vr_trigger_topic or f'/vive/{hand}/trigger',
+                b_button_topic=args.vr_b_button_topic or f'/vive/{hand}/b_button',
                 target=VRTarget(
                     teleop.node,
-                    args.vr_topic or f'/vive/{args.arm}/target',
+                    args.vr_topic or f'/vive/{hand}/target',
                     args.vr_config,
                     args.vr_gain,
                     teleop.linear_speed,
