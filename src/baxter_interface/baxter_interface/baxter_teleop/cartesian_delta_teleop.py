@@ -37,6 +37,7 @@ from baxter_external_devices.getch import getch
 from .delta_guard import CartesianDeltaGuard
 from .diff_ik import DiffIKSolver
 from .keymap import KeyTarget, twist_from_key
+from .tcp import pose_msg, tcp_pose
 from .urdf_tools import extract_arm_chain_urdf, resolve_baxter_urdf
 from .vr_target import VRTarget
 
@@ -127,6 +128,7 @@ class CartesianDeltaTeleop:
         self.tcp_twist_pub = self.node.create_publisher(TwistStamped, ns + 'tcp_twist', 10)
         self.ik_pub = self.node.create_publisher(JointState, ns + 'ik', 10)
         self.goal_pub = self.node.create_publisher(PoseStamped, ns + 'goal', 10)
+        self.tcp_pub = self.node.create_publisher(PoseStamped, ns + 'tcp', 10)  # measured TCP (tcp.py)
         self.key_pub = self.node.create_publisher(String, ns + 'key', 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.config_pub = self.node.create_publisher(String, ns + 'config', latched)
@@ -267,12 +269,7 @@ class CartesianDeltaTeleop:
 
     def publish_goal(self, goal):
         """VR servo goal (position, scipy Rotation) in the base frame."""
-        msg = PoseStamped()
-        msg.header.stamp, msg.header.frame_id = self.node.get_clock().now().to_msg(), 'base'
-        p, o = msg.pose.position, msg.pose.orientation
-        p.x, p.y, p.z = (float(x) for x in goal[0])
-        o.x, o.y, o.z, o.w = (float(x) for x in goal[1].as_quat())
-        self.goal_pub.publish(msg)
+        self.goal_pub.publish(pose_msg(goal[0], goal[1], self.node.get_clock().now().to_msg()))
 
     def publish_config(self, config):
         self.config_pub.publish(String(data=json.dumps(config, indent=1, default=str)))
@@ -497,8 +494,9 @@ class CartesianDeltaTeleop:
                     if not self._handle_keyboard_key(key) and on_key is not None:
                         on_key(key)
 
-                T = np.asarray(self.ee_transform(self._current_q()), dtype=np.float32)
-                twist = target.twist(T[:3, 3] + T[:3, :3] @ self.tcp_offset, T[:3, :3])
+                tcp_position, tcp_rotation = tcp_pose(self.ee_transform(self._current_q()), self.tcp_offset)
+                self.tcp_pub.publish(pose_msg(tcp_position, tcp_rotation, self.node.get_clock().now().to_msg()))
+                twist = target.twist(tcp_position, tcp_rotation)
                 if target.goal is not None:
                     self.publish_goal(target.goal)
                 if twist is not None:
