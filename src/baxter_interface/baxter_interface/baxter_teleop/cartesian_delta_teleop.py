@@ -92,6 +92,7 @@ class CartesianDeltaTeleop:
         ik='dls',
         sns_limits=None,
         posture_gain=0.0,
+        joint_accel_scale=1.0,
         frame='base',
         tcp_offset=None,
         linear_speed=None,
@@ -213,7 +214,11 @@ class CartesianDeltaTeleop:
                 posture=baxter_interface.settings.UNTUCK_POSITIONS[arm],
             )
         self.joint_velocity_limits = np.asarray(self.JOINT_VELOCITY_LIMITS, dtype=np.float32)
-        self.joint_acceleration_limits = np.asarray(self.JOINT_ACCELERATION_LIMITS, dtype=np.float32)
+        # joint_accel_scale scales every use of these limits: the IK's braking toward joint limits, the
+        # velocity-mode ramp, and the raw-output setpoint generator (whose jerk limit follows, JERK_FACTOR).
+        self.joint_acceleration_limits = float(joint_accel_scale) * np.asarray(
+            self.JOINT_ACCELERATION_LIMITS, dtype=np.float32
+        )
         self.joint_position_limits = tuple(np.asarray(limit, dtype=np.float32) for limit in self.JOINT_POSITION_LIMITS)
         self.qdot_cmd = np.zeros(7, dtype=np.float32)  # last velocity command, the ramp's state
         self.qdot_cmd_time = 0.0
@@ -784,6 +789,13 @@ def main():
         help="velocity IK: 'dls' damped least squares (default) or 'sns' Rethink's SNS-IK (velocity mode)",
     )
     parser.add_argument(
+        '--joint-accel-scale',
+        type=float,
+        default=1.0,
+        help='scale the joint acceleration limits (4 rad/s^2 shoulder/elbow, 6 wrist); raw outputs overshoot '
+        'reversals when the servo asks for more than the limit allows (VR bag 20261016_211106: 39-44%% of cycles)',
+    )
+    parser.add_argument(
         '--posture-gain',
         type=float,
         default=0.0,
@@ -850,6 +862,7 @@ def main():
         ik=args.ik,
         sns_limits=args.sns_limits,
         posture_gain=args.posture_gain,
+        joint_accel_scale=args.joint_accel_scale,
         frame=args.frame,
         tcp_offset=args.tcp_offset,
         linear_speed=args.linear_speed,
