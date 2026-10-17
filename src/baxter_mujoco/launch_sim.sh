@@ -16,8 +16,7 @@ set +u  # ROS setup scripts read unset variables
 source /opt/ros/kilted/setup.bash
 source "${BAXTER_WS}/install/setup.bash"
 set -u
-# Same middleware as bringbackbaxter's run_teleop.sh, on the default domain the teleop uses.
+# Same middleware as bringbackbaxter's run_teleop.sh; ROS_DOMAIN_ID kept as exported (unset = 0).
 export RMW_IMPLEMENTATION=rmw_zenoh_cpp ZENOH_ROUTER_CHECK_ATTEMPTS=-1
-unset ROS_DOMAIN_ID
 pgrep -f rmw_zenohd >/dev/null || { ros2 run rmw_zenoh_cpp rmw_zenohd >/dev/null 2>&1 & trap 'kill $!' EXIT; }
 uv run --group ros python -m baxflow.baxter_ros "$@"

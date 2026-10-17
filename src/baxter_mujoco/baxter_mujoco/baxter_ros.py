@@ -233,7 +233,8 @@ class SimBaxter:
             if frame % 10 == 0:
                 self.publish_scene()
             if self.render and frame % 3 == 0:
-                self.env.render()
+                # robosuite's render() is a no-op for its mjviewer; update() opens the window, then syncs it
+                self.env.viewer.update()
             next_tick += DT_PUBLISH
             time.sleep(max(0.0, next_tick - time.monotonic()))
 
@@ -267,6 +268,9 @@ def main():
         sim.run()
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    except Exception:  # Ctrl+C shut ROS down between the loop's check and a publish
+        if rclpy.ok():
+            raise
 
 
 if __name__ == '__main__':
