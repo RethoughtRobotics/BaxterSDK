@@ -16,6 +16,7 @@ setup(
                 'config/vr_axes.yaml',
                 'config/vr_axes_base.yaml',
                 'config/sns_joint_limits.yaml',
+                'config/third_eye.yaml',
             ],
         ),
     ],
