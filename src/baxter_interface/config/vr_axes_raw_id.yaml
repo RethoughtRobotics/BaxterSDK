@@ -36,6 +36,10 @@ angular_axes: [+x, +y, +z]  # was [-x, -y, +z]; base_yaw does not apply to rotat
 # is --vr-gain x scale. Baxter's TCP lags its commands by ~0.12 s (translation) and ~0.09 s
 # (rotation), so keep the loop gain under ~6/s linear and ~9/s angular or the arm rings
 # (circle_clockwise_20261001_184937: gain 15/s on rotation rang the wrist at 2-2.3 Hz).
+# Precision mode: the gripper moves motion_scale x the hand's translation (rotation 1:1), shrinking hand
+# sway (~4-5 mm rms at 0.5-2 Hz while holding still, pick-and-place bag 20261016_213531) by the same
+# factor. 1.0 = 1:1. Larger moves need re-clutching.
+motion_scale: 0.5
 linear_scale: [3.0, 3.0, 3.0]  # 6/s at --vr-gain 2 (vr_axes_base.yaml: 1.5)
 angular_scale: [1.0, 1.0, 2.9]  # 2, 2, 5.8/s at --vr-gain 2 (11.6/s yaw oscillated, 20261016_210332)
 
