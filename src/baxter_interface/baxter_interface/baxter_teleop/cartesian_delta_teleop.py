@@ -93,6 +93,7 @@ class CartesianDeltaTeleop:
         sns_limits=None,
         posture_gain=0.0,
         joint_accel_scale=1.0,
+        servo_feedback='measured',
         frame='base',
         tcp_offset=None,
         linear_speed=None,
@@ -236,6 +237,14 @@ class CartesianDeltaTeleop:
         if output not in ('velocity', 'raw', 'raw_id'):
             raise ValueError("output must be 'velocity', 'raw' or 'raw_id'")
         self.output = output
+        # What the pose servo and IK close on. 'measured': the arm's joint states. 'setpoint': the raw
+        # output's own setpoint (raw/raw_id only), so the Cartesian loop is purely kinematic and cannot
+        # hunt on joint friction; Baxter's joint loop (with inverse dynamics) tracks the setpoint.
+        if servo_feedback not in ('measured', 'setpoint'):
+            raise ValueError("servo_feedback must be 'measured' or 'setpoint'")
+        if servo_feedback == 'setpoint' and output == 'velocity':
+            raise ValueError("servo_feedback='setpoint' needs a raw output (--output raw or raw_id)")
+        self.servo_feedback = servo_feedback
         self.raw_output = None
         if output != 'velocity':
             # Imported here: baxter_interface imports this module eagerly, and tools such as
@@ -394,14 +403,25 @@ class CartesianDeltaTeleop:
         self.q_cmd = q_next
         self.limb.set_joint_positions({name: float(q_next[i]) for i, name in enumerate(self.joint_names)})
 
+    def _servo_q(self, q_meas):
+        """Configuration the servo and IK close on: the raw setpoint with servo_feedback='setpoint'
+        while it streams, else the measured arm (also for the first cycle of a stroke, which the
+        setpoint then starts from)."""
+        if self.servo_feedback == 'setpoint' and self.raw_output is not None:
+            q_set = self.raw_output.position
+            if q_set is not None:
+                return q_set.astype(np.float32)
+        return np.asarray(q_meas, dtype=np.float32)
+
     def apply_twist_velocity(self, v_ee):
         """Command joint velocities realizing the base-frame TCP twist v_ee (velocity mode)."""
         q_meas = np.asarray(self._current_q(), dtype=np.float32)
-        J = self.ee_jacobian(jnp.asarray(q_meas))
+        q = self._servo_q(q_meas)
+        J = self.ee_jacobian(jnp.asarray(q))
         qdot_ik = qdot = self.ik.joint_velocity(
-            q=q_meas,
+            q=q,
             jacobian=J,
-            v_ee=self._hand_twist(q_meas, v_ee, 'base'),
+            v_ee=self._hand_twist(q, v_ee, 'base'),
             joint_velocity_limits=self.joint_velocity_limits,
             joint_position_limits=self.joint_position_limits,
             joint_acceleration_limits=self.joint_acceleration_limits,
@@ -577,8 +597,12 @@ class CartesianDeltaTeleop:
                     if not self._handle_keyboard_key(key) and on_key is not None:
                         on_key(key)
 
-                tcp_position, tcp_rotation = tcp_pose(self.ee_transform(self._current_q()), self.tcp_offset)
+                q_meas = self._current_q()
+                tcp_position, tcp_rotation = tcp_pose(self.ee_transform(q_meas), self.tcp_offset)
+                # /teleop/{arm}/tcp stays the measured TCP; the servo closes on _servo_q().
                 self.tcp_pub.publish(pose_msg(tcp_position, tcp_rotation, self.node.get_clock().now().to_msg()))
+                if self.servo_feedback == 'setpoint':
+                    tcp_position, tcp_rotation = tcp_pose(self.ee_transform(self._servo_q(q_meas)), self.tcp_offset)
                 twist = target.twist(tcp_position, tcp_rotation)
                 if target.goal is not None:
                     self.publish_goal(target.goal)
@@ -789,6 +813,13 @@ def main():
         help="velocity IK: 'dls' damped least squares (default) or 'sns' Rethink's SNS-IK (velocity mode)",
     )
     parser.add_argument(
+        '--servo-feedback',
+        choices=['measured', 'setpoint'],
+        default='measured',
+        help='what the pose servo closes on: the measured arm (default) or, with a raw output, its own '
+        'setpoint, so the Cartesian loop cannot hunt on joint friction (pick-and-place bag 20261016_212004)',
+    )
+    parser.add_argument(
         '--joint-accel-scale',
         type=float,
         default=1.0,
@@ -863,6 +894,7 @@ def main():
         sns_limits=args.sns_limits,
         posture_gain=args.posture_gain,
         joint_accel_scale=args.joint_accel_scale,
+        servo_feedback=args.servo_feedback,
         frame=args.frame,
         tcp_offset=args.tcp_offset,
         linear_speed=args.linear_speed,

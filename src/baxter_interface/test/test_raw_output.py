@@ -63,6 +63,16 @@ def test_follows_the_commanded_velocity_while_commands_keep_coming():
     np.testing.assert_allclose(sent[-1].velocity, target, atol=1e-9)
 
 
+def test_position_is_the_streamed_setpoint_while_active_and_none_otherwise():
+    output, sent, clock = make()
+    assert output.position is None
+    output.command(np.full(7, 0.5), Q0)
+    ticks(output, clock, 10)
+    np.testing.assert_allclose(output.position, sent[-1].position)
+    output.stop()
+    assert output.position is None
+
+
 def test_stale_commands_decelerate_to_a_hold():
     output, sent, clock = make(stale_after=0.1)
     output.command(np.full(7, 0.5), Q0)

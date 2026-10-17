@@ -61,6 +61,12 @@ class RawJointOutput:
         with self._lock:
             return self.generator.state.velocity.copy() if self._active else np.zeros(self.generator.dof)
 
+    @property
+    def position(self) -> np.ndarray | None:
+        """Setpoint position now, or None while inactive (e.g. for the teleop to servo on)."""
+        with self._lock:
+            return self.generator.state.position.copy() if self._active else None
+
     def command(self, velocity, measured_position) -> None:
         """New target joint velocity from the control loop, with the arm's measured position.
 
