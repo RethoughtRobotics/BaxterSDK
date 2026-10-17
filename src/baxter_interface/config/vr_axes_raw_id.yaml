@@ -19,7 +19,7 @@ linear_frame: base
 # by clutching and pushing forward, left and up, then fix the signs. Press A holding the
 # controller the same way each time, since the anchor frame is the reference.
 # linear_axes: [-z, +x, -y]
-linear_axes: [+x, +y, +z]  # was [-x, -y, +z], now base_yaw: 180
+linear_axes: [+x, +y, +z]
 # Identity with the gravity-levelled anchor (libsurvive_ros2): the anchor is x = the
 # controller's pointing direction at the A press (flattened), y = its left, z = up, so your
 # forward/left/up at the A press is Baxter's forward/left/up: your right is Baxter's right
@@ -41,7 +41,7 @@ angular_axes: [+x, +y, +z]  # was [-x, -y, +z]; base_yaw does not apply to rotat
 # factor. 1.0 = 1:1. Larger moves need re-clutching.
 motion_scale: 0.5
 linear_scale: [3.0, 3.0, 3.0]  # 6/s at --vr-gain 2 (vr_axes_base.yaml: 1.5)
-angular_scale: [1.0, 1.0, 2.9]  # 2, 2, 5.8/s at --vr-gain 2 (11.6/s yaw oscillated, 20261016_210332)
+angular_scale: [1.0, 1.0, 3.0]  # 2, 2, 5.8/s at --vr-gain 2 (11.6/s yaw oscillated, 20261016_210332)
 
 # Per TCP axis deadband [x, y, z], subtracted from the stroke delta (since the clutch
 # engaged) so off-axis drift is ignored without a jump at the edge: d -> sign(d)*max(|d|-band, 0).
@@ -54,4 +54,4 @@ smoothing: 0.5
 
 # Drive this arm with the other hand's controller (/vive/left/* <-> /vive/right/*), e.g. if
 # libsurvive_ros2's left_serial/right_serial are on the wrong hands. Explicit --vr-*-topic flags win.
-swap_hands: true
+swap_hands: false
