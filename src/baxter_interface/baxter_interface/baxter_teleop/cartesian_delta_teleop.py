@@ -69,6 +69,9 @@ class CartesianDeltaTeleop:
     )
     MODE_SPEEDS = {'velocity': (0.20, 0.8), 'position': (1.20, 12.0)}
     GRIPPER_VELOCITY = 80.0  # % of the electric gripper's max speed (SDK default 50)
+    # After a position-mode move Baxter ignores velocity commands until ~1.4-1.9 s after it ends
+    # (rollouts Clean-SmolVLA*, ACT_Rollout; 20 ms otherwise): wait that out at home.
+    HOME_SETTLE = 2.0  # s
     # VR servo speed caps (m/s, rad/s): above the speeds reached in circle_clockwise_20261001_184937
     # (1.46 m/s, 4.1 rad/s) so they rarely bind; the joint velocity limits still do.
     VR_SPEEDS = (2.0, 5.0)
@@ -167,6 +170,8 @@ class CartesianDeltaTeleop:
         self.ee_transform = jax.jit(self.robot.ee_transform)
         # Compile now so the first keypress does not stall the control loop.
         self.home = baxter_interface.settings.UNTUCK_POSITIONS[arm]
+        # Going home opens the gripper, and the VR trigger drives it (--no-gripper: neither touches it)
+        self.use_gripper = True
         self.ee_jacobian(jnp.asarray(self.home, dtype=jnp.float32)).block_until_ready()
         self.ee_transform(jnp.asarray(self.home, dtype=jnp.float32)).block_until_ready()
 
@@ -381,16 +386,36 @@ class CartesianDeltaTeleop:
         self.limb.set_joint_velocities({name: float(qdot[i]) for i, name in enumerate(self.joint_names)})
 
     def _go_home(self):
-        """Move to the untuck pose (as tuck_arms -u) with a slow, blocking position move."""
+        """Open the gripper (if use_gripper) and move to the untuck pose (as tuck_arms -u) with a slow,
+        blocking move."""
         self.q_cmd = None
         self.limb.exit_control_mode()
+        if (
+            self.use_gripper
+            and self.gripper is not None
+            and self.gripper.type() == 'electric'
+            and self.gripper.calibrated()
+        ):
+            self.gripper.command_position(100.0, block=False)  # 100 = open
+            self.gripper_target = 100.0
+            if getattr(self, '_grip_filtered', None) is not None:  # VR: the trigger filter restarts open
+                self._grip_filtered, self._grip_sent = 100.0, None
         self.node.get_logger().info('Moving to the untuck pose...')
         self.limb.set_joint_position_speed(0.3)
         try:
-            self.limb.move_to_joint_positions(dict(zip(self.joint_names, self.home)), timeout=15.0)
+            reached = self.limb.move_to_joint_positions(dict(zip(self.joint_names, self.home)), timeout=15.0)
         finally:
             self.limb.set_joint_position_speed(1.0)
-        self.node.get_logger().info('At the untuck pose.')
+        zero = {name: 0.0 for name in self.joint_names}
+        end = time.monotonic() + self.HOME_SETTLE
+        while time.monotonic() < end:  # hold in velocity mode, so the next stroke moves at once
+            self.limb.set_joint_velocities(zero)
+            time.sleep(self.dt)
+        self.qdot_cmd, self.qdot_cmd_time = np.zeros(7, dtype=np.float32), time.monotonic()
+        if reached:
+            self.node.get_logger().info('At the untuck pose.')
+        else:
+            self.node.get_logger().warning('Did not reach the untuck pose in 15 s: press home again.')
 
     def _apply_gripper_delta(self, delta_percent):
         if self.gripper is None:
@@ -537,39 +562,94 @@ class CartesianDeltaTeleop:
 
         self.spin_target(target, on_key)
 
-    def spin_vr(self, target, trigger_topic, b_button_topic):
+    def spin_vr(self, target, trigger_topic, b_button_topic, home_button_topic=None):
         """Follow a VRTarget; the controller's analog trigger sets the gripper opening (released
         open, pulled closed) and its B button sends the arm home (as H); the keyboard keeps
-        gripper/home/ESC."""
+        gripper/home/ESC. Guided by hand (cuff squeezed), the cuff's buttons drive the gripper."""
         print(f'\n{self.arm.capitalize()} arm VR teleop ({type(self.ik).__name__}, velocity mode)')
         print(
             'Touch the trackpad to move, release to stop. A re-anchors. Trigger closes the gripper. '
-            'B or H home, ESC quit'
+            'B, H or the right navigator OK home, ESC quit. By hand: squeeze the cuff to move, its '
+            'dash/circle buttons close/open'
         )
         self._trigger = None  # (value 0..1, receive time)
         self.node.create_subscription(
             Float32, trigger_topic, lambda msg: setattr(self, '_trigger', (msg.data, time.monotonic())), 10
         )
         if self.gripper is not None and self.gripper.type() == 'electric' and not self.gripper.calibrated():
-            self.node.get_logger().info('Calibrating the gripper for VR control...')
+            self.node.get_logger().info('Calibrating the gripper...')
             self._calibrate_gripper()
         self._b_pressed = False
         self.node.create_subscription(Empty, b_button_topic, lambda msg: setattr(self, '_b_pressed', True), 10)
+        from baxter_core_msgs.msg import DigitalIOState
+
+        if home_button_topic:  # a robot button as B, for every arm's teleop: one press homes them all
+            self._home_button = (0, -np.inf)  # last state, when it last went 0
+
+            def on_home_button(msg):
+                # Navigator buttons bounce on release: a press counts after 0.2 s released
+                prev, released = self._home_button
+                if prev and not msg.state:
+                    released = time.monotonic()
+                elif not prev and msg.state and time.monotonic() - released >= 0.2:
+                    self._b_pressed = True
+                self._home_button = (msg.state, released)
+
+            self.node.create_subscription(DigitalIOState, home_button_topic, on_home_button, 10)
+        # The cuff (zero-g) moves the arm by hand; on release Baxter's position hold would pull it back to
+        # where it was held before. Not streaming (no stroke under way): hold where the hand left it.
+        self._cuff = self._cuff_seen = False
+        self.node.create_subscription(
+            DigitalIOState,
+            f'/robot/digital_io/{self.arm}_lower_cuff/state',
+            lambda msg: setattr(self, '_cuff', bool(msg.state)),
+            10,
+        )
         self._grip_filtered = self._grip_sent = self._grip_time = None
+        # The cuff's buttons drive the gripper, as baxter_examples gripper_cuff_control (kinesthetic
+        # demos): dash (upper) closes, circle (lower) opens, on press. A command holds until the next
+        # button press or a trigger move.
+        self._cuff_button = None  # 'close' or 'open', pressed since the last cycle
+        self._cuff_buttons = {}  # topic -> last state, for the press edge
+
+        def on_button(topic, action, state):
+            if state and not self._cuff_buttons.get(topic):
+                self._cuff_button = action
+            self._cuff_buttons[topic] = state
+
+        for button, action in (('upper', 'close'), ('lower', 'open')):
+            topic = f'/robot/digital_io/{self.arm}_{button}_button/state'
+            self.node.create_subscription(
+                DigitalIOState, topic, lambda msg, t=topic, a=action: on_button(t, a, bool(msg.state)), 10
+            )
 
         def on_cycle():
             self._follow_trigger()
-            if self._b_pressed:  # the controller's B button: home, as the H key
+            if self._cuff_button is not None:
+                action, self._cuff_button = self._cuff_button, None
+                self._apply_cuff_button(action)
+            if self._cuff_seen and not self._cuff and not target._moving:  # cuff released, arm held
+                target.reset()
+                self.limb.set_joint_positions(self.limb.joint_angles())
+            self._cuff_seen = self._cuff
+            if self._b_pressed:  # the controller's B button or the home button: home, as the H key
                 self._b_pressed = False
                 return 'h'
             return None
 
         self.spin_target(target, on_cycle=on_cycle)
 
+    def _apply_cuff_button(self, action):
+        """Open or close the gripper fully from a cuff button, if it is calibrated and ready."""
+        if self.gripper is None or not (self.gripper.calibrated() and self.gripper.ready()):
+            return
+        (self.gripper.close if action == 'close' else self.gripper.open)()
+        self.gripper_target = 0.0 if action == 'close' else 100.0
+
     def _follow_trigger(self, smoothing=0.05, min_step=0.5, min_period=0.02, stale=0.5):
         """Gripper opening from the trigger, continuously: first-order filtered (smoothing, s) and
         sent when it changed by min_step (%) at most every min_period (s); holds when stale."""
-        if self._trigger is None or self.gripper is None or self.gripper.type() != 'electric':
+        if not self.use_gripper or self._trigger is None or self.gripper is None or self.gripper.type() != 'electric':
             return
         if not self.gripper.calibrated():
             return
@@ -631,6 +711,18 @@ def main():
         '--vr-b-button-topic',
         default=None,
         help='VR B button topic, sends the arm home (default: /vive/{arm}/b_button)',
+    )
+    parser.add_argument(
+        '--no-gripper',
+        action='store_true',
+        help='leave the gripper to the cuff buttons: the VR trigger does not drive it and going home (B, '
+        'H, the home button) does not open it',
+    )
+    parser.add_argument(
+        '--home-button-topic',
+        default='/robot/digital_io/right_button_ok/state',
+        help="robot button that sends the arm home, as B; every arm's teleop listens, so one press homes "
+        "both (default: the right navigator's OK; '' for none)",
     )
     parser.add_argument('--mode', choices=['velocity', 'position'], default='velocity', help='joint control mode')
     parser.add_argument(
@@ -717,6 +809,7 @@ def main():
         max_delta_jump=args.max_delta_jump,
         gripper_step=args.gripper_step,
     )
+    teleop.use_gripper = not args.no_gripper
     config = {'args': vars(args), 'tcp_offset': teleop.tcp_offset.tolist(), 'ik': type(teleop.ik).__name__}
     if args.input == 'vr':
         with open(args.vr_config) as f:
@@ -735,6 +828,7 @@ def main():
             teleop.spin_vr(
                 trigger_topic=args.vr_trigger_topic or f'/vive/{hand}/trigger',
                 b_button_topic=args.vr_b_button_topic or f'/vive/{hand}/b_button',
+                home_button_topic=args.home_button_topic,
                 target=VRTarget(
                     teleop.node,
                     args.vr_topic or f'/vive/{hand}/target',
