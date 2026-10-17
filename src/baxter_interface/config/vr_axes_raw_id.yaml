@@ -30,7 +30,7 @@ linear_axes: [+x, +y, +z]
 # about the base axis it maps to. Must be a proper rotation (det +1): with a mirrored axis the
 # TCP turns the opposite way about it. Confirm by twisting about each axis.
 # angular_axes: [+z, -x, -y]
-angular_axes: [x, +y, +z]  # was [-x, -y, +z]; base_yaw does not apply to rotation
+angular_axes: [+x, +y, +z]  # was [-x, -y, +z]; base_yaw does not apply to rotation
 
 # Per TCP axis velocity scale [x, y, z], applied before the speed caps. The servo loop gain
 # is --vr-gain x scale. Baxter's TCP lags its commands by ~0.12 s (translation) and ~0.09 s

@@ -12,6 +12,8 @@ from .pose_servo import servo_twist
 
 def signed_permutation(axes, config):
     """3x3 matrix whose row i picks the signed controller axis named by axes[i], e.g. '-y'."""
+    if len(axes) != 3 or not all(isinstance(a, str) and len(a) == 2 and a[0] in '+-' and a[1] in 'xyz' for a in axes):
+        raise ValueError(f"{config}: axes must be three of '+x', '-y', ... (sign and axis), got {axes}")
     matrix = np.zeros((3, 3))
     for row, axis in enumerate(axes):
         matrix[row, 'xyz'.index(axis[1])] = -1.0 if axis[0] == '-' else 1.0

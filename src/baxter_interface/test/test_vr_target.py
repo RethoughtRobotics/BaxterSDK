@@ -100,3 +100,9 @@ def test_swap_hands_argument_overrides_the_config(tmp_path, monkeypatch):
     target = vr_target.VRTarget(node, '', str(path), 1.0, 2.0, 5.0, swap_hands=False)
     assert not target.swap_hands
     np.testing.assert_allclose(target.linear_axes, np.diag([-1.0, -1.0, 1.0]))
+
+
+@pytest.mark.parametrize('axes', [['x', '+y', '+z'], ['+x', '+y'], ['+x', '+y', '+w'], ['+x', '+x', '+z']])
+def test_malformed_axes_are_rejected_with_a_clear_message(tmp_path, monkeypatch, axes):
+    with pytest.raises(ValueError, match='axes'):
+        make(tmp_path, monkeypatch, angular_axes=axes)
