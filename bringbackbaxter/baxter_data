@@ -1,0 +1,129 @@
+#!/bin/bash
+# Record everything on ROS that a learned policy could ever use, for exploring the data: joints
+# (measured, reference, commanded), SEA torques and gravity model, endpoint pose/twist/wrench
+# (measured and commanded), hand IMUs, hand IR range, cuff/buttons/navigators/all IO, grippers,
+# collision states, head and sonar, every camera, TF and the robot description, diagnostics, plus
+# teleop, VR and policy topics if they run. Topics that appear later (a camera, a teleop) are picked up.
+# Starts the third-eye RealSense with colour, depth aligned to colour and its IMU, unless it already runs.
+#
+# Usage: ./baxter_data [label] [--cuff left|right|both] [--raw] [--no-camera]
+#   --cuff       run the SDK's gripper cuff control: the cuff buttons open/close the gripper
+#   --raw        keep raw colour images (~30 MB/s each) instead of JPEG (~1 MB/s each)
+#   --no-camera  don't start the RealSense
+# Squeeze the cuff to move the arm in zero-g. Ctrl+C stops -> data/<time>_<sim|real>_<label>/
+set -e
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LABEL=explore CUFF="" RAW="" NO_CAMERA=""
+while (( $# )); do
+    case "$1" in
+        --cuff) CUFF="${2:?--cuff needs left, right or both}"; shift ;;
+        --raw) RAW=1 ;;
+        --no-camera) NO_CAMERA=1 ;;
+        -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
+        -*) echo "Unknown option $1" >&2; exit 2 ;;
+        *) LABEL="$1" ;;
+    esac
+    shift
+done
+set +u
+source /opt/ros/kilted/setup.bash
+source "${SCRIPT_DIR}/ros2_ws/install/setup.bash"
+export RMW_IMPLEMENTATION=rmw_zenoh_cpp ZENOH_ROUTER_CHECK_ATTEMPTS=-1  # as run_teleop.sh
+# ROS_DOMAIN_ID: kept as exported (unset = 0, the real robot)
+
+TOPICS="$(ros2 topic list 2>/dev/null)"
+grep -qx /robot/joint_states <<< "$TOPICS" || { echo "No /robot/joint_states on ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}: is the robot (bridge) up?" >&2; exit 1; }
+ROBOT=real
+ros2 node list 2>/dev/null | grep -qx /baxter_sim && ROBOT=sim
+OUT="${SCRIPT_DIR}/data/$(date +%Y%m%d_%H%M%S)_${ROBOT}_${LABEL}"
+mkdir -p "$(dirname "$OUT")"
+
+# Third-eye RealSense (as run_teleop.sh --camera), here with depth aligned to colour and the IMU on.
+CAMERA_PID="" CAMERA="already running"
+if [[ -n "$NO_CAMERA" ]]; then
+    CAMERA=off
+elif ! pgrep -f "[r]ealsense2_camera_node.*third_eye" >/dev/null; then
+    if lsusb 2>/dev/null | grep -qi realsense; then
+        sed -e 's/^enable_depth: .*/enable_depth: true/' -e 's/^enable_gyro: .*/enable_gyro: true/' \
+            -e 's/^enable_accel: .*/enable_accel: true/' \
+            "${SCRIPT_DIR}/ros2_ws/install/baxter_interface/share/baxter_interface/config/third_eye.yaml" > "${OUT}.camera.yaml"
+        printf 'depth_module.depth_profile: 640,480,30\nalign_depth.enable: true\nunite_imu_method: 2\n' >> "${OUT}.camera.yaml"
+        setsid ros2 launch realsense2_camera rs_launch.py camera_namespace:=cameras camera_name:=third_eye \
+            config_file:="${OUT}.camera.yaml" > "${OUT}.camera.log" 2>&1 < /dev/null & CAMERA_PID=$!
+        echo -n "Starting the third-eye RealSense (colour, aligned depth, IMU)"
+        for _ in $(seq 30); do
+            ros2 topic list 2>/dev/null | grep -qx /cameras/third_eye/aligned_depth_to_color/image_raw && break
+            echo -n .; sleep 1
+        done
+        echo
+        CAMERA="started here: colour, depth aligned to colour, IMU"
+    else
+        CAMERA="no RealSense on USB"; echo "Note: no RealSense on USB; recording without the third eye."
+    fi
+fi
+[[ "$CAMERA" == "already running" ]] && echo "Third-eye RealSense already running: recording it as configured (restart it here for depth/IMU)."
+TOPICS="$(ros2 topic list 2>/dev/null)"  # again, with the camera's topics
+
+# Anything commanding an arm holds it against the cuff: say so (teleop, policy runtime, MoveIt).
+# The ROS 1 bridge publishes on every bridged topic itself, so it doesn't count.
+for arm in left right; do
+    cmd=$(ros2 topic info -v "/robot/limb/${arm}/joint_command" 2>/dev/null \
+        | awk '/^Node name:/ {node=$3} /Endpoint type: PUBLISHER/ && node != "ros_bridge" {print node}')
+    [[ -n "$cmd" ]] && echo "Note: $(echo $cmd) command(s) the ${arm} arm; stop it for zero-g (teleop, ./run_inference)."
+done
+# Topics whose message type isn't installed here would stop the recorder (e.g. baxter_core_msgs/HomingCommand)
+MISSING=($(ros2 topic list -t 2>/dev/null | python3 -c "
+import sys
+from rosidl_runtime_py.utilities import get_message
+seen = set()
+for line in sys.stdin:
+    t = line.strip().rsplit(' [', 1)[-1].rstrip(']')
+    try: get_message(t)
+    except Exception: seen.add(t)
+print(' '.join(sorted(seen)))"))
+
+# the head screen image, image transport duplicates, unaligned depth (aligned is recorded)
+EXCLUDE='^/robot/xdisplay$|/(theora|compressedDepth)$|^/cameras/third_eye/depth/image_rect_raw$'
+PIDS=()
+if [[ -z "$RAW" ]]; then  # colour cameras as JPEG; depth stays raw
+    CAMERAS=($(grep -E '^/cameras/.*/(image|image_raw)$' <<< "$TOPICS" | grep -v -i depth || true))
+    if (( ${#CAMERAS[@]} )); then
+        python3 "${SCRIPT_DIR}/compress_images.py" "${CAMERAS[@]}" & PIDS+=($!)
+        EXCLUDE+="|^($(IFS='|'; echo "${CAMERAS[*]}"))\$"
+    fi
+fi
+if [[ -n "$CUFF" ]]; then
+    ros2 run baxter_examples gripper_cuff_control -g "$CUFF" > "${OUT}.cuff.log" 2>&1 & PIDS+=($!)
+fi
+
+session_yaml() {
+    echo "label: ${LABEL}"
+    echo "robot: ${ROBOT}"
+    echo "recorded: $(date -Iseconds)  # start"
+    echo "ros_domain_id: ${ROS_DOMAIN_ID:-0}"
+    echo "cameras: $([[ -n "$RAW" ]] && echo raw || echo "jpeg on <topic>/compressed: ${CAMERAS[*]}")"
+    echo "cuff_gripper_control: ${CUFF:-$(pgrep -f '[g]ripper_cuff_control' >/dev/null && echo 'running (started elsewhere)' || echo off)}"
+    echo "third_eye: ${CAMERA}"
+    echo "topics_at_start: $(wc -l <<< "$TOPICS")"
+    echo "skipped_types: [${MISSING[*]}]  # not installed in this workspace"
+    echo "git:"
+    for repo in "$SCRIPT_DIR/ros2_ws/src" "$SCRIPT_DIR/../RethoughtAI"; do
+        [[ -d "$repo" ]] && echo "  $(basename "$repo"): $(git -C "$repo" describe --always --dirty 2>/dev/null)"
+    done
+    return 0
+}
+( until [[ -d "$OUT" ]]; do sleep 0.2; done; session_yaml > "${OUT}/session.yaml"
+  for f in cuff.log camera.yaml camera.log; do [[ -f "${OUT}.$f" ]] && mv "${OUT}.$f" "$OUT/$f"; done; true ) &
+
+echo "Recording every topic (except: ${EXCLUDE}) to ${OUT}. Ctrl+C to stop."
+trap ':' INT  # let Ctrl+C stop the recorder, then finish below
+ros2 bag record -s mcap --storage-preset-profile zstd_fast --all-topics --exclude-regex "$EXCLUDE" \
+    ${MISSING:+--exclude-topic-types "${MISSING[@]}"} -o "$OUT" || true
+trap - INT
+for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null || true; wait "$p" 2>/dev/null || true; done  # Ctrl+C may have stopped them
+if [[ -n "$CAMERA_PID" ]]; then  # stop the camera only if it was started here (its own session: Ctrl+C missed it)
+    kill -INT -- "-$CAMERA_PID" 2>/dev/null || true
+    for _ in $(seq 20); do kill -0 "$CAMERA_PID" 2>/dev/null || break; sleep 0.5; done
+fi
+ros2 bag info "$OUT" | sed -n '/Duration/p;/Messages/p'
+echo "Saved ${OUT}"

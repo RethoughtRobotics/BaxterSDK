@@ -1,0 +1,8 @@
+#!/bin/bash
+# Record EVERY topic (raw cameras, IO and cuff buttons, policy, teleop, TF...) into a named session,
+# for comparing autonomous rollouts, human takeovers and kinesthetic demos offline (recap).
+# Same recorder as record_teleop.sh: rollout detection, session.yaml, JPEG camera copies.
+# Usage: ./bag_all <session> <label>   ->  sessions/<session>/<time>_<sim|real>_<label>/
+# e.g.   ./bag_all KinestheticExperiments smolvla_autonomous
+[[ $# -eq 2 ]] || { sed -n '2,6p' "$0"; exit 1; }
+ALL_TOPICS=1 SESSION="$1" exec "$(dirname "$(readlink -f "$0")")/record_teleop.sh" "$2"
