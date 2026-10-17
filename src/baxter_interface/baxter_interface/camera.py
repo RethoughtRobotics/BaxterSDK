@@ -96,7 +96,7 @@ class CameraController(object):
         self._settings = CameraSettings()
         self._settings.width = 320
         self._settings.height = 200
-        self._settings.fps = 20
+        self._settings.fps = 20.0
         self._open = False
 
     def _reload(self):
@@ -112,9 +112,9 @@ class CameraController(object):
     def _set_control_value(self, control, value):
         lookup = [c for c in self._settings.controls if c.id == control]
         try:
-            lookup[0].value = value
+            lookup[0].value = int(value)
         except IndexError:
-            self._settings.controls.append(CameraControl(control, value))
+            self._settings.controls.append(CameraControl(id=control, value=int(value)))
 
     @property
     def resolution(self):
@@ -146,7 +146,7 @@ class CameraController(object):
 
     @fps.setter
     def fps(self, fps):
-        self._settings.fps = fps
+        self._settings.fps = float(fps)
         self._reload()
 
     @property
