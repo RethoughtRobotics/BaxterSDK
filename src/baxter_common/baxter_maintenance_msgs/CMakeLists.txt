@@ -31,8 +31,12 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/UpdateSource.msg"
   "msg/UpdateSources.msg"
   "msg/UpdateStatus.msg"
-   DEPENDENCIES builtin_interfaces std_msgs geometry_msgs sensor_msgs
+  DEPENDENCIES builtin_interfaces std_msgs geometry_msgs sensor_msgs
 )
+
+install(
+  FILES mapping_rules.yaml
+  DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
