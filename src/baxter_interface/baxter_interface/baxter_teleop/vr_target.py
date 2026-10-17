@@ -47,7 +47,9 @@ class VRTarget:
     the target while the clutch is held.
     """
 
-    def __init__(self, node, topic, config, gain, max_linear, max_angular, stale_after=0.2, release_after=0.05):
+    def __init__(
+        self, node, topic, config, gain, max_linear, max_angular, stale_after=0.2, release_after=0.05, swap_hands=None
+    ):
         with open(config) as f:
             cfg = yaml.safe_load(f)
         self.linear_frame = cfg.get('linear_frame', 'tool')
@@ -64,7 +66,8 @@ class VRTarget:
         # linear_axes/angular_axes are written. swap_hands: false is the operator on Baxter's side, a
         # 180-degree turn about up from that: x and y of both maps are negated (z kept, so up stays
         # up and the rotation map stays proper). Base frame only: tool-frame maps follow the wrist.
-        self.swap_hands = bool(cfg.get('swap_hands', False))
+        # swap_hands (not None) overrides the config's, e.g. run_teleop.sh --swap.
+        self.swap_hands = bool(cfg.get('swap_hands', False)) if swap_hands is None else bool(swap_hands)
         if self.linear_frame == 'base' and not self.swap_hands:
             turn = np.diag([-1.0, -1.0, 1.0])
             self.linear_axes = turn @ self.linear_axes

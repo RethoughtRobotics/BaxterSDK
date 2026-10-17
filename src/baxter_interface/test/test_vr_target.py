@@ -89,3 +89,14 @@ def test_without_swap_hands_x_and_y_are_negated_for_translation_and_rotation(tmp
 def test_tool_frame_maps_are_not_turned(tmp_path, monkeypatch):
     target, _ = make(tmp_path, monkeypatch, linear_frame='tool', swap_hands=False)
     np.testing.assert_allclose(target.linear_axes, np.eye(3))
+
+
+def test_swap_hands_argument_overrides_the_config(tmp_path, monkeypatch):
+    clock = [0.0]
+    monkeypatch.setattr(vr_target, 'time', types.SimpleNamespace(monotonic=lambda: clock[0]))
+    path = tmp_path / 'vr.yaml'
+    path.write_text(yaml.safe_dump({**BASE, 'swap_hands': True}))
+    node = types.SimpleNamespace(create_subscription=lambda *a, **k: None)
+    target = vr_target.VRTarget(node, '', str(path), 1.0, 2.0, 5.0, swap_hands=False)
+    assert not target.swap_hands
+    np.testing.assert_allclose(target.linear_axes, np.diag([-1.0, -1.0, 1.0]))

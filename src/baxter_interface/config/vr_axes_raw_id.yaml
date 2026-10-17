@@ -56,4 +56,4 @@ smoothing: 0.5
 # libsurvive_ros2's left_serial/right_serial are on the wrong hands. Explicit --vr-*-topic flags win.
 # Also sets where you stand: true = facing Baxter (the axes above as written); false = on Baxter's
 # side, so x and y of linear_axes and angular_axes are negated (up stays up).
-swap_hands: false
+swap_hands: true  # run_teleop.sh --swap: false for this run

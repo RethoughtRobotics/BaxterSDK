@@ -798,6 +798,13 @@ def main():
         '--vr-topic', default=None, help='VR target topic (default: /vive/{arm}/target from libsurvive_ros2)'
     )
     parser.add_argument(
+        '--swap-hands',
+        choices=['true', 'false'],
+        default=None,
+        help="override the VR config's swap_hands (true: facing Baxter, each arm driven by the other hand's "
+        "controller; false: on Baxter's side, x and y of the axis maps negated)",
+    )
+    parser.add_argument(
         '--vr-config',
         default=os.path.join(get_package_share_directory('baxter_interface'), 'config', 'vr_axes.yaml'),
         help='VR mapping YAML, a path or a file in the installed config/ (default: vr_axes.yaml; '
@@ -941,8 +948,13 @@ def main():
             config['vr_config'] = f.read()
     # The controller (libsurvive_ros2 /vive/{hand}/...) driving this arm; swap_hands crosses them.
     hand = args.arm
-    if args.input == 'vr' and yaml.safe_load(config['vr_config']).get('swap_hands', False):
-        hand = {'left': 'right', 'right': 'left'}[args.arm]
+    swap_hands = None if args.swap_hands is None else args.swap_hands == 'true'
+    if args.input == 'vr':
+        config['swap_hands'] = (
+            yaml.safe_load(config['vr_config']).get('swap_hands', False) if swap_hands is None else swap_hands
+        )
+        if config['swap_hands']:
+            hand = {'left': 'right', 'right': 'left'}[args.arm]
     src = os.path.dirname(os.path.realpath(__file__))
     config['git'] = subprocess.run(
         ['git', '-C', src, 'describe', '--always', '--dirty'], capture_output=True, text=True
@@ -961,6 +973,7 @@ def main():
                     args.vr_gain,
                     teleop.linear_speed,
                     teleop.angular_speed,
+                    swap_hands=swap_hands,
                 ),
             )
         else:
