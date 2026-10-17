@@ -18,7 +18,6 @@ from rclpy.executors import TimeoutException
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Empty, Float32, String
-from trajectory_msgs.msg import JointTrajectoryPoint
 
 import baxter_interface
 
@@ -61,6 +60,11 @@ class CartesianDeltaTeleop:
     # Velocity command acceleration limits (rad/s^2), as franka-vr-teleop's Ruckig limits. Step
     # commands (up to 500 rad/s^2 in circle_clockwise_20261001_184937) ring Baxter's wrist.
     JOINT_ACCELERATION_LIMITS = [4.0, 4.0, 4.0, 4.0, 6.0, 6.0, 6.0]
+    # Raw output (--output raw/raw_id): jerk limit = JERK_FACTOR x the acceleration limit, so full
+    # acceleration builds up in 0.1 s. A tuning choice: short against the ~0.3 s velocity transitions
+    # (adds little lag), long enough that the setpoint has no steps for the raw joint loop to ring on.
+    JERK_FACTOR = 10.0
+    RAW_OUTPUT_RATE = 200.0  # Hz, setpoints per second: ~3.5 per control cycle (~57 Hz)
     # URDF joint position limits (rad), except e1: the elbow is kept from straightening past
     # 0.35 rad, where the arm becomes singular (condition number 9-14 bent vs 100-1000+ straight
     # in circle_clockwise_20261001_184937). config/sns_joint_limits.yaml sets the same for SNS.
@@ -220,13 +224,31 @@ class CartesianDeltaTeleop:
         self.last_cmd_time = 0.0
         self.cmd_idle_reset = 0.2  # seconds without input before re-syncing to measured
         self.max_cmd_lead = 0.2  # max rad any joint target may lead the measured arm
-        # Velocity-mode output stage: 'velocity' (VELOCITY_MODE), 'raw' (own setpoint, RAW_POSITION_MODE)
-        # or 'raw_id' (raw plus inverse dynamics feedforward). See apply_twist_velocity.
+        # Velocity-mode output stage. 'velocity': the ramped IK velocity in VELOCITY_MODE. 'raw' /
+        # 'raw_id': the IK velocity is the target of a jerk-limited setpoint streamed at
+        # RAW_OUTPUT_RATE in RAW_POSITION_MODE, raw_id with inverse dynamics feedforward
+        # (raw_output.py). Raw modes bypass Baxter's collision avoidance.
         if output not in ('velocity', 'raw', 'raw_id'):
             raise ValueError("output must be 'velocity', 'raw' or 'raw_id'")
         self.output = output
-        self.q_set, self.qdot_prev = None, np.zeros(7, dtype=np.float32)
-        self.id_pub = self.node.create_publisher(JointTrajectoryPoint, f'/robot/limb/{arm}/inverse_dynamics_command', 1)
+        self.raw_output = None
+        if output != 'velocity':
+            # Imported here: baxter_interface imports this module eagerly, and tools such as
+            # tuck_arms run on the system Python, which has no ruckig (only .venv-ros does).
+            from .joint_setpoint import JointLimits, JointSetpointGenerator
+            from .raw_output import BaxterRawSink, RawJointOutput
+
+            limits = JointLimits(
+                velocity=self.joint_velocity_limits,
+                acceleration=self.joint_acceleration_limits,
+                jerk=self.JERK_FACTOR * self.joint_acceleration_limits,
+                position_low=self.joint_position_limits[0],
+                position_high=self.joint_position_limits[1],
+            )
+            sink = BaxterRawSink(
+                self.node, arm, self.joint_names, self.limb.joint_names(), inverse_dynamics=output == 'raw_id'
+            )
+            self.raw_output = RawJointOutput(JointSetpointGenerator(limits, 1.0 / self.RAW_OUTPUT_RATE), sink).start()
         # A terminal cannot see key release, so a key stays active for a hold window after
         # each character. The first window covers the OS auto-repeat delay (500 ms default).
         self.key_hold_initial = float(key_hold_initial)
@@ -379,6 +401,11 @@ class CartesianDeltaTeleop:
             joint_position_limits=self.joint_position_limits,
             joint_acceleration_limits=self.joint_acceleration_limits,
         )
+        if self.raw_output is not None:
+            # The setpoint generator limits acceleration and jerk itself: no ramp here.
+            self.raw_output.command(qdot_ik, q_meas)
+            self._publish_cycle(v_ee, 'base', q_meas, qdot_ik, self.raw_output.velocity)
+            return
         # Ramp from the previous command (not the lagging measured velocity) within the joint
         # acceleration limits, scaling the change uniformly to keep its direction. A skipped cycle
         # means the arm was put back on position hold, so the ramp restarts from rest.
@@ -386,44 +413,25 @@ class CartesianDeltaTeleop:
         dt = now - self.qdot_cmd_time
         if dt > self.ramp_idle_reset:
             self.qdot_cmd = np.zeros(7, dtype=np.float32)
-            self.q_set = None  # raw output: restart the setpoint from the measured arm
             dt = self.dt
         change = qdot - self.qdot_cmd
         ratio = float(np.max(np.abs(change) / (self.joint_acceleration_limits * dt)))
         qdot = self.qdot_cmd + change / max(ratio, 1.0)
         self.qdot_cmd, self.qdot_cmd_time = qdot, now
         self._publish_cycle(v_ee, 'base', q_meas, qdot_ik, qdot)
-        if self.output == 'velocity':
-            self.limb.set_joint_velocities({name: float(qdot[i]) for i, name in enumerate(self.joint_names)})
-            return
-        # raw / raw_id: integrate the ramped velocity into a joint setpoint ourselves (as Baxter's
-        # velocity mode does internally) and send it unfiltered; raw_id adds Baxter's inverse
-        # dynamics feedforward for (q, qdot, qddot), as the SDK's position_w_id trajectory server.
-        # RAW_POSITION_MODE bypasses collision avoidance.
-        if self.q_set is None:
-            self.q_set, qdot_prev = q_meas.copy(), np.zeros(7, dtype=np.float32)
-        else:
-            qdot_prev = self.qdot_prev
-        self.q_set = np.clip(self.q_set + qdot * dt, q_meas - self.max_cmd_lead, q_meas + self.max_cmd_lead)
-        self.q_set = np.clip(self.q_set, *self.joint_position_limits)
-        self.limb.set_joint_positions({name: float(self.q_set[i]) for i, name in enumerate(self.joint_names)}, raw=True)
-        if self.output == 'raw_id':
-            order = [self.joint_names.index(name) for name in self.limb.joint_names()]
-            qddot = (qdot - qdot_prev) / dt
-            self.id_pub.publish(
-                JointTrajectoryPoint(
-                    positions=[float(self.q_set[i]) for i in order],
-                    velocities=[float(qdot[i]) for i in order],
-                    accelerations=[float(qddot[i]) for i in order],
-                )
-            )
-        self.qdot_prev = qdot
+        self.limb.set_joint_velocities({name: float(qdot[i]) for i, name in enumerate(self.joint_names)})
+
+    def _hold(self):
+        """Stop the raw setpoint stream, if any, and put the arm on position hold where it is."""
+        if self.raw_output is not None:
+            self.raw_output.stop()
+        self.limb.exit_control_mode()
 
     def _go_home(self):
         """Open the gripper (if use_gripper) and move to the untuck pose (as tuck_arms -u) with a slow,
         blocking move."""
         self.q_cmd = None
-        self.limb.exit_control_mode()
+        self._hold()
         if (
             self.use_gripper
             and self.gripper is not None
@@ -446,7 +454,6 @@ class CartesianDeltaTeleop:
             self.limb.set_joint_velocities(zero)
             time.sleep(self.dt)
         self.qdot_cmd, self.qdot_cmd_time = np.zeros(7, dtype=np.float32), time.monotonic()
-        self.q_set = None
         if reached:
             self.node.get_logger().info('At the untuck pose.')
         else:
@@ -574,11 +581,11 @@ class CartesianDeltaTeleop:
                     self.apply_twist_velocity(twist)
                     moving = True
                 elif moving:
-                    self.limb.exit_control_mode()  # back to position mode holding the current pose
+                    self._hold()  # back to position mode holding the current pose
                     moving = False
         finally:
             if moving:
-                self.limb.exit_control_mode()
+                self._hold()
 
     def spin_keyboard(self):
         """Closed-loop keyboard: held keys move a goal pose that the TCP is servoed onto."""
@@ -665,6 +672,8 @@ class CartesianDeltaTeleop:
                 self._apply_cuff_button(action)
             if self._cuff_seen and not self._cuff and not target._moving:  # cuff released, arm held
                 target.reset()
+                if self.raw_output is not None:
+                    self.raw_output.stop()
                 self.limb.set_joint_positions(self.limb.joint_angles())
             self._cuff_seen = self._cuff
             if self._b_pressed:  # the controller's B button or the home button: home, as the H key
@@ -764,8 +773,9 @@ def main():
         '--output',
         choices=['velocity', 'raw', 'raw_id'],
         default='velocity',
-        help="velocity mode's joint command: VELOCITY_MODE (default), 'raw' an integrated setpoint in "
-        "RAW_POSITION_MODE, 'raw_id' raw plus inverse dynamics feedforward (raw bypasses collision avoidance)",
+        help="velocity mode's joint command: VELOCITY_MODE (default), 'raw' a jerk-limited setpoint "
+        "streamed at 200 Hz in RAW_POSITION_MODE, 'raw_id' raw plus inverse dynamics feedforward "
+        '(raw modes bypass collision avoidance)',
     )
     parser.add_argument(
         '--ik',
@@ -884,6 +894,8 @@ def main():
         else:
             teleop.spin()
     finally:
+        if teleop.raw_output is not None:
+            teleop.raw_output.close()
         teleop.node.destroy_node()
         rclpy.shutdown()
 
