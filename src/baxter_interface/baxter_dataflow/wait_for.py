@@ -26,6 +26,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 import errno
+import time
 
 import rclpy
 
@@ -43,19 +44,23 @@ def wait_for(node, test, timeout=1.0, raise_on_error=True, rate=100, timeout_msg
     """
     interval = 1.0 / rate
     notimeout = (timeout < 0.0) or timeout == float('inf')
-    max_iter = 0 if notimeout else int(timeout * rate)
-    iters = 0
+    # Time, not iterations: spin_once returns as soon as any message is pending, so with busy topics
+    # an iteration takes far less than `interval` (homing gave up after 2.3 of 15 s).
+    deadline = None if notimeout else time.monotonic() + timeout
     while not test():
-        iters += 1
         if not rclpy.ok():
             if raise_on_error:
                 raise OSError(errno.ESHUTDOWN, 'ROS Shutdown')
             return False
-        elif (not notimeout) and iters > max_iter:
+        elif deadline is not None and time.monotonic() > deadline:
             if raise_on_error:
                 raise OSError(errno.ETIMEDOUT, timeout_msg)
+            node.get_logger().warning(timeout_msg)
             return False
         if callable(body):
             body()
-        rclpy.spin_once(node, timeout_sec=interval)
+        # One step per interval, handling every message that arrives in it, so body() runs at `rate`
+        tick_end = time.monotonic() + interval
+        while (remaining := tick_end - time.monotonic()) > 0:
+            rclpy.spin_once(node, timeout_sec=remaining)
     return True

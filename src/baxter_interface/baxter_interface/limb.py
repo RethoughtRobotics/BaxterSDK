@@ -428,6 +428,7 @@ class Limb(object):
         @param threshold: position threshold in radians across each joint when
         move is considered successful [0.008726646]
         @param test: optional function returning True if motion must be aborted
+        @return: True if the positions were reached (or test() aborted), False on timeout
         """
         cmd = self.joint_angles()
 
@@ -446,7 +447,7 @@ class Limb(object):
         diffs = [genf(j, a) for j, a in positions.items() if j in self._joint_angle]
         self._node.get_logger().info('Moving?')
         self.set_joint_positions(filtered_cmd())
-        baxter_dataflow.wait_for(
+        return baxter_dataflow.wait_for(
             self._node,
             test=lambda: callable(test) and test() or (all(diff() < threshold for diff in diffs)),
             timeout=timeout,
