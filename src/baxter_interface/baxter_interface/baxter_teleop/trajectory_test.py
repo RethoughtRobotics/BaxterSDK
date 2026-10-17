@@ -23,6 +23,7 @@ joint output stages (--output) on the robot, e.g. via run_circle_test.sh.
 
 import argparse
 import os
+import sys
 import time
 
 import numpy as np
@@ -30,6 +31,7 @@ import rclpy
 from ament_index_python.packages import get_package_share_directory
 from scipy.spatial.transform import Rotation
 
+from .benchmark_trajectories import iso_protocol
 from .cartesian_delta_teleop import CartesianDeltaTeleop
 from .pose_servo import servo_twist
 
@@ -84,6 +86,38 @@ def protocol():
     return np.asarray(points), phases
 
 
+class SafetyMonitor:
+    """Ends a run that has gone wrong, for unattended benchmark sweeps: the TCP more than
+    max_error from the goal for error_time, or the endpoint force above max_force for force_time
+    (contact). Measured from /robot/limb/{arm}/endpoint_state (Baxter's own TCP and wrench estimate),
+    independent of what the servo closes on. update() returns the reason once tripped."""
+
+    def __init__(self, max_error=0.10, error_time=0.3, max_force=60.0, force_time=0.1):
+        self.max_error, self.error_time = max_error, error_time
+        self.max_force, self.force_time = max_force, force_time
+        self._error_since = self._force_since = None
+        self.reason = None
+
+    def update(self, now, goal_position, tcp_position, force):
+        """Feed one sample; returns the trip reason (str) or None."""
+        if self.reason is None:
+            error = np.inf if goal_position is None else float(np.linalg.norm(np.subtract(goal_position, tcp_position)))
+            if goal_position is not None and error > self.max_error:
+                self._error_since = now if self._error_since is None else self._error_since
+                if now - self._error_since >= self.error_time:
+                    self.reason = f'tracking error {error * 1e3:.0f} mm > {self.max_error * 1e3:.0f} mm'
+            else:
+                self._error_since = None
+            force = float(np.linalg.norm(force))
+            if force > self.max_force:
+                self._force_since = now if self._force_since is None else self._force_since
+                if now - self._force_since >= self.force_time:
+                    self.reason = f'endpoint force {force:.0f} N > {self.max_force:.0f} N (contact?)'
+            else:
+                self._force_since = None
+        return self.reason
+
+
 class TrajectoryTarget:
     """Goal = start TCP + path offset at the elapsed time, orientation held; done after the end."""
 
@@ -122,6 +156,8 @@ def main():
     parser.add_argument('--arm', choices=['left', 'right'], default='left')
     parser.add_argument('--posture-gain', type=float, default=0.0, help='DLS null-space pull toward untuck, 1/s')
     parser.add_argument('--output', choices=['velocity', 'raw', 'raw_id'], default='velocity', help='as the teleop')
+    parser.add_argument('--servo-feedback', choices=['measured', 'setpoint'], default='measured', help='as the teleop')
+    parser.add_argument('--joint-accel-scale', type=float, default=1.0, help='as the teleop')
     parser.add_argument('--gain', type=float, default=5.0, help='servo gain, 1/s (VR: --vr-gain x linear_scale)')
     parser.add_argument('--no-feedforward', dest='feedforward', action='store_false', help='P-only servo, as VR')
     parser.add_argument(
@@ -131,7 +167,14 @@ def main():
         default=argparse.SUPPRESS,
         help='path velocity feedforward (the default); after --no-feedforward, the last one wins',
     )
-    parser.add_argument('--protocol', choices=['full', 'circle'], default='full')
+    parser.add_argument('--protocol', choices=['full', 'circle', 'iso'], default='full')
+    parser.add_argument('--speed', type=float, default=0.15, help='iso protocol: path speed, m/s')
+    parser.add_argument('--accel', type=float, default=0.5, help='iso protocol: path acceleration, m/s^2')
+    parser.add_argument(
+        '--safety',
+        action='store_true',
+        help='abort on tracking error > 100 mm beyond the expected P-servo lag, or endpoint force > 60 N (exit 3)',
+    )
     parser.add_argument('--radius', type=float, default=0.15, help='circle protocol: radius, m')
     parser.add_argument('--circle-speed', type=float, default=0.15, help='circle protocol: TCP speed, m/s')
     parser.add_argument('--loops', type=int, default=3, help='circle protocol: number of circles')
@@ -146,8 +189,14 @@ def main():
         sns_limits=sns_limits,
         frame='base',
         posture_gain=args.posture_gain,
+        servo_feedback=args.servo_feedback,
+        joint_accel_scale=args.joint_accel_scale,
     )
-    if args.protocol == 'circle':
+    events = []
+    if args.protocol == 'iso':
+        offsets, phases, events = iso_protocol(args.speed, args.accel, side=1 if args.arm == 'left' else -1, dt=DT)
+        speed = args.speed
+    elif args.protocol == 'circle':
         side = 1 if args.arm == 'left' else -1
         offsets, phases = circle_protocol(args.radius, args.circle_speed, args.loops, side)
         speed = args.circle_speed
@@ -155,7 +204,7 @@ def main():
         offsets, phases = protocol()
         speed = SPEED
     teleop.publish_config({
-        'trajectory_test': {**vars(args), 'speed': speed, 'phases': phases},
+        'trajectory_test': {**vars(args), 'speed': speed, 'phases': phases, 'events': events},
         'args': {
             'arm': args.arm,
             'input': 'trajectory',
@@ -164,10 +213,34 @@ def main():
             'output': args.output,
             'servo_gain': args.gain,
             'feedforward': args.feedforward,
+            'servo_feedback': args.servo_feedback,
+            'joint_accel_scale': args.joint_accel_scale,
         },
     })
     target = TrajectoryTarget(offsets, gain=args.gain, feedforward=args.feedforward, max_linear=4 * speed)
-    teleop.key_source = lambda timeout: '\x1b' if target.done else time.sleep(timeout)
+    # Without feedforward a P servo trails a goal moving at v by v/K by design: allow that on top.
+    expected_lag = 0.0 if args.feedforward else speed / args.gain
+    monitor = SafetyMonitor(max_error=0.10 + expected_lag) if args.safety else None
+    if monitor is not None:
+        from baxter_core_msgs.msg import EndpointState
+
+        endpoint = {}
+        teleop.node.create_subscription(
+            EndpointState, f'/robot/limb/{args.arm}/endpoint_state', lambda m: endpoint.update(msg=m), 10
+        )
+
+    def key_source(timeout):
+        if target.done:
+            return '\x1b'
+        if monitor is not None and 'msg' in endpoint:
+            p, f = endpoint['msg'].pose.position, endpoint['msg'].wrench.force
+            goal = None if target.goal is None else target.goal[0]
+            if monitor.update(time.monotonic(), goal, (p.x, p.y, p.z), (f.x, f.y, f.z)):
+                return '\x1b'
+        time.sleep(timeout)
+        return None
+
+    teleop.key_source = key_source
     print(f'{args.ik}: {len(offsets) * DT:.0f} s trajectory, phases ' + ', '.join(p[0] for p in phases))
     try:
         teleop.spin_target(target)
@@ -176,6 +249,9 @@ def main():
             teleop.raw_output.close()
         teleop.node.destroy_node()
         rclpy.shutdown()
+    if monitor is not None and monitor.reason:
+        print(f'ABORTED: {monitor.reason}')
+        sys.exit(3)
 
 
 if __name__ == '__main__':

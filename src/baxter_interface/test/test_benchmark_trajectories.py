@@ -75,3 +75,17 @@ def test_circle_test_has_the_radius_and_starts_at_rest():
     v, _ = derivatives(offsets)
     assert np.linalg.norm(v[0]) < 0.5 * DT * 1.01
     np.testing.assert_allclose(offsets[-1], 0, atol=1e-9)
+
+
+def test_safety_monitor_trips_on_sustained_error_or_force_only():
+    from baxter_interface.baxter_teleop.trajectory_test import SafetyMonitor
+
+    m = SafetyMonitor(max_error=0.1, error_time=0.3, max_force=60, force_time=0.1)
+    goal, ok, far = (0, 0, 0), (0.05, 0, 0), (0.2, 0, 0)
+    assert m.update(0.0, goal, far, (0, 0, 0)) is None  # brief excursion: not yet
+    assert m.update(0.2, goal, ok, (0, 0, 0)) is None  # recovered: timer resets
+    assert m.update(0.3, goal, far, (0, 0, 0)) is None
+    assert 'tracking error' in m.update(0.61, goal, far, (0, 0, 0))
+    m = SafetyMonitor(max_error=0.1, error_time=0.3, max_force=60, force_time=0.1)
+    assert m.update(0.0, None, far, (0, 0, 80)) is None  # no goal (clutch released): error ignored
+    assert 'force' in m.update(0.15, None, far, (0, 0, 80))
