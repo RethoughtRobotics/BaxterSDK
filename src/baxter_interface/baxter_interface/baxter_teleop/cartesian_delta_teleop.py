@@ -234,19 +234,28 @@ class CartesianDeltaTeleop:
         # 'raw_id': the IK velocity is the target of a jerk-limited setpoint streamed at
         # RAW_OUTPUT_RATE in RAW_POSITION_MODE, raw_id with inverse dynamics feedforward
         # (raw_output.py). Raw modes bypass Baxter's collision avoidance.
-        if output not in ('velocity', 'raw', 'raw_id'):
-            raise ValueError("output must be 'velocity', 'raw' or 'raw_id'")
+        # 'raw_id_step' is a test-only ablation (control benchmark): the stage raw_id replaced, which
+        # integrates the ramped velocity into a setpoint once per control cycle and sends it with a
+        # finite-difference qddot, i.e. a ~57 Hz staircase. Kept to measure what the jerk-limited
+        # setpoint buys; not for teleoperation.
+        if output not in ('velocity', 'raw', 'raw_id', 'raw_id_step'):
+            raise ValueError("output must be 'velocity', 'raw', 'raw_id' or 'raw_id_step'")
         self.output = output
         # What the pose servo and IK close on. 'measured': the arm's joint states. 'setpoint': the raw
         # output's own setpoint (raw/raw_id only), so the Cartesian loop is purely kinematic and cannot
         # hunt on joint friction; Baxter's joint loop (with inverse dynamics) tracks the setpoint.
         if servo_feedback not in ('measured', 'setpoint'):
             raise ValueError("servo_feedback must be 'measured' or 'setpoint'")
-        if servo_feedback == 'setpoint' and output == 'velocity':
-            raise ValueError("servo_feedback='setpoint' needs a raw output (--output raw or raw_id)")
+        if servo_feedback == 'setpoint' and output in ('velocity', 'raw_id_step'):
+            raise ValueError("servo_feedback='setpoint' needs a streamed raw output (--output raw or raw_id)")
         self.servo_feedback = servo_feedback
         self.raw_output = None
-        if output != 'velocity':
+        self._step_sink, self._q_step, self._qdot_step = None, None, np.zeros(7, dtype=np.float32)
+        if output == 'raw_id_step':
+            from .raw_output import BaxterRawSink
+
+            self._step_sink = BaxterRawSink(self.node, arm, self.joint_names, self.limb.joint_names())
+        elif output != 'velocity':
             # Imported here: baxter_interface imports this module eagerly, and tools such as
             # tuck_arms run on the system Python, which has no ruckig (only .venv-ros does).
             from .joint_setpoint import JointLimits, JointSetpointGenerator
@@ -438,18 +447,36 @@ class CartesianDeltaTeleop:
         dt = now - self.qdot_cmd_time
         if dt > self.ramp_idle_reset:
             self.qdot_cmd = np.zeros(7, dtype=np.float32)
+            self._q_step = None
             dt = self.dt
         change = qdot - self.qdot_cmd
         ratio = float(np.max(np.abs(change) / (self.joint_acceleration_limits * dt)))
         qdot = self.qdot_cmd + change / max(ratio, 1.0)
         self.qdot_cmd, self.qdot_cmd_time = qdot, now
         self._publish_cycle(v_ee, 'base', q_meas, qdot_ik, qdot)
+        if self._step_sink is not None:
+            self._send_step(qdot, q_meas, dt)
+            return
         self.limb.set_joint_velocities({name: float(qdot[i]) for i, name in enumerate(self.joint_names)})
+
+    def _send_step(self, qdot, q_meas, dt):
+        """raw_id_step (ablation): integrate the ramped velocity once per cycle and send it in
+        RAW_POSITION_MODE with a finite-difference qddot, as raw_id did before the setpoint generator."""
+        from .joint_setpoint import Setpoint
+
+        if self._q_step is None:
+            self._q_step, self._qdot_step = q_meas.copy(), np.zeros(7, dtype=np.float32)
+        qddot = (qdot - self._qdot_step) / dt
+        q = np.clip(self._q_step + qdot * dt, q_meas - self.max_cmd_lead, q_meas + self.max_cmd_lead)
+        self._q_step = np.clip(q, *self.joint_position_limits)
+        self._qdot_step = qdot
+        self._step_sink(Setpoint(self._q_step.astype(float), qdot.astype(float), qddot.astype(float)))
 
     def _hold(self):
         """Stop the raw setpoint stream, if any, and put the arm on position hold where it is."""
         if self.raw_output is not None:
             self.raw_output.stop()
+        self._q_step = None
         self.limb.exit_control_mode()
 
     def _go_home(self):
@@ -800,11 +827,11 @@ def main():
     parser.add_argument('--mode', choices=['velocity', 'position'], default='velocity', help='joint control mode')
     parser.add_argument(
         '--output',
-        choices=['velocity', 'raw', 'raw_id'],
+        choices=['velocity', 'raw', 'raw_id', 'raw_id_step'],
         default='velocity',
         help="velocity mode's joint command: VELOCITY_MODE (default), 'raw' a jerk-limited setpoint "
         "streamed at 200 Hz in RAW_POSITION_MODE, 'raw_id' raw plus inverse dynamics feedforward "
-        '(raw modes bypass collision avoidance)',
+        '(raw modes bypass collision avoidance); raw_id_step: test-only ablation, the stepped raw_id',
     )
     parser.add_argument(
         '--ik',

@@ -155,7 +155,9 @@ def main():
     parser.add_argument('--ik', choices=['dls', 'sns'], default='dls')
     parser.add_argument('--arm', choices=['left', 'right'], default='left')
     parser.add_argument('--posture-gain', type=float, default=0.0, help='DLS null-space pull toward untuck, 1/s')
-    parser.add_argument('--output', choices=['velocity', 'raw', 'raw_id'], default='velocity', help='as the teleop')
+    parser.add_argument(
+        '--output', choices=['velocity', 'raw', 'raw_id', 'raw_id_step'], default='velocity', help='as the teleop'
+    )
     parser.add_argument('--servo-feedback', choices=['measured', 'setpoint'], default='measured', help='as the teleop')
     parser.add_argument('--joint-accel-scale', type=float, default=1.0, help='as the teleop')
     parser.add_argument('--gain', type=float, default=5.0, help='servo gain, 1/s (VR: --vr-gain x linear_scale)')
