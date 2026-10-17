@@ -43,6 +43,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/EndpointStates.msg"
   "msg/HeadPanCommand.msg"
   "msg/HeadState.msg"
+  "msg/HomingCommand.msg"
   "msg/JointCommand.msg"
   "msg/NavigatorState.msg"
   "msg/NavigatorStates.msg"

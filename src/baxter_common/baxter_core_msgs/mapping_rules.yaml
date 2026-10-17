@@ -161,3 +161,7 @@
   ros1_service_name: SolvePositionIK
   ros2_package_name: baxter_core_msgs
   ros2_service_name: SolvePositionIK
+- ros1_message_name: HomingCommand
+  ros1_package_name: baxter_core_msgs
+  ros2_message_name: HomingCommand
+  ros2_package_name: baxter_core_msgs
