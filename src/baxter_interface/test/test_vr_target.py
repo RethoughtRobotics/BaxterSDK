@@ -19,6 +19,7 @@ BASE = {
     'linear_deadband': [0.0, 0.0, 0.0],
     'angular_deadband': [0.0, 0.0, 0.0],
     'smoothing': 0.0,
+    'swap_hands': True,  # axes as written (operator facing Baxter)
 }
 
 
@@ -72,3 +73,19 @@ def test_default_is_one_to_one(tmp_path, monkeypatch):
 def test_non_positive_scale_is_rejected(tmp_path, monkeypatch):
     with pytest.raises(ValueError):
         make(tmp_path, monkeypatch, motion_scale=0.0)
+
+
+@pytest.mark.parametrize('swap,sign', [(True, [1, 1, 1]), (False, [-1, -1, 1])])
+def test_without_swap_hands_x_and_y_are_negated_for_translation_and_rotation(tmp_path, monkeypatch, swap, sign):
+    target, clock = make(tmp_path, monkeypatch, swap_hands=swap)
+    (goal_p, _), tcp = stroke(target, clock, (0.10, -0.04, 0.02))
+    np.testing.assert_allclose(goal_p - tcp, np.multiply(sign, [0.10, -0.04, 0.02]), atol=1e-6)
+    target, clock = make(tmp_path, monkeypatch, swap_hands=swap)
+    (_, goal_r), _ = stroke(target, clock, (0, 0, 0), hand_turn=(0.1, 0.2, 0.3))
+    np.testing.assert_allclose(goal_r.as_rotvec(), np.multiply(sign, [0.1, 0.2, 0.3]), atol=1e-6)
+    assert np.isclose(np.linalg.det(target.angular_axes), 1.0)  # still a proper rotation
+
+
+def test_tool_frame_maps_are_not_turned(tmp_path, monkeypatch):
+    target, _ = make(tmp_path, monkeypatch, linear_frame='tool', swap_hands=False)
+    np.testing.assert_allclose(target.linear_axes, np.eye(3))

@@ -60,6 +60,15 @@ class VRTarget:
         yaw = Rotation.from_euler('z', base_yaw, degrees=True).as_matrix()
         self.linear_axes = signed_permutation(cfg['linear_axes'], config) @ yaw
         self.angular_axes = signed_permutation(cfg['angular_axes'], config)
+        # swap_hands: true is the operator facing Baxter (hands crossed to the arms, mirrored), for which
+        # linear_axes/angular_axes are written. swap_hands: false is the operator on Baxter's side, a
+        # 180-degree turn about up from that: x and y of both maps are negated (z kept, so up stays
+        # up and the rotation map stays proper). Base frame only: tool-frame maps follow the wrist.
+        self.swap_hands = bool(cfg.get('swap_hands', False))
+        if self.linear_frame == 'base' and not self.swap_hands:
+            turn = np.diag([-1.0, -1.0, 1.0])
+            self.linear_axes = turn @ self.linear_axes
+            self.angular_axes = turn @ self.angular_axes
         self.scale = np.asarray(cfg['linear_scale'] + cfg['angular_scale'], dtype=float)
         self.deadband = np.asarray(cfg['linear_deadband'] + cfg['angular_deadband'], dtype=float)
         # Motion scaling (precision mode): the TCP moves motion_scale x the hand's translation, so hand
