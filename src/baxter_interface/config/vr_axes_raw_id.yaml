@@ -1,6 +1,8 @@
 ---
 # vr_axes_base.yaml for the raw_id output (run_teleop.sh --output raw_id --vr-gain 2 --vr-config <this file>):
-# identical except the linear loop gain, 6/s instead of 3/s; rotation is unchanged (2, 2, 5.8 x 2).
+# linear loop gain 6/s (vr_axes_base.yaml at --vr-gain 2: 3/s); rotation 2, 2, 5.8/s, as vr_axes_base.yaml at
+# --vr-gain 1. Yaw at 11.6/s (5.8 x 2) drove w2 into its velocity and Ruckig acceleration limits and
+# oscillated at ~1.2 Hz, which the IK's uniform scaling spread into the translation (VR bag 20261016_210332).
 # With raw_id the joints follow their setpoint within 0-35 ms (vs ~200 ms in velocity mode), so the
 # ringing limit noted below (~6/s, from velocity mode) no longer applies to translation. Planar circle
 # tests on the robot (run_circle_test.sh, 20261016_2053/2054): K=6 halved the error of K=3 and stayed
@@ -35,7 +37,7 @@ angular_axes: [+x, +y, +z]  # was [-x, -y, +z]; base_yaw does not apply to rotat
 # (rotation), so keep the loop gain under ~6/s linear and ~9/s angular or the arm rings
 # (circle_clockwise_20261001_184937: gain 15/s on rotation rang the wrist at 2-2.3 Hz).
 linear_scale: [3.0, 3.0, 3.0]  # 6/s at --vr-gain 2 (vr_axes_base.yaml: 1.5)
-angular_scale: [2.0, 2.0, 5.8]
+angular_scale: [1.0, 1.0, 2.9]  # 2, 2, 5.8/s at --vr-gain 2 (11.6/s yaw oscillated, 20261016_210332)
 
 # Per TCP axis deadband [x, y, z], subtracted from the stroke delta (since the clutch
 # engaged) so off-axis drift is ignored without a jump at the edge: d -> sign(d)*max(|d|-band, 0).
