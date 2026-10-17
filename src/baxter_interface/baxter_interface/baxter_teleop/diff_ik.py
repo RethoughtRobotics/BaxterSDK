@@ -6,8 +6,16 @@ import numpy as np
 class DiffIKSolver:
     """Damped least-squares differential IK.
 
+    The damping is variable: none while the Jacobian's smallest singular value is above
+    singular_threshold, so the hand tracks exactly in the open workspace, rising smoothly to
+    `damping` as it goes to 0 near a singularity (mostly the straightened elbow, e1 -> 0), which
+    bounds the joint speeds there at 1 / (2 damping) per unit of hand speed. Typical poses have a
+    smallest singular value of ~0.2; the elbow-straight pose in the left_v_right bag reached 0.001.
+
     Baxter has 7 joints for a 6-DOF end-effector task, leaving one redundant degree of
-    freedom (mostly elbow swing: e0 with s0/w0). It is left free (minimum-norm, no posture term).
+    freedom (mostly elbow swing: e0 with s0/w0). With posture_gain > 0 it is pulled toward
+    `posture` (e.g. untuck) inside the null space of the hand task, so the hand does not feel it;
+    otherwise it is left free (minimum-norm) and drifts slowly (about 1 deg per 20 cm loop).
     Holding a joint instead (e.g. e0) makes the arm 6-DOF and singular in parts of its workspace:
     straight down from a pose near untuck it reached 0.083 of 0.2 m/s, against 0.186 free.
     """
@@ -15,18 +23,28 @@ class DiffIKSolver:
     def __init__(
         self,
         dt=0.01,
-        damping=0.05,
+        damping=0.1,
+        singular_threshold=0.1,
         max_joint_step=0.02,
         max_joint_velocity=1.5,
+        posture=None,
+        posture_gain=0.0,
     ):
         self.dt = float(dt)
         self.damping = float(damping)
+        self.singular_threshold = float(singular_threshold)
         self.max_joint_step = float(max_joint_step)
         self.max_joint_velocity = float(max_joint_velocity)
+        self.posture = None if posture is None else np.asarray(posture, dtype=np.float32)
+        self.posture_gain = float(posture_gain)
 
     def _pinv(self, J):
-        # Damped least squares remains stable near singular Jacobians.
-        JJT = J @ J.T + (self.damping**2) * np.eye(J.shape[0], dtype=np.float32)
+        # Damped least squares, damped only near a singularity: lambda^2 grows from 0 at the
+        # threshold to damping^2 as the smallest singular value goes to 0.
+        sigma_min = float(np.linalg.svd(J, compute_uv=False)[-1])
+        ratio = min(sigma_min / self.singular_threshold, 1.0)
+        damping2 = (1.0 - ratio**2) * self.damping**2
+        JJT = J @ J.T + damping2 * np.eye(J.shape[0], dtype=np.float32)
         return J.T @ np.linalg.inv(JJT)
 
     def joint_velocity(
@@ -64,6 +82,13 @@ class DiffIKSolver:
                 low_v, high_v = -np.sqrt(2.0 * a * to_low), np.sqrt(2.0 * a * to_high)
 
         qdot = self._pinv(J) @ v
+        if self.posture is not None and self.posture_gain > 0.0:
+            # Projected with the undamped pseudo-inverse: I - pinv(J) J is then exactly the null
+            # space. Built from the damped one it is not, and the pull moved the hand (38-55 mm per
+            # 100 mm in the 2026-10-05 trial). pinv(J) J is a projector, so this stays bounded
+            # near singularities.
+            null = np.eye(n, dtype=np.float32) - np.linalg.pinv(J) @ J
+            qdot = qdot + null @ (self.posture_gain * (self.posture - q_np))
         with np.errstate(divide='ignore', invalid='ignore'):
             allowed = np.where(qdot > 0, high_v / qdot, np.where(qdot < 0, low_v / qdot, np.inf))
         qdot *= float(np.clip(np.min(allowed), 0.0, 1.0))

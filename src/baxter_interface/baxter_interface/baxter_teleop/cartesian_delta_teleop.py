@@ -81,6 +81,7 @@ class CartesianDeltaTeleop:
         mode='velocity',
         ik='dls',
         sns_limits=None,
+        posture_gain=0.0,
         frame='base',
         tcp_offset=None,
         linear_speed=None,
@@ -176,7 +177,16 @@ class CartesianDeltaTeleop:
             self.tcp_offset = np.array([0.0, 0.0, float(tcp_offset)], dtype=np.float32)
 
         self.dt = 0.01
-        self.ik = DiffIKSolver(dt=self.dt, damping=0.05, max_joint_step=0.04, max_joint_velocity=6.0)
+        # posture_gain (1/s) pulls the spare DOF (elbow swing) toward untuck without moving the hand.
+        self.ik = DiffIKSolver(
+            dt=self.dt,
+            damping=0.1,
+            singular_threshold=0.1,
+            max_joint_step=0.04,
+            max_joint_velocity=6.0,
+            posture=baxter_interface.settings.UNTUCK_POSITIONS[arm],
+            posture_gain=posture_gain,
+        )
         if ik == 'sns':
             # Rethink's SNS-IK replaces the DLS solve; it brings its own Jacobian and joint limits.
             from .sns_ik import SNSIKSolver
@@ -629,6 +639,22 @@ def main():
         help="velocity IK: 'dls' damped least squares (default) or 'sns' Rethink's SNS-IK (velocity mode)",
     )
     parser.add_argument(
+        '--posture-gain',
+        type=float,
+        default=0.0,
+        help='DLS: pull the elbow toward untuck in the null space of the hand task, in 1/s (0 = off); '
+        '1/s cost circle tracking in the sim (posture_damping report), 0.5 did not',
+    )
+    parser.add_argument(
+        '--null',
+        dest='posture_gain',
+        action='store_const',
+        const=1.4,
+        default=argparse.SUPPRESS,
+        help='Enable the DLS null-space untuck pull at 1.4/s (default: off). '
+        'If combined with --posture-gain, the last option wins.',
+    )
+    parser.add_argument(
         '--sns-limits',
         default=None,
         help="SNS-IK joint limits YAML (default: Rethink's example_baxter_joint_limits.yaml; "
@@ -677,6 +703,7 @@ def main():
         mode=args.mode,
         ik=args.ik,
         sns_limits=args.sns_limits,
+        posture_gain=args.posture_gain,
         frame=args.frame,
         tcp_offset=args.tcp_offset,
         linear_speed=args.linear_speed,
