@@ -79,6 +79,21 @@ ros2 run baxter_examples gripper_cuff_control
 
 ---
 
+## Original ROS 1 SDK
+
+This is a ROS 2 port of Rethink Robotics' Baxter SDK. Baxter itself still runs ROS 1 onboard. The
+[Baxter Bridge](https://github.com/RethoughtRobotics/baxter-zenoh) is the only place ROS 1 appears,
+inside its container, so nothing here needs ROS 1 installed. To compare a port with the original:
+
+| ROS 1 original | Ported here as |
+|---|---|
+| [baxter_interface](https://github.com/RethinkRobotics/baxter_interface) | `src/baxter_interface` |
+| [baxter_tools](https://github.com/RethinkRobotics/baxter_tools) | `src/baxter_tools` |
+| [baxter_examples](https://github.com/RethinkRobotics/baxter_examples) | `src/baxter_examples` |
+| [baxter_common](https://github.com/RethinkRobotics/baxter_common) (messages, description) | `src/baxter_common`, `src/baxter_description`, `src/rethink_ee_description` |
+
+---
+
 ## FAQ
 
 <details>
