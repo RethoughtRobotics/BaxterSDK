@@ -5,14 +5,17 @@
 # desired TCP pose in the robot base frame, so the anchor is the base frame and the map is the
 # identity. Axis maps, deadband and smoothing shaped the human's hand into the goals recorded as
 # action labels, so they are already in what the policy predicts and are not applied again.
-# The servo (gain, scales, caps) is vr_axes_base.yaml's, so the arm tracks a goal exactly as
-# during the demonstrations: keep linear_scale/angular_scale equal to it.
+# The servo is the VR teleop's (run_teleop.sh defaults: --vr-gain 2 --output raw_id --servo-feedback
+# setpoint --posture-gain 0.5; scales as vr_axes_raw_id.yaml: linear 6/s, rotation 2, 2, 6/s), so the arm
+# tracks a policy goal as it tracks the operator's. No motion_scale (1:1): the policy's targets are poses.
+# The arm now trails a moving goal by ~0.15 s instead of ~0.6 s (2026-10-16 robot tests), so label or
+# run-time leads tuned for the old servo (e.g. _lead640ms datasets) over-lead and need retuning.
 linear_frame: base
 base_yaw: 0
 linear_axes: [+x, +y, +z]
 angular_axes: [+x, +y, +z]
-linear_scale: [1.5, 1.5, 1.5]
-angular_scale: [2.0, 2.0, 5.8]
+linear_scale: [3.0, 3.0, 3.0]
+angular_scale: [1.0, 1.0, 3.0]
 linear_deadband: [0.0, 0.0, 0.0]
 angular_deadband: [0.0, 0.0, 0.0]
 smoothing: 0.0
@@ -21,6 +24,7 @@ smoothing: 0.0
 # freeze (deadman released, > 0.2 s) should count, not a hiccup in the 100 Hz stream. Equal to the
 # stale timeout, so a longer gap holds the arm without re-anchoring.
 release_after: 0.2
-# As vr_axes_base.yaml, so the controller you hold for this arm keeps its B button (home);
-# the explicit target/trigger topics above win over it.
+# As vr_axes_raw_id.yaml, so the controller you hold for this arm keeps its B button (home); the
+# explicit target/trigger topics above win over it. Must stay true: false negates x/y of the maps,
+# which would mirror the policy's targets (run_teleop.sh refuses --swap with --policy).
 swap_hands: true

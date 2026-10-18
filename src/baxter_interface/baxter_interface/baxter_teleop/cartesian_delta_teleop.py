@@ -36,7 +36,7 @@ else:
 from baxter_external_devices.getch import getch
 
 from .delta_guard import CartesianDeltaGuard
-from .diff_ik import DiffIKSolver
+from .diff_ik import BoundedDiffIKSolver, DiffIKSolver
 from .keymap import KeyTarget, twist_from_key
 from .tcp import pose_msg, tcp_pose
 from .urdf_tools import extract_arm_chain_urdf, resolve_baxter_urdf
@@ -116,10 +116,10 @@ class CartesianDeltaTeleop:
             raise ValueError("arm must be 'left' or 'right'")
         if mode not in self.MODE_SPEEDS:
             raise ValueError("mode must be 'velocity' or 'position'")
-        if ik not in ('dls', 'sns'):
-            raise ValueError("ik must be 'dls' or 'sns'")
-        if ik == 'sns' and mode != 'velocity':
-            raise ValueError('SNS-IK is only wired for velocity mode')
+        if ik not in ('dls', 'sns', 'bounded'):
+            raise ValueError("ik must be 'dls', 'sns' or 'bounded'")
+        if ik in ('sns', 'bounded') and mode != 'velocity':
+            raise ValueError(f'{ik} IK is only wired for velocity mode')
         if frame not in ('tool', 'base'):
             raise ValueError("frame must be 'tool' or 'base'")
 
@@ -192,7 +192,8 @@ class CartesianDeltaTeleop:
 
         self.dt = 0.01
         # posture_gain (1/s) pulls the spare DOF (elbow swing) toward untuck without moving the hand.
-        self.ik = DiffIKSolver(
+        # 'bounded': joint limits as hard bounds of a least-squares solve (diff_ik.BoundedDiffIKSolver).
+        self.ik = (BoundedDiffIKSolver if ik == 'bounded' else DiffIKSolver)(
             dt=self.dt,
             damping=0.1,
             singular_threshold=0.1,
@@ -628,6 +629,17 @@ class CartesianDeltaTeleop:
                 tcp_position, tcp_rotation = tcp_pose(self.ee_transform(q_meas), self.tcp_offset)
                 # /teleop/{arm}/tcp stays the measured TCP; the servo closes on _servo_q().
                 self.tcp_pub.publish(pose_msg(tcp_position, tcp_rotation, self.node.get_clock().now().to_msg()))
+                if getattr(self, '_cuff', False):
+                    # Cuff squeezed: the operator guides the arm in Baxter's zero-g mode. Command
+                    # nothing (raw output bypasses Baxter's cuff override, so a running stream would
+                    # hold the arm against the hand), and re-anchor the target so the next stroke or
+                    # policy step continues from where the hand leaves the arm instead of pulling it back.
+                    if self.raw_output is not None:
+                        self.raw_output.stop()
+                    self._q_step = None
+                    target.reset()
+                    moving = False
+                    continue
                 if self.servo_feedback == 'setpoint':
                     tcp_position, tcp_rotation = tcp_pose(self.ee_transform(self._servo_q(q_meas)), self.tcp_offset)
                 twist = target.twist(tcp_position, tcp_rotation)
@@ -842,9 +854,10 @@ def main():
     )
     parser.add_argument(
         '--ik',
-        choices=['dls', 'sns'],
+        choices=['dls', 'sns', 'bounded'],
         default='dls',
-        help="velocity IK: 'dls' damped least squares (default) or 'sns' Rethink's SNS-IK (velocity mode)",
+        help="velocity IK: 'dls' damped least squares (default), 'sns' Rethink's SNS-IK, or 'bounded': DLS "
+        'with joint limits as hard bounds, so a joint at its limit no longer stops the hand (velocity mode)',
     )
     parser.add_argument(
         '--servo-feedback',

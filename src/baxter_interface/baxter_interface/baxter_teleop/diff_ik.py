@@ -1,6 +1,7 @@
 """Differential IK utilities for Baxter teleop."""
 
 import numpy as np
+from scipy.optimize import lsq_linear
 
 
 class DiffIKSolver:
@@ -128,3 +129,72 @@ class DiffIKSolver:
     def step(self, q, jacobian, v_ee):
         """Compatibility wrapper: solve from EE twist using configured dt."""
         return self.step_delta(q=q, jacobian=jacobian, delta_cartesian=np.asarray(v_ee, dtype=np.float32) * self.dt)
+
+
+class BoundedDiffIKSolver(DiffIKSolver):
+    """Differential IK as a box-constrained least-squares problem: joint limits are hard bounds.
+
+    Solves, each cycle,
+        min  |W (J qdot - v)|^2 + lambda^2 |qdot|^2 + eps |qdot - qdot_posture|^2
+        s.t. lo <= qdot <= hi
+    with lo/hi the joint velocity limits and, per joint, the fastest it may approach a position
+    limit and still brake in time (sqrt(2 a d), as DiffIKSolver). This is the differential IK of
+    mink (Zakka) and Pink (Caron) and Drake's DifferentialInverseKinematics, whose joint-limit
+    bound is the velocity damper of Faverjon & Tournassoud (1987); with only box constraints it is
+    a bounded-variable least-squares problem (Stark & Parker 1995, scipy.optimize.lsq_linear).
+
+    Unlike DiffIKSolver's wall (the whole vector scaled so the joint nearest its limit can stop),
+    a joint at its limit is pinned at its bound and the others keep doing as much of the hand
+    motion as they can, so the hand slides along the limit instead of freezing in every direction.
+    When no bound is active the solution is DiffIKSolver's (variable damping, minimum norm, posture
+    pulled in the null space): eps is small, so the posture term only picks among exact solutions.
+    The trade-off DiffIKSolver documents remains: the other joints take over the motion, so the
+    configuration can drift at a limit; the posture term counters it.
+    """
+
+    def __init__(self, *args, rotation_weight=1.0, eps=1e-4, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.rotation_weight = float(rotation_weight)
+        self.eps = float(eps)
+
+    def joint_velocity(
+        self,
+        q,
+        jacobian,
+        v_ee,
+        joint_velocity_limits=None,
+        joint_position_limits=None,
+        joint_acceleration_limits=None,
+    ):
+        J = np.asarray(jacobian, dtype=float)
+        q_np = np.asarray(q, dtype=float)
+        v = np.asarray(v_ee, dtype=float)
+        n = J.shape[1]
+        vmax = (
+            np.full(n, self.max_joint_velocity)
+            if joint_velocity_limits is None
+            else np.asarray(joint_velocity_limits, dtype=float)
+        )
+        lo, hi = -vmax.copy(), vmax.copy()
+        if joint_position_limits is not None:
+            to_low = np.maximum(q_np - np.asarray(joint_position_limits[0], dtype=float), 0.0)
+            to_high = np.maximum(np.asarray(joint_position_limits[1], dtype=float) - q_np, 0.0)
+            if joint_acceleration_limits is None:
+                brake_low, brake_high = to_low / self.dt, to_high / self.dt
+            else:
+                a = np.asarray(joint_acceleration_limits, dtype=float)
+                brake_low, brake_high = np.sqrt(2.0 * a * to_low), np.sqrt(2.0 * a * to_high)
+            lo, hi = np.maximum(lo, -brake_low), np.minimum(hi, brake_high)
+        hi = np.maximum(hi, lo + 1e-9)  # lsq_linear needs lo < hi; a joint at its limit gets [0, 1e-9]
+
+        # Same variable damping as DiffIKSolver._pinv: none away from singularities.
+        sigma_min = float(np.linalg.svd(J, compute_uv=False)[-1])
+        ratio = min(sigma_min / self.singular_threshold, 1.0)
+        damping = np.sqrt((1.0 - ratio**2)) * self.damping
+        posture = np.zeros(n)
+        if self.posture is not None and self.posture_gain > 0.0:
+            posture = self.posture_gain * (self.posture - q_np)
+        W = np.diag([1.0, 1.0, 1.0] + [self.rotation_weight] * 3)
+        A = np.vstack([W @ J, damping * np.eye(n), np.sqrt(self.eps) * np.eye(n)])
+        b = np.concatenate([W @ v, np.zeros(n), np.sqrt(self.eps) * posture])
+        return lsq_linear(A, b, bounds=(lo, hi), method='bvls').x.astype(np.float32)
