@@ -13,7 +13,7 @@ class BlinkNode(Node):
         super().__init__('blink')
         self._lit = False
 
-        # RELIABLE: every toggle must be delivered — a dropped command leaves
+        # RELIABLE: every toggle must be delivered; a dropped command leaves
         # the light stuck on or off until the next tick.
         # VOLATILE: no need to replay past commands to nodes that join late.
         # depth=1: only the current desired state matters; stale commands are useless.

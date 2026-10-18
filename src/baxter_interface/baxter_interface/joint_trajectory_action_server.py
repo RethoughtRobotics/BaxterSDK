@@ -14,7 +14,7 @@ def main():
     JointTrajectoryActionServer('left', mode='position', node=node)
     JointTrajectoryActionServer('right', mode='position', node=node)
 
-    # SingleThreadedExecutor — everything on one node.
+    # SingleThreadedExecutor: everything on one node.
     executor = MultiThreadedExecutor()
     executor.add_node(node)
 
