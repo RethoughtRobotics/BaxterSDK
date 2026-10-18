@@ -12,6 +12,8 @@ from .pose_servo import servo_twist
 
 def signed_permutation(axes, config):
     """3x3 matrix whose row i picks the signed controller axis named by axes[i], e.g. '-y'."""
+    if len(axes) != 3 or not all(isinstance(a, str) and len(a) == 2 and a[0] in '+-' and a[1] in 'xyz' for a in axes):
+        raise ValueError(f"{config}: axes must be three of '+x', '-y', ... (sign and axis), got {axes}")
     matrix = np.zeros((3, 3))
     for row, axis in enumerate(axes):
         matrix[row, 'xyz'.index(axis[1])] = -1.0 if axis[0] == '-' else 1.0
@@ -47,7 +49,9 @@ class VRTarget:
     the target while the clutch is held.
     """
 
-    def __init__(self, node, topic, config, gain, max_linear, max_angular, stale_after=0.2, release_after=0.05):
+    def __init__(
+        self, node, topic, config, gain, max_linear, max_angular, stale_after=0.2, release_after=0.05, swap_hands=None
+    ):
         with open(config) as f:
             cfg = yaml.safe_load(f)
         self.linear_frame = cfg.get('linear_frame', 'tool')
@@ -60,6 +64,16 @@ class VRTarget:
         yaw = Rotation.from_euler('z', base_yaw, degrees=True).as_matrix()
         self.linear_axes = signed_permutation(cfg['linear_axes'], config) @ yaw
         self.angular_axes = signed_permutation(cfg['angular_axes'], config)
+        # swap_hands: true is the operator facing Baxter (hands crossed to the arms, mirrored), for which
+        # linear_axes/angular_axes are written. swap_hands: false is the operator on Baxter's side, a
+        # 180-degree turn about up from that: x and y of both maps are negated (z kept, so up stays
+        # up and the rotation map stays proper). Base frame only: tool-frame maps follow the wrist.
+        # swap_hands (not None) overrides the config's, e.g. run_teleop.sh --swap.
+        self.swap_hands = bool(cfg.get('swap_hands', False)) if swap_hands is None else bool(swap_hands)
+        if self.linear_frame == 'base' and not self.swap_hands:
+            turn = np.diag([-1.0, -1.0, 1.0])
+            self.linear_axes = turn @ self.linear_axes
+            self.angular_axes = turn @ self.angular_axes
         self.scale = np.asarray(cfg['linear_scale'] + cfg['angular_scale'], dtype=float)
         self.deadband = np.asarray(cfg['linear_deadband'] + cfg['angular_deadband'], dtype=float)
         # Motion scaling (precision mode): the TCP moves motion_scale x the hand's translation, so hand
