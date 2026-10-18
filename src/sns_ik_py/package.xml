@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>sns_ik_py</name>
+  <version>0.0.0</version>
+  <description>
+    Python bindings for Rethink Robotics' SNS-IK library (sns_ik_lib), built unmodified
+    from rethink_ws/src/sns_ik for ROS 2.
+  </description>
+  <maintainer email="deboerandnet@gmail.com">Andnet DeBoer</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+  <buildtool_depend>ament_cmake_python</buildtool_depend>
+  <buildtool_depend>eigen3_cmake_module</buildtool_depend>
+
+  <build_depend>eigen</build_depend>
+  <build_depend>pybind11_vendor</build_depend>
+
+  <depend>kdl_parser</depend>
+  <depend>orocos_kdl_vendor</depend>
+  <depend>urdf</depend>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

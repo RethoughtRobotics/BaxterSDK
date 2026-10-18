@@ -44,10 +44,11 @@ import baxter_interface
 
 
 class Tuck(object):
-    def __init__(self, node, tuck_cmd):
+    def __init__(self, node, tuck_cmd, arm=None):
         self._node = node
         self._done = False
-        self._limbs = ('left', 'right')
+        self._arm_filter = arm  # None means both, 'left' or 'right' means only that arm
+        self._limbs = (arm,) if arm else ('left', 'right')
         self._arms = {
             'left': baxter_interface.Limb('left', node),
             'right': baxter_interface.Limb('right', node),
@@ -66,10 +67,7 @@ class Tuck(object):
                 'left': [-1.0, -2.07, 3.0, 2.55, 0.0, 0.01, 0.0],
                 'right': [1.0, -2.07, -3.0, 2.55, -0.0, 0.01, 0.0],
             },
-            'untuck': {
-                'left': [-0.08, -1.0, -1.19, 1.94, 0.67, 1.03, -0.50],
-                'right': [0.08, -1.0, 1.19, 1.94, -0.67, 1.03, 0.50],
-            },
+            'untuck': baxter_interface.settings.UNTUCK_POSITIONS,
         }
 
         self._collide_lsub = self._node.create_subscription(
@@ -248,18 +246,37 @@ class Tuck(object):
 def main(args=None):
     parser = argparse.ArgumentParser()
     tuck_group = parser.add_mutually_exclusive_group(required=True)
-    tuck_group.add_argument('-t', '--tuck', dest='tuck', action='store_true', default=False, help='tuck arms')
-    tuck_group.add_argument('-u', '--untuck', dest='untuck', action='store_true', default=False, help='untuck arms')
+    tuck_group.add_argument(
+        '-t',
+        '--tuck',
+        dest='tuck',
+        nargs='?',
+        const='both',
+        choices=['left', 'right', 'both'],
+        default=None,
+        help='tuck arms {left, right, both} (default: both)',
+    )
+    tuck_group.add_argument(
+        '-u',
+        '--untuck',
+        dest='untuck',
+        nargs='?',
+        const='both',
+        choices=['left', 'right', 'both'],
+        default=None,
+        help='untuck arms {left, right, both} (default: both)',
+    )
 
     rclpy.init(args=args)
     parsed_args, _ = parser.parse_known_args()
-    tuck = parsed_args.tuck
+    tuck = parsed_args.tuck is not None
+    arm = parsed_args.tuck if parsed_args.tuck else parsed_args.untuck
 
     node = rclpy.create_node('rsdk_tuck_arms')
     node.get_logger().info('Initializing node... ')
-    node.get_logger().info('%sucking arms' % ('T' if tuck else 'Unt',))
+    node.get_logger().info('%sucking %s' % ('T' if tuck else 'Unt', 'both arms' if arm == 'both' else f'{arm} arm'))
 
-    tucker = Tuck(node, tuck)
+    tucker = Tuck(node, tuck, None if arm == 'both' else arm)
 
     try:
         tucker.supervised_tuck()

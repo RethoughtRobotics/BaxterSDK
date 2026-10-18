@@ -4,13 +4,12 @@ import numpy as np
 
 
 class DiffIKSolver:
-    """Damped least-squares differential IK with a nullspace posture attractor.
+    """Damped least-squares differential IK.
 
-    Baxter has 7 joints for a 6-DOF end-effector task, leaving one redundant
-    degree of freedom (mostly elbow swing: e0 with s0/w0). Like the Franka
-    cartesian impedance controller, the redundancy is resolved by pulling the
-    joints toward a rest posture inside the Jacobian nullspace, which does not
-    disturb the end-effector motion.
+    Baxter has 7 joints for a 6-DOF end-effector task, leaving one redundant degree of
+    freedom (mostly elbow swing: e0 with s0/w0). It is left free (minimum-norm, no posture term).
+    Holding a joint instead (e.g. e0) makes the arm 6-DOF and singular in parts of its workspace:
+    straight down from a pose near untuck it reached 0.083 of 0.2 m/s, against 0.186 free.
     """
 
     def __init__(
@@ -19,43 +18,55 @@ class DiffIKSolver:
         damping=0.05,
         max_joint_step=0.02,
         max_joint_velocity=1.5,
-        null_gain=0.0,
-        max_null_velocity=0.5,
     ):
         self.dt = float(dt)
         self.damping = float(damping)
         self.max_joint_step = float(max_joint_step)
         self.max_joint_velocity = float(max_joint_velocity)
-        self.null_gain = float(null_gain)  # 1/s, rate of pull toward the rest posture
-        self.max_null_velocity = float(max_null_velocity)  # rad/s cap on the nullspace term
 
-    def _pinv_and_nullspace(self, J):
+    def _pinv(self, J):
         # Damped least squares remains stable near singular Jacobians.
         JJT = J @ J.T + (self.damping**2) * np.eye(J.shape[0], dtype=np.float32)
-        J_pinv = J.T @ np.linalg.inv(JJT)
-        N = np.eye(J.shape[1], dtype=np.float32) - J_pinv @ J
-        return J_pinv, N
+        return J.T @ np.linalg.inv(JJT)
 
-    def _nullspace_velocity(self, N, q, q_rest):
-        if q_rest is None or self.null_gain <= 0.0:
-            return np.zeros(N.shape[0], dtype=np.float32)
-        qdot_null = N @ (self.null_gain * (np.asarray(q_rest, dtype=np.float32) - q))
-        norm = np.linalg.norm(qdot_null)
-        if norm > self.max_null_velocity:
-            qdot_null *= self.max_null_velocity / norm
-        return qdot_null
+    def joint_velocity(
+        self,
+        q,
+        jacobian,
+        v_ee,
+        joint_velocity_limits=None,
+        joint_position_limits=None,
+        joint_acceleration_limits=None,
+    ):
+        """Joint velocities (rad/s) realizing EE twist v_ee.
 
-    def joint_velocity(self, q, jacobian, v_ee, q_rest=None, joint_velocity_limits=None):
-        """Joint velocities (rad/s) realizing EE twist v_ee plus the nullspace posture term.
-
-        The whole vector is scaled uniformly so every joint stays within its
-        velocity limit, which preserves the end-effector direction of motion.
+        With joint_position_limits (low, high), a joint heading into a limit may move at most as
+        fast as it can still brake from in time (sqrt(2 a d) with joint_acceleration_limits, else
+        one control step). The whole vector is scaled down to respect that, so at a limit the
+        hand stops in that direction (a wall) instead of the motion being pushed onto the other
+        joints, which reconfigures the arm unpredictably (e.g. 20 deg after one reach to the e1
+        limit and back). The vector is then scaled uniformly so every joint stays within its
+        velocity limit. Both scalings preserve the end-effector direction of motion.
         """
         J = np.asarray(jacobian, dtype=np.float32)
         q_np = np.asarray(q, dtype=np.float32)
-        J_pinv, N = self._pinv_and_nullspace(J)
+        v = np.asarray(v_ee, dtype=np.float32)
+        n = J.shape[1]
+        low_v = np.full(n, -np.inf, dtype=np.float32)
+        high_v = np.full(n, np.inf, dtype=np.float32)
+        if joint_position_limits is not None:
+            to_low = np.maximum(q_np - np.asarray(joint_position_limits[0], dtype=np.float32), 0.0)
+            to_high = np.maximum(np.asarray(joint_position_limits[1], dtype=np.float32) - q_np, 0.0)
+            if joint_acceleration_limits is None:
+                low_v, high_v = -to_low / self.dt, to_high / self.dt
+            else:
+                a = np.asarray(joint_acceleration_limits, dtype=np.float32)
+                low_v, high_v = -np.sqrt(2.0 * a * to_low), np.sqrt(2.0 * a * to_high)
 
-        qdot = J_pinv @ np.asarray(v_ee, dtype=np.float32) + self._nullspace_velocity(N, q_np, q_rest)
+        qdot = self._pinv(J) @ v
+        with np.errstate(divide='ignore', invalid='ignore'):
+            allowed = np.where(qdot > 0, high_v / qdot, np.where(qdot < 0, low_v / qdot, np.inf))
+        qdot *= float(np.clip(np.min(allowed), 0.0, 1.0))
 
         limits = (
             np.full_like(qdot, self.max_joint_velocity)
@@ -67,22 +78,18 @@ class DiffIKSolver:
             qdot /= ratio
         return qdot
 
-    def step_delta(self, q, jacobian, delta_cartesian, q_rest=None):
+    def step_delta(self, q, jacobian, delta_cartesian):
         """Compute next joint vector from a cartesian delta input.
 
         Args:
             q: current joint configuration (n,)
             jacobian: end-effector Jacobian (6,n)
             delta_cartesian: desired EE delta [dx,dy,dz,droll,dpitch,dyaw] (6,)
-            q_rest: optional rest posture for the nullspace attractor (n,)
         """
         # Keep all math in float32 to match JAX tensors used in the runtime.
         J = np.asarray(jacobian, dtype=np.float32)
         q_np = np.asarray(q, dtype=np.float32)
-        J_pinv, N = self._pinv_and_nullspace(J)
-
-        dq = J_pinv @ np.asarray(delta_cartesian, dtype=np.float32)
-        dq += self._nullspace_velocity(N, q_np, q_rest) * self.dt
+        dq = self._pinv(J) @ np.asarray(delta_cartesian, dtype=np.float32)
 
         # Enforce bounded joint increments per control cycle.
         vel_step_limit = self.max_joint_velocity * self.dt

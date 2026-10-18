@@ -1,0 +1,82 @@
+---
+# SNS-IK joint limits for `baxter_teleop --ik sns --sns-limits <this file>`.
+# Same format as Rethink's sns_ik_examples/config/example_baxter_joint_limits.yaml (their
+# default: 0.75 rad/s shoulder/elbow, 1.0 rad/s wrist). These match the DLS pipeline's
+# JOINT_VELOCITY_LIMITS (URDF velocity limits x 0.8); acceleration is Rethink's 2.0 rad/s^2,
+# which SNS uses only to brake toward joint position limits. e1 min_position 0.35 keeps the
+# elbow from straightening into the singularity, as the DLS runtime does.
+joint_limits:
+  left_s0:
+    has_velocity_limits: true
+    max_velocity: 1.2
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  left_s1:
+    has_velocity_limits: true
+    max_velocity: 1.2
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  left_e0:
+    has_velocity_limits: true
+    max_velocity: 1.2
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  left_e1:
+    has_velocity_limits: true
+    max_velocity: 1.2
+    has_position_limits: true
+    min_position: 0.35
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  left_w0:
+    has_velocity_limits: true
+    max_velocity: 3.2
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  left_w1:
+    has_velocity_limits: true
+    max_velocity: 3.2
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  left_w2:
+    has_velocity_limits: true
+    max_velocity: 3.2
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  right_s0:
+    has_velocity_limits: true
+    max_velocity: 1.2
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  right_s1:
+    has_velocity_limits: true
+    max_velocity: 1.2
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  right_e0:
+    has_velocity_limits: true
+    max_velocity: 1.2
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  right_e1:
+    has_velocity_limits: true
+    max_velocity: 1.2
+    has_position_limits: true
+    min_position: 0.35
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  right_w0:
+    has_velocity_limits: true
+    max_velocity: 3.2
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  right_w1:
+    has_velocity_limits: true
+    max_velocity: 3.2
+    has_acceleration_limits: true
+    max_acceleration: 2.0
+  right_w2:
+    has_velocity_limits: true
+    max_velocity: 3.2
+    has_acceleration_limits: true
+    max_acceleration: 2.0
