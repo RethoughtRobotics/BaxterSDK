@@ -62,6 +62,12 @@ class VRTarget:
         self.angular_axes = signed_permutation(cfg['angular_axes'], config)
         self.scale = np.asarray(cfg['linear_scale'] + cfg['angular_scale'], dtype=float)
         self.deadband = np.asarray(cfg['linear_deadband'] + cfg['angular_deadband'], dtype=float)
+        # Motion scaling (precision mode): the TCP moves motion_scale x the hand's translation, so hand
+        # sway shrinks by the same factor without the lag a low-pass filter would add, as surgical
+        # teleoperation scales master motion. Rotation stays 1:1. Applied before the deadband (robot units).
+        self.motion_scale = float(cfg.get('motion_scale', 1.0))
+        if not self.motion_scale > 0.0:
+            raise ValueError(f'{config}: motion_scale must be positive, got {self.motion_scale}')
         self.smoothing = float(cfg['smoothing'])
         self.gain = float(gain)
         self.max_linear = float(max_linear)
@@ -118,7 +124,8 @@ class VRTarget:
         p0, R0, offset0, rotation0 = self.reference
         base = self.linear_frame == 'base'
         delta = np.concatenate([
-            self.linear_axes @ (offset - offset0 if base else rotation0.inv().apply(offset - offset0)),
+            self.motion_scale
+            * (self.linear_axes @ (offset - offset0 if base else rotation0.inv().apply(offset - offset0))),
             # base: the wrist turn in anchor axes; tool: in the controller's axes at clutch
             self.angular_axes @ ((rotation * rotation0.inv()) if base else (rotation0.inv() * rotation)).as_rotvec(),
         ])

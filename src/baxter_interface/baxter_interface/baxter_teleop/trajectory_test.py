@@ -12,7 +12,13 @@ orientation. Phases (offsets in the robot base frame, 0.1 m/s, 1 s pauses):
   elbow limit   35 cm forward and 30 cm out, 9 cm past where the e1 (elbow) limit stops the arm, and back
   circle x2     10 cm radius circle in x-y, twice
 
+--protocol circle runs only planar circles instead (x-y, centred --radius to the arm's outer side so
+they start at the start TCP), --loops times at --circle-speed: a repeatable stimulus for comparing
+joint output stages (--output) on the robot, e.g. via run_circle_test.sh.
+
   python -m baxter_interface.baxter_teleop.trajectory_test --ik dls|sns [--arm left]
+  python -m baxter_interface.baxter_teleop.trajectory_test --arm right --protocol circle --output raw_id \
+      --gain 3 --no-feedforward
 """
 
 import argparse
@@ -31,6 +37,18 @@ DT = 0.01
 SPEED = 0.1  # m/s
 PAUSE = 1.0  # s
 SQUARE = [(0.2, 0, 0), (0.2, 0.2, 0), (0, 0.2, 0), (0, 0, 0)]
+
+
+def circle_protocol(radius, speed, loops, side):
+    """Planar x-y circles starting and ending at the start TCP, centred `radius` to the arm's outer
+    side (side = +1 left arm, -1 right arm, robot y), counterclockwise seen from above. Dense offsets
+    (n, 3) at DT, 1 s pauses before and after, and phases [(name, t_start, t_end)]."""
+    pause = np.zeros((int(PAUSE / DT), 3))
+    n = int(round(loops * 2 * np.pi * radius / (speed * DT)))
+    angle = -side * np.pi / 2 + np.linspace(0, loops * 2 * np.pi, n + 1)[1:]
+    circle = np.c_[radius * np.cos(angle), side * radius + radius * np.sin(angle), np.zeros(n)]
+    t0 = len(pause) * DT
+    return np.vstack([pause, circle, pause]), [(f'circle x{loops} r{radius:g} at {speed:g} m/s', t0, t0 + n * DT)]
 
 
 def protocol():
@@ -69,8 +87,11 @@ def protocol():
 class TrajectoryTarget:
     """Goal = start TCP + path offset at the elapsed time, orientation held; done after the end."""
 
-    def __init__(self, offsets, gain=5.0, settle=2.0):
+    def __init__(self, offsets, gain=5.0, settle=2.0, feedforward=True, max_linear=4 * SPEED):
+        """feedforward: add the path velocity to the servo (tracks without standing error); without
+        it the servo is P-only like VR teleop, so the TCP trails the goal by ~1/gain."""
         self.offsets, self.gain, self.settle = offsets, gain, settle
+        self.feedforward, self.max_linear = feedforward, max_linear
         self.start = self.origin = self.goal = None
         self.done = False
 
@@ -89,8 +110,10 @@ class TrajectoryTarget:
         i = min(i, len(self.offsets) - 1)
         nxt = min(i + 1, len(self.offsets) - 1)
         self.goal = (self.origin[0] + self.offsets[i], self.origin[1])
-        feedforward = np.r_[(self.offsets[nxt] - self.offsets[i]) / DT, np.zeros(3)]
-        return servo_twist(self.goal, tcp_position, tcp_rotation, self.gain, 4 * SPEED, 1.0, feedforward=feedforward)
+        feedforward = np.r_[(self.offsets[nxt] - self.offsets[i]) / DT, np.zeros(3)] if self.feedforward else None
+        return servo_twist(
+            self.goal, tcp_position, tcp_rotation, self.gain, self.max_linear, 1.0, feedforward=feedforward
+        )
 
 
 def main():
@@ -98,23 +121,59 @@ def main():
     parser.add_argument('--ik', choices=['dls', 'sns'], default='dls')
     parser.add_argument('--arm', choices=['left', 'right'], default='left')
     parser.add_argument('--posture-gain', type=float, default=0.0, help='DLS null-space pull toward untuck, 1/s')
+    parser.add_argument('--output', choices=['velocity', 'raw', 'raw_id'], default='velocity', help='as the teleop')
+    parser.add_argument('--gain', type=float, default=5.0, help='servo gain, 1/s (VR: --vr-gain x linear_scale)')
+    parser.add_argument('--no-feedforward', dest='feedforward', action='store_false', help='P-only servo, as VR')
+    parser.add_argument(
+        '--feedforward',
+        dest='feedforward',
+        action='store_true',
+        default=argparse.SUPPRESS,
+        help='path velocity feedforward (the default); after --no-feedforward, the last one wins',
+    )
+    parser.add_argument('--protocol', choices=['full', 'circle'], default='full')
+    parser.add_argument('--radius', type=float, default=0.15, help='circle protocol: radius, m')
+    parser.add_argument('--circle-speed', type=float, default=0.15, help='circle protocol: TCP speed, m/s')
+    parser.add_argument('--loops', type=int, default=3, help='circle protocol: number of circles')
     args, ros_args = parser.parse_known_args()
     sns_limits = os.path.join(get_package_share_directory('baxter_interface'), 'config', 'sns_joint_limits.yaml')
     rclpy.init(args=['trajectory_test', *ros_args])
     teleop = CartesianDeltaTeleop(
-        arm=args.arm, mode='velocity', ik=args.ik, sns_limits=sns_limits, frame='base', posture_gain=args.posture_gain
+        arm=args.arm,
+        mode='velocity',
+        output=args.output,
+        ik=args.ik,
+        sns_limits=sns_limits,
+        frame='base',
+        posture_gain=args.posture_gain,
     )
-    offsets, phases = protocol()
+    if args.protocol == 'circle':
+        side = 1 if args.arm == 'left' else -1
+        offsets, phases = circle_protocol(args.radius, args.circle_speed, args.loops, side)
+        speed = args.circle_speed
+    else:
+        offsets, phases = protocol()
+        speed = SPEED
     teleop.publish_config({
-        'trajectory_test': {'ik': args.ik, 'posture_gain': args.posture_gain, 'speed': SPEED, 'phases': phases},
-        'args': {'arm': args.arm, 'input': 'trajectory', 'ik': args.ik, 'posture_gain': args.posture_gain},
+        'trajectory_test': {**vars(args), 'speed': speed, 'phases': phases},
+        'args': {
+            'arm': args.arm,
+            'input': 'trajectory',
+            'ik': args.ik,
+            'posture_gain': args.posture_gain,
+            'output': args.output,
+            'servo_gain': args.gain,
+            'feedforward': args.feedforward,
+        },
     })
-    target = TrajectoryTarget(offsets)
+    target = TrajectoryTarget(offsets, gain=args.gain, feedforward=args.feedforward, max_linear=4 * speed)
     teleop.key_source = lambda timeout: '\x1b' if target.done else time.sleep(timeout)
     print(f'{args.ik}: {len(offsets) * DT:.0f} s trajectory, phases ' + ', '.join(p[0] for p in phases))
     try:
         teleop.spin_target(target)
     finally:
+        if teleop.raw_output is not None:
+            teleop.raw_output.close()
         teleop.node.destroy_node()
         rclpy.shutdown()
 
