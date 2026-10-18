@@ -81,7 +81,7 @@ node.declare_parameter('component_id', args.component_id)
 io_component = node.get_parameter('component_id').get_parameter_value().string_value
 ```
 
-Parameters must be declared before use. Scope is always node-local — no `~` prefix needed.
+Parameters must be declared before use. Scope is always node-local, so no `~` prefix is needed.
 
 ## Rate
 

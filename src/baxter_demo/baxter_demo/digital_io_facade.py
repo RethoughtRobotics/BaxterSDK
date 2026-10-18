@@ -1,7 +1,7 @@
 """Hardware abstraction for a single Baxter digital IO component.
 
 Callers create a DigitalIO instance and call on()/off()/toggle().
-All ROS2 plumbing — publishers, subscriptions, QoS, callback groups —
+All ROS2 plumbing (publishers, subscriptions, QoS, callback groups)
 is contained here and invisible to the calling node.
 """
 
@@ -19,7 +19,7 @@ class DigitalIO:
 
         # MutuallyExclusiveCallbackGroup means only one callback in this group
         # runs at a time. With the default SingleThreadedExecutor this is
-        # redundant — callbacks are already serialized. It becomes load-bearing
+        # redundant: callbacks are already serialized. It becomes load-bearing
         # the moment you switch to MultiThreadedExecutor, so declaring it now
         # makes the thread-safety contract explicit.
         self._cbg = MutuallyExclusiveCallbackGroup()
@@ -41,8 +41,8 @@ class DigitalIO:
 
         # State subscription: TRANSIENT_LOCAL would replay the last message to
         # us immediately on connect, removing the need to wait for the first
-        # publish. Try swapping VOLATILE → TRANSIENT_LOCAL here as a Stage 2
-        # experiment — it only works if the bridge publisher also uses
+        # publish. Try swapping VOLATILE for TRANSIENT_LOCAL here as a Stage 2
+        # experiment; it only works if the bridge publisher also uses
         # TRANSIENT_LOCAL (QoS must match on both sides for durability).
         node.create_subscription(
             DigitalIOState,

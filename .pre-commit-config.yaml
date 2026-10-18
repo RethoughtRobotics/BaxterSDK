@@ -1,7 +1,7 @@
 ---
 repos:
   - repo: https://github.com/polymathrobotics/polymath_code_standard
-    rev: v2.1.2
+    rev: v2.6.1
     hooks:
       # Basic checks and fixes that apply to any text file and the git repository itself
       - id: polymath-general
@@ -17,3 +17,13 @@ repos:
       - id: polymath-yaml
       - id: polymath-toml
       - id: polymath-json
+  # House rule: no arrow characters or em dashes in any text file. Write "to" or "then" instead of
+  # an arrow, and a comma, colon or parentheses instead of an em dash. pygrep matches bytes, so the
+  # pattern is UTF-8: the em dash (U+2014) and the arrow blocks U+2190-21FF and U+27F0-27FF.
+  - repo: local
+    hooks:
+      - id: no-arrows-or-em-dashes
+        name: No arrow characters or em dashes
+        language: pygrep
+        entry: \xe2(\x80\x94|\x86[\x90-\xbf]|\x87[\x80-\xbf]|\x9f[\xb0-\xbf])
+        types: [text]
