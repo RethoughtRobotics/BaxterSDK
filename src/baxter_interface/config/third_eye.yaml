@@ -1,0 +1,20 @@
+---
+# third_eye: the Intel RealSense D435i watching Baxter's workspace, run by realsense2_camera
+# (apt: ros-kilted-realsense2-camera) via `run_teleop.sh --camera` (or --record):
+#   ros2 launch realsense2_camera rs_launch.py camera_namespace:=cameras camera_name:=third_eye \
+#     config_file:=<this file>
+# Topics follow Baxter's camera naming: /cameras/third_eye/color/image_raw (+ camera_info). The
+# name and namespace are launch arguments (rs_launch.py ignores them here); this file holds
+# node parameters as plain key: value pairs (not a ros__parameters file).
+serial_no: '242322077613'
+
+# Colour only, sized and paced like the recorder (RethoughtAI configs/baxter.yaml, 30 fps).
+# For depth, set enable_depth: true and align_depth.enable: true (depth in the colour frame,
+# /cameras/third_eye/aligned_depth_to_color/image_raw).
+rgb_camera.color_profile: 640,480,30
+enable_color: true
+enable_depth: false
+enable_infra1: false
+enable_infra2: false
+enable_gyro: false
+enable_accel: false

@@ -1,0 +1,12 @@
+---
+# Arm poses worth keeping, e.g. as a later posture target for the teleop's null-space pull
+# (DiffIKSolver posture, currently settings.UNTUCK_POSITIONS). Joint order s0 s1 e0 e1 w0 w1 w2, rad.
+
+# Captured on the real robot 2026-10-06 22:1x during VR teleop: candidate elbow posture.
+# Mean of 204 joint_states samples (spread < 0.15 deg). Hand (endpoint) in base:
+# xyz [0.643, -0.233, 0.040] m, quat xyzw [-0.153, 0.966, 0.206, 0.016].
+# Jacobian sigma_min 0.205, cond 8.9 (untuck: 0.204, 9.1). Differs from untuck mainly in
+# s1 (+28.6 deg), e1 (-17.0 deg), w2 (-43.7 deg) and s0 (-13.8 deg); e0 matches.
+right_elbow_candidate:
+  arm: right
+  positions: [-0.1279, -0.5102, 1.1259, 1.6069, -0.5813, 1.0642, -0.0571]

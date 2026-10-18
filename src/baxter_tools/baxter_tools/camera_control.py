@@ -89,14 +89,28 @@ class Camera(object):
         else:
             self.list_cameras()
 
-    def open_camera(self, camera, res, *_args, **_kwds):
+    def open_camera(self, camera, res, fps=None, exposure=None, gain=None, white_balance=None):
+        """Open (or re-open) a camera; settings left as None keep the camera's automatic control."""
         cam = CameraController(self._node, camera)
         cam.resolution = res
+        if fps is not None:
+            cam.fps = fps
+        if exposure is not None:
+            cam.exposure = exposure
+        if gain is not None:
+            cam.gain = gain
+        if white_balance is not None:
+            cam.white_balance_red, cam.white_balance_green, cam.white_balance_blue = white_balance
         cam.open()
 
     def close_camera(self, camera, *_args, **_kwds):
         cam = CameraController(self._node, camera)
         cam.close()
+
+
+def control(value):
+    """A camera control value: an int, or 'auto' for the camera's automatic control."""
+    return CameraController.CONTROL_AUTO if value == 'auto' else int(value)
 
 
 def main():
@@ -109,6 +123,13 @@ def main():
     action_grp.add_argument('-o', '--open', metavar='CAMERA', help='Open specified camera')
     parser.add_argument(
         '-r', '--resolution', metavar='[X]x[Y]', default='1280x800', help='Set camera resolution (default: 1280x800)'
+    )
+    # Applied with --open. Each re-opens the camera, so pass the resolution and fps it should keep.
+    parser.add_argument('--fps', type=float, help='Frame rate (default: 20)')
+    parser.add_argument('--exposure', type=control, help='Exposure 0-100, or auto (default)')
+    parser.add_argument('--gain', type=control, help='Gain 0-79, or auto (default)')
+    parser.add_argument(
+        '--white-balance', type=control, nargs=3, metavar=('R', 'G', 'B'), help='White balance 0-4095 each, or auto'
     )
     action_grp.add_argument('-c', '--close', metavar='CAMERA', help='Close specified camera')
     action_grp.add_argument('-l', '--list', action='store_true', help='List available cameras')
@@ -138,7 +159,7 @@ def main():
     if args.list:
         cam.list_cameras()
     elif args.open:
-        cam.open_camera(cam_name, res)
+        cam.open_camera(cam_name, res, args.fps, args.exposure, args.gain, args.white_balance)
     elif args.close:
         cam.close_camera(cam_name)
     elif args.enumerate:

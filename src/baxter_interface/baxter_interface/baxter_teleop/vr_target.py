@@ -25,9 +25,12 @@ class VRTarget:
 
     Contract (libsurvive_ros2, /vive/{arm}/target): a PoseStamped in the hand's
     anchor frame, republished with every tracker update, that is exactly frozen
-    while the trackpad clutch is released. A new message with an unchanged pose
-    therefore means "released": the arm holds and is re-referenced so the current
-    target maps onto the current TCP, and the next stroke continues from there.
+    while the trackpad clutch is released. A pose unchanged for `release_after` therefore
+    means "released": the arm holds and is re-referenced so the current target maps onto
+    the current TCP, and the next stroke continues from there. A single repeated pose does
+    not: a controller tracked at a high rate (~230 Hz) repeats its pose now and then while
+    clutched (left_v_right bag: 11% of messages), and treating each as a release dropped
+    the stroke every few cycles.
 
     Translation and rotation follow `linear_frame` in `config`:
       tool (default)  controller axes at clutch -> TCP axes at clutch (config/vr_axes.yaml), for
@@ -44,13 +47,18 @@ class VRTarget:
     the target while the clutch is held.
     """
 
-    def __init__(self, node, topic, config, gain, max_linear, max_angular, stale_after=0.2):
+    def __init__(self, node, topic, config, gain, max_linear, max_angular, stale_after=0.2, release_after=0.05):
         with open(config) as f:
             cfg = yaml.safe_load(f)
         self.linear_frame = cfg.get('linear_frame', 'tool')
         if self.linear_frame not in ('tool', 'base'):
             raise ValueError(f"{config}: linear_frame must be 'tool' or 'base', got {self.linear_frame}")
-        self.linear_axes = signed_permutation(cfg['linear_axes'], config)
+        # base_yaw turns the anchor about up before the translation map, e.g. 180 when facing Baxter.
+        base_yaw = float(cfg.get('base_yaw', 0.0))
+        if base_yaw and self.linear_frame != 'base':
+            raise ValueError(f'{config}: base_yaw needs linear_frame: base, got {self.linear_frame}')
+        yaw = Rotation.from_euler('z', base_yaw, degrees=True).as_matrix()
+        self.linear_axes = signed_permutation(cfg['linear_axes'], config) @ yaw
         self.angular_axes = signed_permutation(cfg['angular_axes'], config)
         self.scale = np.asarray(cfg['linear_scale'] + cfg['angular_scale'], dtype=float)
         self.deadband = np.asarray(cfg['linear_deadband'] + cfg['angular_deadband'], dtype=float)
@@ -59,12 +67,15 @@ class VRTarget:
         self.max_linear = float(max_linear)
         self.max_angular = float(max_angular)
         self.stale_after = float(stale_after)
+        # A config may lengthen it, e.g. a policy stream, where a delivery hiccup must not re-anchor.
+        self.release_after = float(cfg.get('release_after', release_after))
         self.reference = None  # (TCP position, TCP Rotation, offset, rotation) when the clutch engaged
         self.goal = None  # (position, Rotation) the TCP is servoed toward this cycle, base frame
         self._pose = None
         self._filtered = None  # (offset, Rotation), smoothed while the clutch is held
         self._moving = False
         self._received = 0.0
+        self._changed = -np.inf  # when the pose last changed
         node.create_subscription(PoseStamped, topic, self._on_target, 10)
 
     def _on_target(self, msg):
@@ -72,9 +83,12 @@ class VRTarget:
         pose = (p.x, p.y, p.z, o.x, o.y, o.z, o.w)
         if not np.all(np.isfinite(pose)):  # lost tracking: ignore, so the target goes stale and the arm holds
             return
-        self._moving = self._pose is not None and pose != self._pose
+        now = time.monotonic()
+        if self._pose is not None and pose != self._pose:
+            self._changed = now
+        self._moving = now - self._changed < self.release_after
         self._pose = pose
-        self._received = time.monotonic()
+        self._received = now
         # Clutch state is decided on the raw pose; only the stroke itself is smoothed.
         offset, rotation = np.asarray(pose[:3]), Rotation.from_quat(pose[3:])
         if not self._moving or self._filtered is None:

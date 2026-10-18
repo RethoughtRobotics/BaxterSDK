@@ -97,14 +97,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--ik', choices=['dls', 'sns'], default='dls')
     parser.add_argument('--arm', choices=['left', 'right'], default='left')
+    parser.add_argument('--posture-gain', type=float, default=0.0, help='DLS null-space pull toward untuck, 1/s')
     args, ros_args = parser.parse_known_args()
     sns_limits = os.path.join(get_package_share_directory('baxter_interface'), 'config', 'sns_joint_limits.yaml')
     rclpy.init(args=['trajectory_test', *ros_args])
-    teleop = CartesianDeltaTeleop(arm=args.arm, mode='velocity', ik=args.ik, sns_limits=sns_limits, frame='base')
+    teleop = CartesianDeltaTeleop(
+        arm=args.arm, mode='velocity', ik=args.ik, sns_limits=sns_limits, frame='base', posture_gain=args.posture_gain
+    )
     offsets, phases = protocol()
     teleop.publish_config({
-        'trajectory_test': {'ik': args.ik, 'speed': SPEED, 'phases': phases},
-        'args': {'arm': args.arm, 'input': 'trajectory', 'ik': args.ik},
+        'trajectory_test': {'ik': args.ik, 'posture_gain': args.posture_gain, 'speed': SPEED, 'phases': phases},
+        'args': {'arm': args.arm, 'input': 'trajectory', 'ik': args.ik, 'posture_gain': args.posture_gain},
     })
     target = TrajectoryTarget(offsets)
     teleop.key_source = lambda timeout: '\x1b' if target.done else time.sleep(timeout)

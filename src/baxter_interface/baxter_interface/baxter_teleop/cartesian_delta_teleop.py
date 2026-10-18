@@ -11,6 +11,7 @@ import time
 
 import numpy as np
 import rclpy
+import yaml
 from ament_index_python.packages import get_package_share_directory
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from rclpy.executors import TimeoutException
@@ -37,6 +38,7 @@ from baxter_external_devices.getch import getch
 from .delta_guard import CartesianDeltaGuard
 from .diff_ik import DiffIKSolver
 from .keymap import KeyTarget, twist_from_key
+from .tcp import pose_msg, tcp_pose
 from .urdf_tools import extract_arm_chain_urdf, resolve_baxter_urdf
 from .vr_target import VRTarget
 
@@ -67,6 +69,9 @@ class CartesianDeltaTeleop:
     )
     MODE_SPEEDS = {'velocity': (0.20, 0.8), 'position': (1.20, 12.0)}
     GRIPPER_VELOCITY = 80.0  # % of the electric gripper's max speed (SDK default 50)
+    # After a position-mode move Baxter ignores velocity commands until ~1.4-1.9 s after it ends
+    # (rollouts Clean-SmolVLA*, ACT_Rollout; 20 ms otherwise): wait that out at home.
+    HOME_SETTLE = 2.0  # s
     # VR servo speed caps (m/s, rad/s): above the speeds reached in circle_clockwise_20261001_184937
     # (1.46 m/s, 4.1 rad/s) so they rarely bind; the joint velocity limits still do.
     VR_SPEEDS = (2.0, 5.0)
@@ -80,6 +85,7 @@ class CartesianDeltaTeleop:
         mode='velocity',
         ik='dls',
         sns_limits=None,
+        posture_gain=0.0,
         frame='base',
         tcp_offset=None,
         linear_speed=None,
@@ -127,6 +133,7 @@ class CartesianDeltaTeleop:
         self.tcp_twist_pub = self.node.create_publisher(TwistStamped, ns + 'tcp_twist', 10)
         self.ik_pub = self.node.create_publisher(JointState, ns + 'ik', 10)
         self.goal_pub = self.node.create_publisher(PoseStamped, ns + 'goal', 10)
+        self.tcp_pub = self.node.create_publisher(PoseStamped, ns + 'tcp', 10)  # measured TCP (tcp.py)
         self.key_pub = self.node.create_publisher(String, ns + 'key', 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.config_pub = self.node.create_publisher(String, ns + 'config', latched)
@@ -163,6 +170,8 @@ class CartesianDeltaTeleop:
         self.ee_transform = jax.jit(self.robot.ee_transform)
         # Compile now so the first keypress does not stall the control loop.
         self.home = baxter_interface.settings.UNTUCK_POSITIONS[arm]
+        # Going home opens the gripper, and the VR trigger drives it (--no-gripper: neither touches it)
+        self.use_gripper = True
         self.ee_jacobian(jnp.asarray(self.home, dtype=jnp.float32)).block_until_ready()
         self.ee_transform(jnp.asarray(self.home, dtype=jnp.float32)).block_until_ready()
 
@@ -174,7 +183,16 @@ class CartesianDeltaTeleop:
             self.tcp_offset = np.array([0.0, 0.0, float(tcp_offset)], dtype=np.float32)
 
         self.dt = 0.01
-        self.ik = DiffIKSolver(dt=self.dt, damping=0.05, max_joint_step=0.04, max_joint_velocity=6.0)
+        # posture_gain (1/s) pulls the spare DOF (elbow swing) toward untuck without moving the hand.
+        self.ik = DiffIKSolver(
+            dt=self.dt,
+            damping=0.1,
+            singular_threshold=0.1,
+            max_joint_step=0.04,
+            max_joint_velocity=6.0,
+            posture=baxter_interface.settings.UNTUCK_POSITIONS[arm],
+            posture_gain=posture_gain,
+        )
         if ik == 'sns':
             # Rethink's SNS-IK replaces the DLS solve; it brings its own Jacobian and joint limits.
             from .sns_ik import SNSIKSolver
@@ -267,12 +285,7 @@ class CartesianDeltaTeleop:
 
     def publish_goal(self, goal):
         """VR servo goal (position, scipy Rotation) in the base frame."""
-        msg = PoseStamped()
-        msg.header.stamp, msg.header.frame_id = self.node.get_clock().now().to_msg(), 'base'
-        p, o = msg.pose.position, msg.pose.orientation
-        p.x, p.y, p.z = (float(x) for x in goal[0])
-        o.x, o.y, o.z, o.w = (float(x) for x in goal[1].as_quat())
-        self.goal_pub.publish(msg)
+        self.goal_pub.publish(pose_msg(goal[0], goal[1], self.node.get_clock().now().to_msg()))
 
     def publish_config(self, config):
         self.config_pub.publish(String(data=json.dumps(config, indent=1, default=str)))
@@ -373,16 +386,36 @@ class CartesianDeltaTeleop:
         self.limb.set_joint_velocities({name: float(qdot[i]) for i, name in enumerate(self.joint_names)})
 
     def _go_home(self):
-        """Move to the untuck pose (as tuck_arms -u) with a slow, blocking position move."""
+        """Open the gripper (if use_gripper) and move to the untuck pose (as tuck_arms -u) with a slow,
+        blocking move."""
         self.q_cmd = None
         self.limb.exit_control_mode()
+        if (
+            self.use_gripper
+            and self.gripper is not None
+            and self.gripper.type() == 'electric'
+            and self.gripper.calibrated()
+        ):
+            self.gripper.command_position(100.0, block=False)  # 100 = open
+            self.gripper_target = 100.0
+            if getattr(self, '_grip_filtered', None) is not None:  # VR: the trigger filter restarts open
+                self._grip_filtered, self._grip_sent = 100.0, None
         self.node.get_logger().info('Moving to the untuck pose...')
         self.limb.set_joint_position_speed(0.3)
         try:
-            self.limb.move_to_joint_positions(dict(zip(self.joint_names, self.home)), timeout=15.0)
+            reached = self.limb.move_to_joint_positions(dict(zip(self.joint_names, self.home)), timeout=15.0)
         finally:
             self.limb.set_joint_position_speed(1.0)
-        self.node.get_logger().info('At the untuck pose.')
+        zero = {name: 0.0 for name in self.joint_names}
+        end = time.monotonic() + self.HOME_SETTLE
+        while time.monotonic() < end:  # hold in velocity mode, so the next stroke moves at once
+            self.limb.set_joint_velocities(zero)
+            time.sleep(self.dt)
+        self.qdot_cmd, self.qdot_cmd_time = np.zeros(7, dtype=np.float32), time.monotonic()
+        if reached:
+            self.node.get_logger().info('At the untuck pose.')
+        else:
+            self.node.get_logger().warning('Did not reach the untuck pose in 15 s: press home again.')
 
     def _apply_gripper_delta(self, delta_percent):
         if self.gripper is None:
@@ -497,8 +530,9 @@ class CartesianDeltaTeleop:
                     if not self._handle_keyboard_key(key) and on_key is not None:
                         on_key(key)
 
-                T = np.asarray(self.ee_transform(self._current_q()), dtype=np.float32)
-                twist = target.twist(T[:3, 3] + T[:3, :3] @ self.tcp_offset, T[:3, :3])
+                tcp_position, tcp_rotation = tcp_pose(self.ee_transform(self._current_q()), self.tcp_offset)
+                self.tcp_pub.publish(pose_msg(tcp_position, tcp_rotation, self.node.get_clock().now().to_msg()))
+                twist = target.twist(tcp_position, tcp_rotation)
                 if target.goal is not None:
                     self.publish_goal(target.goal)
                 if twist is not None:
@@ -528,39 +562,94 @@ class CartesianDeltaTeleop:
 
         self.spin_target(target, on_key)
 
-    def spin_vr(self, target, trigger_topic, b_button_topic):
+    def spin_vr(self, target, trigger_topic, b_button_topic, home_button_topic=None):
         """Follow a VRTarget; the controller's analog trigger sets the gripper opening (released
         open, pulled closed) and its B button sends the arm home (as H); the keyboard keeps
-        gripper/home/ESC."""
+        gripper/home/ESC. Guided by hand (cuff squeezed), the cuff's buttons drive the gripper."""
         print(f'\n{self.arm.capitalize()} arm VR teleop ({type(self.ik).__name__}, velocity mode)')
         print(
             'Touch the trackpad to move, release to stop. A re-anchors. Trigger closes the gripper. '
-            'B or H home, ESC quit'
+            'B, H or the right navigator OK home, ESC quit. By hand: squeeze the cuff to move, its '
+            'dash/circle buttons close/open'
         )
         self._trigger = None  # (value 0..1, receive time)
         self.node.create_subscription(
             Float32, trigger_topic, lambda msg: setattr(self, '_trigger', (msg.data, time.monotonic())), 10
         )
         if self.gripper is not None and self.gripper.type() == 'electric' and not self.gripper.calibrated():
-            self.node.get_logger().info('Calibrating the gripper for VR control...')
+            self.node.get_logger().info('Calibrating the gripper...')
             self._calibrate_gripper()
         self._b_pressed = False
         self.node.create_subscription(Empty, b_button_topic, lambda msg: setattr(self, '_b_pressed', True), 10)
+        from baxter_core_msgs.msg import DigitalIOState
+
+        if home_button_topic:  # a robot button as B, for every arm's teleop: one press homes them all
+            self._home_button = (0, -np.inf)  # last state, when it last went 0
+
+            def on_home_button(msg):
+                # Navigator buttons bounce on release: a press counts after 0.2 s released
+                prev, released = self._home_button
+                if prev and not msg.state:
+                    released = time.monotonic()
+                elif not prev and msg.state and time.monotonic() - released >= 0.2:
+                    self._b_pressed = True
+                self._home_button = (msg.state, released)
+
+            self.node.create_subscription(DigitalIOState, home_button_topic, on_home_button, 10)
+        # The cuff (zero-g) moves the arm by hand; on release Baxter's position hold would pull it back to
+        # where it was held before. Not streaming (no stroke under way): hold where the hand left it.
+        self._cuff = self._cuff_seen = False
+        self.node.create_subscription(
+            DigitalIOState,
+            f'/robot/digital_io/{self.arm}_lower_cuff/state',
+            lambda msg: setattr(self, '_cuff', bool(msg.state)),
+            10,
+        )
         self._grip_filtered = self._grip_sent = self._grip_time = None
+        # The cuff's buttons drive the gripper, as baxter_examples gripper_cuff_control (kinesthetic
+        # demos): dash (upper) closes, circle (lower) opens, on press. A command holds until the next
+        # button press or a trigger move.
+        self._cuff_button = None  # 'close' or 'open', pressed since the last cycle
+        self._cuff_buttons = {}  # topic -> last state, for the press edge
+
+        def on_button(topic, action, state):
+            if state and not self._cuff_buttons.get(topic):
+                self._cuff_button = action
+            self._cuff_buttons[topic] = state
+
+        for button, action in (('upper', 'close'), ('lower', 'open')):
+            topic = f'/robot/digital_io/{self.arm}_{button}_button/state'
+            self.node.create_subscription(
+                DigitalIOState, topic, lambda msg, t=topic, a=action: on_button(t, a, bool(msg.state)), 10
+            )
 
         def on_cycle():
             self._follow_trigger()
-            if self._b_pressed:  # the controller's B button: home, as the H key
+            if self._cuff_button is not None:
+                action, self._cuff_button = self._cuff_button, None
+                self._apply_cuff_button(action)
+            if self._cuff_seen and not self._cuff and not target._moving:  # cuff released, arm held
+                target.reset()
+                self.limb.set_joint_positions(self.limb.joint_angles())
+            self._cuff_seen = self._cuff
+            if self._b_pressed:  # the controller's B button or the home button: home, as the H key
                 self._b_pressed = False
                 return 'h'
             return None
 
         self.spin_target(target, on_cycle=on_cycle)
 
+    def _apply_cuff_button(self, action):
+        """Open or close the gripper fully from a cuff button, if it is calibrated and ready."""
+        if self.gripper is None or not (self.gripper.calibrated() and self.gripper.ready()):
+            return
+        (self.gripper.close if action == 'close' else self.gripper.open)()
+        self.gripper_target = 0.0 if action == 'close' else 100.0
+
     def _follow_trigger(self, smoothing=0.05, min_step=0.5, min_period=0.02, stale=0.5):
         """Gripper opening from the trigger, continuously: first-order filtered (smoothing, s) and
         sent when it changed by min_step (%) at most every min_period (s); holds when stale."""
-        if self._trigger is None or self.gripper is None or self.gripper.type() != 'electric':
+        if not self.use_gripper or self._trigger is None or self.gripper is None or self.gripper.type() != 'electric':
             return
         if not self.gripper.calibrated():
             return
@@ -623,12 +712,40 @@ def main():
         default=None,
         help='VR B button topic, sends the arm home (default: /vive/{arm}/b_button)',
     )
+    parser.add_argument(
+        '--no-gripper',
+        action='store_true',
+        help='leave the gripper to the cuff buttons: the VR trigger does not drive it and going home (B, '
+        'H, the home button) does not open it',
+    )
+    parser.add_argument(
+        '--home-button-topic',
+        default='/robot/digital_io/right_button_ok/state',
+        help="robot button that sends the arm home, as B; every arm's teleop listens, so one press homes "
+        "both (default: the right navigator's OK; '' for none)",
+    )
     parser.add_argument('--mode', choices=['velocity', 'position'], default='velocity', help='joint control mode')
     parser.add_argument(
         '--ik',
         choices=['dls', 'sns'],
         default='dls',
         help="velocity IK: 'dls' damped least squares (default) or 'sns' Rethink's SNS-IK (velocity mode)",
+    )
+    parser.add_argument(
+        '--posture-gain',
+        type=float,
+        default=0.0,
+        help='DLS: pull the elbow toward untuck in the null space of the hand task, in 1/s (0 = off); '
+        '1/s cost circle tracking in the sim (posture_damping report), 0.5 did not',
+    )
+    parser.add_argument(
+        '--null',
+        dest='posture_gain',
+        action='store_const',
+        const=1.4,
+        default=argparse.SUPPRESS,
+        help='Enable the DLS null-space untuck pull at 1.4/s (default: off). '
+        'If combined with --posture-gain, the last option wins.',
     )
     parser.add_argument(
         '--sns-limits',
@@ -679,6 +796,7 @@ def main():
         mode=args.mode,
         ik=args.ik,
         sns_limits=args.sns_limits,
+        posture_gain=args.posture_gain,
         frame=args.frame,
         tcp_offset=args.tcp_offset,
         linear_speed=args.linear_speed,
@@ -691,10 +809,15 @@ def main():
         max_delta_jump=args.max_delta_jump,
         gripper_step=args.gripper_step,
     )
+    teleop.use_gripper = not args.no_gripper
     config = {'args': vars(args), 'tcp_offset': teleop.tcp_offset.tolist(), 'ik': type(teleop.ik).__name__}
     if args.input == 'vr':
         with open(args.vr_config) as f:
             config['vr_config'] = f.read()
+    # The controller (libsurvive_ros2 /vive/{hand}/...) driving this arm; swap_hands crosses them.
+    hand = args.arm
+    if args.input == 'vr' and yaml.safe_load(config['vr_config']).get('swap_hands', False):
+        hand = {'left': 'right', 'right': 'left'}[args.arm]
     src = os.path.dirname(os.path.realpath(__file__))
     config['git'] = subprocess.run(
         ['git', '-C', src, 'describe', '--always', '--dirty'], capture_output=True, text=True
@@ -703,11 +826,12 @@ def main():
     try:
         if args.input == 'vr':
             teleop.spin_vr(
-                trigger_topic=args.vr_trigger_topic or f'/vive/{args.arm}/trigger',
-                b_button_topic=args.vr_b_button_topic or f'/vive/{args.arm}/b_button',
+                trigger_topic=args.vr_trigger_topic or f'/vive/{hand}/trigger',
+                b_button_topic=args.vr_b_button_topic or f'/vive/{hand}/b_button',
+                home_button_topic=args.home_button_topic,
                 target=VRTarget(
                     teleop.node,
-                    args.vr_topic or f'/vive/{args.arm}/target',
+                    args.vr_topic or f'/vive/{hand}/target',
                     args.vr_config,
                     args.vr_gain,
                     teleop.linear_speed,
