@@ -70,7 +70,7 @@ TOPICS="$(ros2 topic list 2>/dev/null)"  # again, with the camera's topics
 for arm in left right; do
     cmd=$(ros2 topic info -v "/robot/limb/${arm}/joint_command" 2>/dev/null \
         | awk '/^Node name:/ {node=$3} /Endpoint type: PUBLISHER/ && node != "ros_bridge" {print node}')
-    [[ -n "$cmd" ]] && echo "Note: ${cmd//$'\n'/ } command(s) the ${arm} arm; stop it for zero-g (teleop, rethoughtai's scripts/run_inference)."
+    [[ -n "$cmd" ]] && echo "Note: ${cmd//$'\n'/ } command(s) the ${arm} arm; stop it for zero-g (teleop, RethoughtAI's scripts/run_inference)."
 done
 # Topics whose message type isn't installed here would stop the recorder (e.g. baxter_core_msgs/HomingCommand)
 mapfile -t MISSING < <(ros2 topic list -t 2>/dev/null | python3 -c "

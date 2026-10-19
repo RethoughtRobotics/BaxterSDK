@@ -15,10 +15,10 @@
 # /vive/{arm}/ VR input).
 # VR translation maps onto the robot base frame (config/vr_axes_base.yaml); pass
 # --vr-config vr_axes.yaml for the previous tool-frame mapping.
-# --record runs the RethoughtAI episode recorder (../rethoughtai, configs/baxter.yaml) below the
+# --record runs the RethoughtAI episode recorder (../../rethought_ai, configs/baxter.yaml) below the
 # teleop instead of the record_teleop.sh prompt: Baxter's buttons and both VR thumbsticks pushed
 # the same way for 2 s (north start, south stop, east save, west discard) drive it.
-# --session NAME saves the recorder's episodes under rethoughtai/recorder/data/NAME/ (continuing
+# --session NAME saves the recorder's episodes under rethought_ai/recorder/data/NAME/ (continuing
 # its numbering if it exists) and shows NAME on Baxter's screen; it implies --record. With one arm
 # (--left, --right or --arm X) the recorder skips the other arm's topics (--exclude).
 # --policy points the teleop at RethoughtAI's policy runtime (`inference run`) instead of the VR
