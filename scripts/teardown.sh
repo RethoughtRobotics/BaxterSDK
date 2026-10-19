@@ -1,8 +1,9 @@
 #!/bin/bash
-# Stop everything ROS on this machine for the Baxter setup, real or sim, and reset to a clean state:
-#   sim robot (baxter_mujoco), teleop, tuck_arms, RViz, robot/joint state publishers, VR replay,
-#   ros1_bridge (real robot link), the libsurvive VR container, Zenoh routers and ROS 2 daemons;
-#   then removes stale ROS middleware shared memory from /dev/shm.
+# Stop this stack's processes, real or sim, and reset to a clean state: the sim robot (baxter_mujoco),
+#   teleop, tuck_arms, the policy (RethoughtAI), recorders, the third_eye camera, RViz, robot/joint
+#   state publishers, MoveIt, the libsurvive VR container, Zenoh routers and ROS 2 daemons; then
+#   removes stale ROS middleware shared memory from /dev/shm. The bridge container (the robot link)
+#   keeps running: stop it from its own terminal.
 # The robot itself is not powered down: with the bridge and teleop gone it holds position.
 # Usage: ./teardown.sh [--dry-run]   (--dry-run lists what would be stopped)
 
@@ -11,9 +12,13 @@ LIBSURVIVE_DIR="${LIBSURVIVE_DIR:-$(realpath "${SCRIPT_DIR}/../../libsurvive_ros
 DRY=false
 [[ "${1:-}" == --dry-run ]] && DRY=true
 
-PATTERN='/opt/ros/|baxter_sdk/(install|build|\.venv)|ros2cli\.daemon|rmw_zenohd|rviz2|robot_state_publisher'
-PATTERN+='|joint_state_publisher|ros1_bridge|dynamic_bridge|baxter_mujoco[.](baxter_ros|sim)|baxter_interface'
-PATTERN+='|baxter_tools|(run_sim_teleop|run_teleop|launch_sim|view_teleop_frames|replay_vr_bag|run_bridge)\.sh'
+# Only what this stack starts (BaxterSDK, RethoughtAI, the camera, RViz, recorders, routers), never
+# every ROS process on the machine: other ROS programs (a micro-ROS agent, Foxglove) are left alone.
+PATTERN='baxter_sdk/(install|build|\.venv)|rethought_ai/(\.venv|launch)|policy\.launch\.py'
+PATTERN+='|baxter_mujoco[.](baxter_ros|sim)|baxter_interface|baxter_tools|baxter_examples|move_group'
+PATTERN+='|robot_state_publisher|joint_state_publisher|realsense2_camera|rs_launch\.py|rviz2'
+PATTERN+='|ros2 bag (record|play)|rmw_zenohd|ros2cli\.daemon'
+PATTERN+='|(run_sim_teleop|run_teleop|launch_sim|view_teleop_frames|record_teleop)\.sh'
 
 # Never stop this script or the shells that started it.
 keep=" $$ "
