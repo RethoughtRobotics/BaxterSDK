@@ -138,7 +138,7 @@ def simulate(bag, arm, gain, linear_speed, angular_speed):
     T_tcp = urdf_fk(urdf, f'{arm}_gripper', dict(zip(joints, q0.tolist())))
     tcp_offset = T_ee[:3, :3].T @ (T_tcp[:3, 3] - T_ee[:3, 3])  # TCP = URDF {arm}_gripper frame
 
-    ik = DampedLeastSquaresIK(dt=DT, damping=0.1, max_joint_step=0.04, max_joint_velocity=6.0)
+    ik = DampedLeastSquaresIK(dt=DT, damping=0.1, max_joint_velocity=6.0)
     vel_limits = np.asarray(Teleop.JOINT_VELOCITY_LIMITS, dtype=np.float32)
     acc_limits = np.asarray(Teleop.JOINT_ACCELERATION_LIMITS, dtype=np.float32)
     q_low, q_high = (np.asarray(lim) for lim in Teleop.JOINT_POSITION_LIMITS)
