@@ -36,8 +36,9 @@ import baxter_interface
 
 from ..differential_ik import DampedLeastSquaresIK
 from ..inputs import vr
-from ..kinematics import extract_arm_chain_urdf, resolve_baxter_urdf
-from ..teleop import Teleop, frax, jax, jnp
+from ..kinematics import extract_arm_chain_urdf, frax, jax, jnp, resolve_baxter_urdf
+from ..settings import JOINTS, LIMITS
+from ..teleop import Teleop
 
 DT = 0.01
 RUNS = {'current': (0.0, 1.0, 0.3, 1.0), 'proposed': (0.1, 0.8, 0.3, 1.0)}  # name: marker RGBA
@@ -130,7 +131,7 @@ def simulate(bag, arm, gain, linear_speed, angular_speed):
     )
 
     urdf = resolve_baxter_urdf()
-    joints = [f'{arm}_{s}' for s in Teleop.JOINT_SUFFIXES]
+    joints = [f'{arm}_{s}' for s in JOINTS]
     robot = frax.core.manipulator.Manipulator(extract_arm_chain_urdf(urdf, arm, joints), joint_ordering=joints)
     ee_transform, ee_jacobian = jax.jit(robot.ee_transform), jax.jit(robot.ee_jacobian)
     q0 = np.asarray(untuck_pose()[arm], dtype=np.float32)
@@ -139,9 +140,9 @@ def simulate(bag, arm, gain, linear_speed, angular_speed):
     tcp_offset = T_ee[:3, :3].T @ (T_tcp[:3, 3] - T_ee[:3, 3])  # TCP = URDF {arm}_gripper frame
 
     ik = DampedLeastSquaresIK(dt=DT, damping=0.1, max_joint_velocity=6.0)
-    vel_limits = np.asarray(Teleop.JOINT_VELOCITY_LIMITS, dtype=np.float32)
-    acc_limits = np.asarray(Teleop.JOINT_ACCELERATION_LIMITS, dtype=np.float32)
-    q_low, q_high = (np.asarray(lim) for lim in Teleop.JOINT_POSITION_LIMITS)
+    vel_limits = np.asarray(LIMITS.velocity, dtype=np.float32)
+    acc_limits = np.asarray(LIMITS.acceleration, dtype=np.float32)
+    q_low, q_high = (np.asarray(lim) for lim in (LIMITS.position_low, LIMITS.position_high))
 
     def tcp(q):
         T = np.asarray(ee_transform(jnp.asarray(q)), dtype=np.float64)
@@ -259,7 +260,7 @@ class Playback:
             js = JointState()
             js.header.stamp = stamp
             other = 'right' if self.arm == 'left' else 'left'
-            js.name = ['head_pan'] + [f'{a}_{s}' for a in (self.arm, other) for s in Teleop.JOINT_SUFFIXES]
+            js.name = ['head_pan'] + [f'{a}_{s}' for a in (self.arm, other) for s in JOINTS]
             js.position = [0.0] + r[name]['q'][i].tolist() + list(self.untuck[other])
             self.pubs[name].publish(js)
         self.markers.publish(self.trails(i, stamp))

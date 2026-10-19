@@ -198,7 +198,7 @@ def main():
     else:
         offsets, phases = protocol()
         speed = SPEED
-    teleop.publish_config({
+    teleop.telemetry.config({
         'trajectory_test': {**vars(args), 'speed': speed, 'phases': phases, 'events': events},
         'args': {
             'arm': args.arm,
@@ -240,9 +240,7 @@ def main():
     try:
         teleop.spin_target(target)
     finally:
-        if teleop.raw_output is not None:
-            teleop.raw_output.close()
-        teleop.node.destroy_node()
+        teleop.close()
         rclpy.shutdown()
     if monitor is not None and monitor.reason:
         print(f'ABORTED: {monitor.reason}')

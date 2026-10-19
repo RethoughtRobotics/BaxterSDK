@@ -1,0 +1,31 @@
+---
+# Baxter teleop settings, in one place (read by baxter_teleop/settings.py).
+#
+# defaults: every entry point starts from these (the teleop, `python -m baxter_teleop`, which
+# scripts/run_teleop.sh runs, the Teleop class, and the scripted trajectory the benchmark and
+# compare_ik.sh drive). The command-line option of the same name, dashes for underscores
+# (--servo-feedback), overrides each one. Tuned on the robot, 2026-10-16.
+#
+# Edit here, then `colcon build --packages-select baxter_teleop` to install the change.
+
+defaults:
+  # velocity, raw or raw_id: a jerk-limited raw position setpoint with inverse dynamics (raw
+  # modes bypass Baxter's collision avoidance)
+  output: raw_id
+  servo_feedback: setpoint  # measured or setpoint: what the pose servo closes on
+  posture_gain: 0.5  # 1/s, null-space pull of the elbow toward untuck (0 = off)
+  vr_gain: 2.0  # 1/s, how fast the TCP closes the gap to the VR target
+  vr_config: vr_axes_raw_id.yaml  # VR axis map, a path or a file in config/
+
+# Joint limits the teleop holds the arm to, in joint order s0 s1 e0 e1 w0 w1 w2.
+joint_limits:
+  # rad/s: the URDF joint velocity limits scaled by 0.8 for margin.
+  velocity: [1.2, 1.2, 1.2, 1.2, 3.2, 3.2, 3.2]
+  # rad/s^2, as franka-vr-teleop's Ruckig limits. Step commands (up to 500 rad/s^2 in
+  # circle_clockwise_20261001_184937) ring Baxter's wrist.
+  acceleration: [4.0, 4.0, 4.0, 4.0, 6.0, 6.0, 6.0]
+  # rad: the URDF joint position limits, except e1: the elbow is kept from straightening past
+  # 0.35 rad, where the arm becomes singular (condition number 9-14 bent against 100-1000+
+  # straight in circle_clockwise_20261001_184937).
+  position_low: [-1.70168, -2.147, -3.05418, 0.35, -3.059, -1.5708, -3.059]
+  position_high: [1.70168, 1.047, 3.05418, 2.618, 3.059, 2.094, 3.059]

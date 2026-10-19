@@ -107,7 +107,7 @@ teleop_cmd() {  # $1: arm, or empty when --arm was given directly
     fi
     echo "cd '${WS_DIR}' \
   && source '${SCRIPT_DIR}/env.sh' \
-  && '${WS_DIR}/.venv-ros/bin/python' -m baxter_teleop.teleop$(printf ' %q' "${ARGS[@]}")${1:+ --arm $1}${policy_args}; \
+  && '${WS_DIR}/.venv-ros/bin/python' -m baxter_teleop$(printf ' %q' "${ARGS[@]}")${1:+ --arm $1}${policy_args}; \
   echo; read -rp 'Teleop exited. Press Enter to close.'"
 }
 # RethoughtAI recorder; baxter_core_msgs (its button messages) come from the Baxter workspace
@@ -133,7 +133,7 @@ fi
 # Two teleops on one arm fight (one servoing, the other holding or homing it): refuse to start one.
 for arm in "${ARM_LIST[@]}"; do
     [[ "$arm" == given ]] && arm="$GIVEN_ARM"
-    if running=$(pgrep -f "[b]axter_teleop[.]teleop.* --arm ${arm}( |$)"); then
+    if running=$(pgrep -f "[-]m baxter_teleop( .*)? --arm ${arm}( |$)"); then
         echo "ERROR: a ${arm} arm teleop is already running (pid ${running//$'\n'/ }). Quit it first (ESC in its pane)." >&2
         exit 1
     fi

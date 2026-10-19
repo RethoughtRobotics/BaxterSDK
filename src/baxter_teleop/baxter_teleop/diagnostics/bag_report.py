@@ -24,11 +24,11 @@ from scipy.spatial.transform import Rotation
 import baxter_interface
 
 from ..inputs.keyboard import twist_from_key
-from ..kinematics import extract_arm_chain_urdf, resolve_baxter_urdf
-from ..teleop import Teleop, frax, jax, jnp
+from ..kinematics import extract_arm_chain_urdf, frax, jax, jnp, resolve_baxter_urdf
+from ..settings import JOINTS, LIMITS
 
 TORQUE_LIMITS = np.array([50.0, 100.0, 50.0, 50.0, 15.0, 15.0, 15.0])  # Baxter, N m
-SUFFIXES = Teleop.JOINT_SUFFIXES
+SUFFIXES = JOINTS
 
 
 def load(bag):
@@ -146,7 +146,7 @@ def analyze(data):
     rotation = Rotation.from_quat(ep[:, 4:8])
     turn = (rotation[1:] * rotation[:-1].inv()).magnitude()
     orientation_drift = np.degrees(turn[active[1:]].sum())
-    low, high = (np.asarray(x) for x in Teleop.JOINT_POSITION_LIMITS)
+    low, high = (np.asarray(x) for x in (LIMITS.position_low, LIMITS.position_high))
     at_limit = (q - low < 0.03) | (high - q < 0.03)
     saturated = np.abs(effort) > 0.98 * TORQUE_LIMITS
     home = np.asarray(baxter_interface.settings.UNTUCK_POSITIONS[data['arm']])
