@@ -183,7 +183,7 @@ class Terminal:
         os.write(self._master, text.encode())
 
     def hold_key(self, key, seconds, rate=20.0):
-        """Type key repeatedly, as a held key's auto-repeat does, slower than the control loop (~57 Hz)
+        """Type key repeatedly, as a held key's auto-repeat does, slower than the control loop (~76 Hz)
         reads keys, so none queue up and stretch the press."""
         end = time.monotonic() + seconds
         while time.monotonic() < end:
@@ -263,7 +263,7 @@ def scenario_keys(probe):
     teleop = Terminal(teleop_command(), 'sim_regression_keys.log')
     try:
         probe.wait_for_tcp(90)
-        time.sleep(3.0)  # past the first cycles (jax warm-up), so typed keys are read as they arrive
+        time.sleep(3.0)  # past startup (the TCP measurement, the first cycles), so keys are read as they arrive
         start = probe.latest_tcp()
         teleop.hold_key('w', 1.0)
         time.sleep(2.5)  # released: the TCP settles onto the goal

@@ -24,7 +24,7 @@ from scipy.spatial.transform import Rotation
 import baxter_interface
 
 from ..inputs.keyboard import twist_from_key
-from ..kinematics import extract_arm_chain_urdf, frax, jax, jnp, resolve_baxter_urdf
+from ..kinematics import ArmKinematics
 from ..settings import JOINTS, LIMITS
 
 TORQUE_LIMITS = np.array([50.0, 100.0, 50.0, 50.0, 15.0, 15.0, 15.0])  # Baxter, N m
@@ -163,12 +163,8 @@ def analyze(data):
                 delay,
             ))
         tracking, lag = min(best)
-    names = data['joints'][:7]
-    robot = frax.core.manipulator.Manipulator(
-        extract_arm_chain_urdf(resolve_baxter_urdf(), data['arm'], names), joint_ordering=names
-    )
-    jacobian = jax.jit(robot.ee_jacobian)
-    cond = [np.linalg.cond(np.asarray(jacobian(jnp.asarray(row, dtype=jnp.float32)))) for row in q[::20]]
+    kinematics = ArmKinematics(data['arm'])
+    cond = [np.linalg.cond(kinematics.jacobian(row)) for row in q[::20]]
     return {
         'duration s': js[-1, 0],
         'direction error deg (mean)': np.mean(direction_error[use]) if use.any() else np.nan,

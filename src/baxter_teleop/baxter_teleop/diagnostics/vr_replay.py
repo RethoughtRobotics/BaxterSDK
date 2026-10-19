@@ -3,7 +3,7 @@
 """Replay a recorded VR teleop bag through two translation mappings and loop the result in RViz.
 
 Both runs start from the untuck pose (tuck_arms -u) and drive a simulated arm with the teleop's
-own pieces: frax model, DampedLeastSquaresIK, joint limits and acceleration ramp. Velocity
+own pieces: ArmKinematics, DampedLeastSquaresIK, joint limits and acceleration ramp. Velocity
 commands are tracked perfectly, so any difference between the runs comes from the mapping alone.
 
   current   config/vr_axes.yaml: translation in the controller axes, then the TCP axes, at each clutch
@@ -36,7 +36,7 @@ import baxter_interface
 
 from ..differential_ik import DampedLeastSquaresIK
 from ..inputs import vr
-from ..kinematics import extract_arm_chain_urdf, frax, jax, jnp, resolve_baxter_urdf
+from ..kinematics import ArmKinematics
 from ..settings import JOINTS, LIMITS
 from ..teleop import Teleop
 
@@ -48,30 +48,6 @@ SPACING = 1.0  # m each robot sits either side of the world origin
 def untuck_pose():
     """{arm: 7 joints}, the shared home pose (order s0 s1 e0 e1 w0 w1 w2)."""
     return baxter_interface.settings.UNTUCK_POSITIONS
-
-
-def urdf_fk(urdf, link, q):
-    """Pose of `link` in base from the full URDF, with joint values q {name: angle}."""
-    import xml.etree.ElementTree as ET
-
-    by_child = {j.find('child').get('link'): j for j in ET.parse(urdf).getroot().findall('joint')}
-    chain = []
-    while link in by_child:
-        chain.append(by_child[link])
-        link = chain[-1].find('parent').get('link')
-    T = np.eye(4)
-    for j in reversed(chain):
-        o = j.find('origin')
-        A = np.eye(4)
-        A[:3, :3] = Rotation.from_euler('xyz', np.array((o.get('rpy') or '0 0 0').split(), float)).as_matrix()
-        A[:3, 3] = np.array((o.get('xyz') or '0 0 0').split(), float)
-        T = T @ A
-        if j.get('type') == 'revolute':
-            B = np.eye(4)
-            axis = np.array(j.find('axis').get('xyz').split(), float)
-            B[:3, :3] = Rotation.from_rotvec(axis * q.get(j.get('name'), 0.0)).as_matrix()
-            T = T @ B
-    return T
 
 
 def read_bag(bag, arm):
@@ -130,23 +106,15 @@ def simulate(bag, arm, gain, linear_speed, angular_speed):
         'vr_axes_base.yaml linear_axes',
     )
 
-    urdf = resolve_baxter_urdf()
-    joints = [f'{arm}_{s}' for s in JOINTS]
-    robot = frax.core.manipulator.Manipulator(extract_arm_chain_urdf(urdf, arm, joints), joint_ordering=joints)
-    ee_transform, ee_jacobian = jax.jit(robot.ee_transform), jax.jit(robot.ee_jacobian)
+    kinematics = ArmKinematics(arm)  # its TCP starts at the URDF {arm}_gripper frame
     q0 = np.asarray(untuck_pose()[arm], dtype=np.float32)
-    T_ee = np.asarray(ee_transform(jnp.asarray(q0)))
-    T_tcp = urdf_fk(urdf, f'{arm}_gripper', dict(zip(joints, q0.tolist())))
-    tcp_offset = T_ee[:3, :3].T @ (T_tcp[:3, 3] - T_ee[:3, 3])  # TCP = URDF {arm}_gripper frame
 
     ik = DampedLeastSquaresIK(dt=DT, damping=0.1, max_joint_velocity=6.0)
     vel_limits = np.asarray(LIMITS.velocity, dtype=np.float32)
     acc_limits = np.asarray(LIMITS.acceleration, dtype=np.float32)
     q_low, q_high = (np.asarray(lim) for lim in (LIMITS.position_low, LIMITS.position_high))
 
-    def tcp(q):
-        T = np.asarray(ee_transform(jnp.asarray(q)), dtype=np.float64)
-        return T[:3, 3] + T[:3, :3] @ tcp_offset, T[:3, :3]
+    tcp = kinematics.tcp
 
     times = np.arange(target_msgs[0, 0], target_msgs[-1, 0] + 1.0, DT)
     state = {name: {'q': q0.copy(), 'qdot': np.zeros(7, np.float32)} for name in targets}
@@ -176,13 +144,10 @@ def simulate(bag, arm, gain, linear_speed, angular_speed):
             if twist is None:  # clutch released: the arm holds and the ramp restarts from rest
                 s['qdot'][:] = 0.0
             else:
-                v, w = twist[:3], twist[3:]
-                hand_twist = np.concatenate([v - np.cross(w, R @ tcp_offset), w]).astype(np.float32)
-                J = ee_jacobian(jnp.asarray(s['q']))
                 qdot = ik.joint_velocity(
                     s['q'],
-                    J,
-                    hand_twist,
+                    kinematics.jacobian(s['q']),
+                    kinematics.wrist_twist(s['q'], twist, 'base'),
                     joint_velocity_limits=vel_limits,
                     joint_position_limits=(q_low, q_high),
                     joint_acceleration_limits=acc_limits,
