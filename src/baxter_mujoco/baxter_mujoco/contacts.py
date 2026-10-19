@@ -24,12 +24,15 @@ def main(path):
     m, d = env.sim.model._model, env.sim.data._data
     if 'empty' in data and bool(data['empty']):  # the run had objects moved out of reach (--empty)
         for j in np.flatnonzero(m.jnt_type == mujoco.mjtJoint.mjJNT_FREE):
-            d.qpos[m.jnt_qposadr[j]:m.jnt_qposadr[j] + 3] = [0.0, -3.0, 0.2]
+            d.qpos[m.jnt_qposadr[j] : m.jnt_qposadr[j] + 3] = [0.0, -3.0, 0.2]
     if 'table' in data and not bool(data['table']):  # the run had no table (--no-table)
         remove_table(m)
     adr = [m.jnt_qposadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f'robot0_{n}')] for n in data['names']]
-    body = lambda geom: mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, m.geom_bodyid[geom]) or '?'
-    found = {}  # pair -> [first t, last t, samples, deepest m]
+
+    def body(geom):
+        return mujoco.mj_id2name(m, mujoco.mjtObj.mjOBJ_BODY, m.geom_bodyid[geom]) or '?'
+
+    found = {}  # pair: [first t, last t, samples, deepest m]
     for t, q in zip(data['t'][::5], data['q'][::5]):
         d.qpos[adr] = q
         mujoco.mj_forward(m, d)

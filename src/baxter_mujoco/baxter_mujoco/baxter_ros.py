@@ -23,19 +23,25 @@ import json
 import threading
 import time
 
-from baxter_core_msgs.msg import (
-    AssemblyState, EndEffectorCommand, EndEffectorProperties, EndEffectorState, EndpointState, HeadPanCommand,
-    HeadState, JointCommand,
-)
 import mujoco
 import numpy as np
 import rclpy
+from baxter_core_msgs.msg import (
+    AssemblyState,
+    EndEffectorCommand,
+    EndEffectorProperties,
+    EndEffectorState,
+    EndpointState,
+    HeadPanCommand,
+    HeadState,
+    JointCommand,
+)
 from rclpy.executors import ExternalShutdownException
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
-from visualization_msgs.msg import Marker, MarkerArray
 from std_msgs.msg import Bool, Float64, String
+from visualization_msgs.msg import Marker, MarkerArray
 
 from baxter_mujoco.sim import make_env
 
@@ -45,12 +51,19 @@ MAX_SPEED = np.array([1.5, 1.5, 1.5, 1.5, 4.0, 4.0, 4.0])  # rad/s, URDF velocit
 HEAD_MAX_SPEED = 1.0  # rad/s
 OMEGA = 20.0  # rad/s, joint servo bandwidth (critically damped)
 TCP_IN_HAND = np.array([0.0, 0.0, 0.025])  # URDF {arm}_hand -> {arm}_gripper
-SCENE_SHAPES = {int(mujoco.mjtGeom.mjGEOM_BOX): Marker.CUBE, int(mujoco.mjtGeom.mjGEOM_CYLINDER): Marker.CYLINDER,
-                int(mujoco.mjtGeom.mjGEOM_SPHERE): Marker.SPHERE}
+SCENE_SHAPES = {
+    int(mujoco.mjtGeom.mjGEOM_BOX): Marker.CUBE,
+    int(mujoco.mjtGeom.mjGEOM_CYLINDER): Marker.CYLINDER,
+    int(mujoco.mjtGeom.mjGEOM_SPHERE): Marker.SPHERE,
+}
 SCENE_COLORS = {'static': (0.62, 0.60, 0.55, 0.85), 'free': (0.80, 0.42, 0.22, 0.9)}  # table / movable objects
 DT_PUBLISH = 0.01  # s, state publishing period (100 Hz)
-FINGER_JOINTS = ('l_gripper_l_finger_joint', 'l_gripper_r_finger_joint', 'r_gripper_l_finger_joint',
-                 'r_gripper_r_finger_joint')
+FINGER_JOINTS = (
+    'l_gripper_l_finger_joint',
+    'l_gripper_r_finger_joint',
+    'r_gripper_l_finger_joint',
+    'r_gripper_r_finger_joint',
+)
 
 
 def remove_table(m):
@@ -75,8 +88,10 @@ class Gripper:
     ID = 65538
 
     def __init__(self, node, m, side):
-        self.acts = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_ACTUATOR, f'gripper0_{side}_gripper_{f}_finger_joint')
-                     for f in ('r', 'l')]
+        self.acts = [
+            mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_ACTUATOR, f'gripper0_{side}_gripper_{f}_finger_joint')
+            for f in ('r', 'l')
+        ]
         self.joint = m.jnt_qposadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f'gripper0_{side}_r_finger_joint')]
         self.calibrated, self.target, self.command_pct = False, 100.0, 100.0
         self.velocity, self.dead_zone = 50.0, 5.0
@@ -85,11 +100,22 @@ class Gripper:
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.state_pub = node.create_publisher(EndEffectorState, ns + 'state', latched)
         props = node.create_publisher(EndEffectorProperties, ns + 'properties', latched)
-        props.publish(EndEffectorProperties(
-            id=self.ID, ui_type=EndEffectorProperties.ELECTRIC_GRIPPER, manufacturer='Rethink Research Robot (sim)',
-            product='Electric Parallel Gripper', firmware_date='2014/07/07 00:00:00', has_calibration=True,
-            controls_grip=True, senses_grip=True, controls_force=True, senses_force=True,
-            controls_position=True, senses_position=True))
+        props.publish(
+            EndEffectorProperties(
+                id=self.ID,
+                ui_type=EndEffectorProperties.ELECTRIC_GRIPPER,
+                manufacturer='Rethink Research Robot (sim)',
+                product='Electric Parallel Gripper',
+                firmware_date='2014/07/07 00:00:00',
+                has_calibration=True,
+                controls_grip=True,
+                senses_grip=True,
+                controls_force=True,
+                senses_force=True,
+                controls_position=True,
+                senses_position=True,
+            )
+        )
         node.create_subscription(EndEffectorCommand, ns + 'command', self.on_command, QoSProfile(depth=1))
 
     def on_command(self, msg):
@@ -119,10 +145,24 @@ class Gripper:
         moving = abs(self.target - self.command_pct) > 0.5
         blocked = abs(position - self.command_pct) > self.dead_zone  # fingers held apart by an object
         command, sender, sequence = self.ack
-        self.state_pub.publish(EndEffectorState(
-            timestamp=stamp, id=self.ID, enabled=1, calibrated=int(self.calibrated), ready=1, moving=int(moving),
-            gripping=int(blocked and not moving and self.target < position), missed=0, error=0,
-            position=position, force=0.0, command=command, command_sender=sender, command_sequence=sequence))
+        self.state_pub.publish(
+            EndEffectorState(
+                timestamp=stamp,
+                id=self.ID,
+                enabled=1,
+                calibrated=int(self.calibrated),
+                ready=1,
+                moving=int(moving),
+                gripping=int(blocked and not moving and self.target < position),
+                missed=0,
+                error=0,
+                position=position,
+                force=0.0,
+                command=command,
+                command_sender=sender,
+                command_sequence=sequence,
+            )
+        )
 
 
 class Arm:
@@ -157,7 +197,9 @@ class Arm:
             tau = self.command + bias
         else:
             if self.mode == JointCommand.POSITION_MODE:  # move to the target at speed_ratio of max speed
-                step = np.clip(self.command - self.q_ref, -self.speed_ratio * MAX_SPEED * dt, self.speed_ratio * MAX_SPEED * dt)
+                step = np.clip(
+                    self.command - self.q_ref, -self.speed_ratio * MAX_SPEED * dt, self.speed_ratio * MAX_SPEED * dt
+                )
                 self.q_ref, self.qd_ref = self.q_ref + step, step / dt
             elif self.mode == JointCommand.VELOCITY_MODE:
                 self.qd_ref = self.command
@@ -177,7 +219,7 @@ class SimBaxter:
         self.m, self.d = self.env.sim.model._model, self.env.sim.data._data
         if empty:  # move free objects (the pot) out of reach; the table stays below the hands
             for j in np.flatnonzero(self.m.jnt_type == mujoco.mjtJoint.mjJNT_FREE):
-                self.d.qpos[self.m.jnt_qposadr[j]:self.m.jnt_qposadr[j] + 3] = [0.0, -3.0, 0.2]
+                self.d.qpos[self.m.jnt_qposadr[j] : self.m.jnt_qposadr[j] + 3] = [0.0, -3.0, 0.2]
             mujoco.mj_forward(self.m, self.d)
         if not table:
             remove_table(self.m)
@@ -199,17 +241,31 @@ class SimBaxter:
         for side, arm in self.arms.items():
             ns = f'/robot/limb/{side}/'
             self.endpoint_pubs[side] = node.create_publisher(EndpointState, ns + 'endpoint_state', 10)
-            node.create_subscription(JointCommand, ns + 'joint_command', lambda msg, a=arm: self.on_command(a, msg), command_qos)
-            node.create_subscription(Float64, ns + 'joint_command_timeout', lambda msg, a=arm: setattr(a, 'timeout', msg.data), latched)
-            node.create_subscription(Float64, ns + 'set_speed_ratio', lambda msg, a=arm: setattr(a, 'speed_ratio', float(np.clip(msg.data, 0, 1))), latched)
+            node.create_subscription(
+                JointCommand, ns + 'joint_command', lambda msg, a=arm: self.on_command(a, msg), command_qos
+            )
+            node.create_subscription(
+                Float64, ns + 'joint_command_timeout', lambda msg, a=arm: setattr(a, 'timeout', msg.data), latched
+            )
+            node.create_subscription(
+                Float64,
+                ns + 'set_speed_ratio',
+                lambda msg, a=arm: setattr(a, 'speed_ratio', float(np.clip(msg.data, 0, 1))),
+                latched,
+            )
         node.create_subscription(Bool, '/robot/set_super_enable', lambda msg: setattr(self, 'enabled', msg.data), 10)
         self.config_pub = node.create_publisher(String, '/sim/config', latched)  # the scene, for recordings
         self.scene_pub = node.create_publisher(MarkerArray, '/sim/scene', 10)
         robot = ('robot0', 'gripper0', 'mount0', 'fixed_mount')
-        body = lambda g: mujoco.mj_id2name(self.m, mujoco.mjtObj.mjOBJ_BODY, self.m.geom_bodyid[g]) or ''
-        self.scene_geoms = [g for g in range(self.m.ngeom)  # collision shapes the arms can hit
-                            if self.m.geom_contype[g] and int(self.m.geom_type[g]) in SCENE_SHAPES
-                            and not body(g).startswith(robot)]
+
+        def body(g):
+            return mujoco.mj_id2name(self.m, mujoco.mjtObj.mjOBJ_BODY, self.m.geom_bodyid[g]) or ''
+
+        self.scene_geoms = [
+            g
+            for g in range(self.m.ngeom)  # collision shapes the arms can hit
+            if self.m.geom_contype[g] and int(self.m.geom_type[g]) in SCENE_SHAPES and not body(g).startswith(robot)
+        ]
         self.config_pub.publish(String(data=json.dumps({'scene': 'TwoArmLift', 'empty': empty, 'table': table})))
 
     def on_command(self, arm, msg):
@@ -341,6 +397,7 @@ def main():
         raise SystemExit('/robot/joint_states already has a publisher (a real robot or another sim); not starting.')
 
     sim = SimBaxter(node, render=not args.no_viewer, empty=args.empty, table=not args.no_table)
+
     def spin():
         try:
             rclpy.spin(node)
