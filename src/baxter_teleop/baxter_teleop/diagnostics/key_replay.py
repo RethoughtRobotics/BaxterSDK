@@ -14,7 +14,7 @@ import time
 
 import rclpy
 
-from ..cartesian_delta_teleop import CartesianDeltaTeleop
+from ..teleop import Teleop
 from .bag_report import load
 
 
@@ -26,7 +26,7 @@ def main():
     keys = recorded['key']
     session = recorded['config'].get('args', {})
     rclpy.init(args=['key_replay', *ros_args])
-    teleop = CartesianDeltaTeleop(
+    teleop = Teleop(
         arm=recorded['arm'],
         mode=session.get('mode', 'velocity'),
         frame=session.get('frame', 'base'),

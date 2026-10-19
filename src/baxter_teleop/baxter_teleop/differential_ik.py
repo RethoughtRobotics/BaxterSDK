@@ -4,7 +4,7 @@ import numpy as np
 from scipy.optimize import lsq_linear
 
 
-class DiffIKSolver:
+class DampedLeastSquaresIK:
     """Damped least-squares differential IK.
 
     The damping is variable: none while the Jacobian's smallest singular value is above
@@ -131,24 +131,24 @@ class DiffIKSolver:
         return self.step_delta(q=q, jacobian=jacobian, delta_cartesian=np.asarray(v_ee, dtype=np.float32) * self.dt)
 
 
-class BoundedDiffIKSolver(DiffIKSolver):
+class BoundedLeastSquaresIK(DampedLeastSquaresIK):
     """Differential IK as a box-constrained least-squares problem: joint limits are hard bounds.
 
     Solves, each cycle,
         min  |W (J qdot - v)|^2 + lambda^2 |qdot|^2 + eps |qdot - qdot_posture|^2
         s.t. lo <= qdot <= hi
     with lo/hi the joint velocity limits and, per joint, the fastest it may approach a position
-    limit and still brake in time (sqrt(2 a d), as DiffIKSolver). This is the differential IK of
+    limit and still brake in time (sqrt(2 a d), as DampedLeastSquaresIK). This is the differential IK of
     mink (Zakka) and Pink (Caron) and Drake's DifferentialInverseKinematics, whose joint-limit
     bound is the velocity damper of Faverjon & Tournassoud (1987); with only box constraints it is
     a bounded-variable least-squares problem (Stark & Parker 1995, scipy.optimize.lsq_linear).
 
-    Unlike DiffIKSolver's wall (the whole vector scaled so the joint nearest its limit can stop),
+    Unlike DampedLeastSquaresIK's wall (the whole vector scaled so the joint nearest its limit can stop),
     a joint at its limit is pinned at its bound and the others keep doing as much of the hand
     motion as they can, so the hand slides along the limit instead of freezing in every direction.
-    When no bound is active the solution is DiffIKSolver's (variable damping, minimum norm, posture
+    When no bound is active the solution is DampedLeastSquaresIK's (variable damping, minimum norm, posture
     pulled in the null space): eps is small, so the posture term only picks among exact solutions.
-    The trade-off DiffIKSolver documents remains: the other joints take over the motion, so the
+    The trade-off DampedLeastSquaresIK documents remains: the other joints take over the motion, so the
     configuration can drift at a limit; the posture term counters it.
     """
 
@@ -187,7 +187,7 @@ class BoundedDiffIKSolver(DiffIKSolver):
             lo, hi = np.maximum(lo, -brake_low), np.minimum(hi, brake_high)
         hi = np.maximum(hi, lo + 1e-9)  # lsq_linear needs lo < hi; a joint at its limit gets [0, 1e-9]
 
-        # Same variable damping as DiffIKSolver._pinv: none away from singularities.
+        # Same variable damping as DampedLeastSquaresIK._pinv: none away from singularities.
         sigma_min = float(np.linalg.svd(J, compute_uv=False)[-1])
         ratio = min(sigma_min / self.singular_threshold, 1.0)
         damping = np.sqrt((1.0 - ratio**2)) * self.damping

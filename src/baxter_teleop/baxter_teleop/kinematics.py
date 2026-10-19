@@ -1,9 +1,19 @@
-"""Baxter URDF discovery and arm-chain extraction helpers."""
+"""Baxter arm kinematics: the URDF, the arm chain, and the TCP.
+
+The TCP is the point the teleop servos and policies observe and act on, defined once here: frax
+forward kinematics of the arm chain to {arm}_hand, plus a fixed offset in the hand frame (measured
+from the robot's own endpoint, so it includes the fitted gripper and fingers). Its orientation is
+the hand's. Published live as /teleop/{arm}/tcp.
+"""
 
 import os
 import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+import numpy as np
+from geometry_msgs.msg import PoseStamped
+from scipy.spatial.transform import Rotation
 
 try:
     from ament_index_python.packages import get_package_share_directory
@@ -70,3 +80,21 @@ def extract_arm_chain_urdf(full_urdf, arm, joint_names):
     out_path = os.path.join(tempfile.gettempdir(), f'baxter_{arm}_frax_chain.urdf')
     ET.ElementTree(out_root).write(out_path, encoding='utf-8', xml_declaration=True)
     return out_path
+
+
+def tcp_pose(hand_transform, tcp_offset):
+    """(position (3,), rotation matrix (3, 3)) of the TCP in the base frame."""
+    T = np.asarray(hand_transform, dtype=np.float64)
+    return T[:3, 3] + T[:3, :3] @ np.asarray(tcp_offset, dtype=np.float64), T[:3, :3]
+
+
+def pose_msg(position, rotation, stamp, frame_id='base'):
+    """PoseStamped from a position and a scipy Rotation or a rotation matrix."""
+    if not isinstance(rotation, Rotation):
+        rotation = Rotation.from_matrix(rotation)
+    msg = PoseStamped()
+    msg.header.stamp, msg.header.frame_id = stamp, frame_id
+    p, o = msg.pose.position, msg.pose.orientation
+    p.x, p.y, p.z = (float(x) for x in position)
+    o.x, o.y, o.z, o.w = (float(x) for x in rotation.as_quat())
+    return msg

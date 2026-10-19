@@ -3,7 +3,7 @@
 """Replay a recorded VR teleop bag through two translation mappings and loop the result in RViz.
 
 Both runs start from the untuck pose (tuck_arms -u) and drive a simulated arm with the teleop's
-own pieces: frax model, DiffIKSolver, joint limits and acceleration ramp. Velocity
+own pieces: frax model, DampedLeastSquaresIK, joint limits and acceleration ramp. Velocity
 commands are tracked perfectly, so any difference between the runs comes from the mapping alone.
 
   current   config/vr_axes.yaml: translation in the controller axes, then the TCP axes, at each clutch
@@ -34,10 +34,10 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 import baxter_interface
 
-from .. import vr_target
-from ..cartesian_delta_teleop import CartesianDeltaTeleop, frax, jax, jnp
-from ..diff_ik import DiffIKSolver
-from ..urdf_tools import extract_arm_chain_urdf, resolve_baxter_urdf
+from ..differential_ik import DampedLeastSquaresIK
+from ..inputs import vr
+from ..kinematics import extract_arm_chain_urdf, resolve_baxter_urdf
+from ..teleop import Teleop, frax, jax, jnp
 
 DT = 0.01
 RUNS = {'current': (0.0, 1.0, 0.3, 1.0), 'proposed': (0.1, 0.8, 0.3, 1.0)}  # name: marker RGBA
@@ -104,11 +104,11 @@ def simulate(bag, arm, gain, linear_speed, angular_speed):
     config_dir = os.path.join(get_package_share_directory('baxter_teleop'), 'config')
     cfg, cfg_base = (os.path.join(config_dir, f) for f in ('vr_axes.yaml', 'vr_axes_base.yaml'))
     clock = [0.0]
-    vr_target.time = types.SimpleNamespace(monotonic=lambda: clock[0])  # VRTarget's clock -> bag time
+    vr.time = types.SimpleNamespace(monotonic=lambda: clock[0])  # VRTarget's clock -> bag time
     node = types.SimpleNamespace(create_subscription=lambda *args, **kwargs: None)
 
     # The controller -> base map the operator felt on the first stroke of the real run.
-    probe = vr_target.VRTarget(node, '', cfg, gain, linear_speed, angular_speed)
+    probe = vr.VRTarget(node, '', cfg, gain, linear_speed, angular_speed)
     moving = np.r_[False, np.any(np.diff(target_msgs[:, 1:], axis=0) != 0, axis=1)]
     first = int(np.argmax(moving))
     rc0 = Rotation.from_quat(target_msgs[first - 1, 4:8])
@@ -117,8 +117,8 @@ def simulate(bag, arm, gain, linear_speed, angular_speed):
     base_axes = snap_to_signed_permutation(felt)
     print('Controller -> base map felt on the first real stroke:\n', felt.round(2))
     targets = {
-        'current': vr_target.VRTarget(node, '', cfg, gain, linear_speed, angular_speed),
-        'proposed': vr_target.VRTarget(node, '', cfg_base, gain, linear_speed, angular_speed),
+        'current': vr.VRTarget(node, '', cfg, gain, linear_speed, angular_speed),
+        'proposed': vr.VRTarget(node, '', cfg_base, gain, linear_speed, angular_speed),
     }
     same = np.array_equal(base_axes, targets['proposed'].linear_axes)
     print(
@@ -130,7 +130,7 @@ def simulate(bag, arm, gain, linear_speed, angular_speed):
     )
 
     urdf = resolve_baxter_urdf()
-    joints = [f'{arm}_{s}' for s in CartesianDeltaTeleop.JOINT_SUFFIXES]
+    joints = [f'{arm}_{s}' for s in Teleop.JOINT_SUFFIXES]
     robot = frax.core.manipulator.Manipulator(extract_arm_chain_urdf(urdf, arm, joints), joint_ordering=joints)
     ee_transform, ee_jacobian = jax.jit(robot.ee_transform), jax.jit(robot.ee_jacobian)
     q0 = np.asarray(untuck_pose()[arm], dtype=np.float32)
@@ -138,10 +138,10 @@ def simulate(bag, arm, gain, linear_speed, angular_speed):
     T_tcp = urdf_fk(urdf, f'{arm}_gripper', dict(zip(joints, q0.tolist())))
     tcp_offset = T_ee[:3, :3].T @ (T_tcp[:3, 3] - T_ee[:3, 3])  # TCP = URDF {arm}_gripper frame
 
-    ik = DiffIKSolver(dt=DT, damping=0.1, max_joint_step=0.04, max_joint_velocity=6.0)
-    vel_limits = np.asarray(CartesianDeltaTeleop.JOINT_VELOCITY_LIMITS, dtype=np.float32)
-    acc_limits = np.asarray(CartesianDeltaTeleop.JOINT_ACCELERATION_LIMITS, dtype=np.float32)
-    q_low, q_high = (np.asarray(lim) for lim in CartesianDeltaTeleop.JOINT_POSITION_LIMITS)
+    ik = DampedLeastSquaresIK(dt=DT, damping=0.1, max_joint_step=0.04, max_joint_velocity=6.0)
+    vel_limits = np.asarray(Teleop.JOINT_VELOCITY_LIMITS, dtype=np.float32)
+    acc_limits = np.asarray(Teleop.JOINT_ACCELERATION_LIMITS, dtype=np.float32)
+    q_low, q_high = (np.asarray(lim) for lim in Teleop.JOINT_POSITION_LIMITS)
 
     def tcp(q):
         T = np.asarray(ee_transform(jnp.asarray(q)), dtype=np.float64)
@@ -259,9 +259,7 @@ class Playback:
             js = JointState()
             js.header.stamp = stamp
             other = 'right' if self.arm == 'left' else 'left'
-            js.name = ['head_pan'] + [
-                f'{a}_{s}' for a in (self.arm, other) for s in CartesianDeltaTeleop.JOINT_SUFFIXES
-            ]
+            js.name = ['head_pan'] + [f'{a}_{s}' for a in (self.arm, other) for s in Teleop.JOINT_SUFFIXES]
             js.position = [0.0] + r[name]['q'][i].tolist() + list(self.untuck[other])
             self.pubs[name].publish(js)
         self.markers.publish(self.trails(i, stamp))
@@ -307,7 +305,7 @@ def main():
     parser.add_argument('bag', help='rosbag2 directory recorded during VR teleop')
     parser.add_argument('--arm', choices=['left', 'right'], default='left')
     parser.add_argument('--vr-gain', type=float, default=3.0, help='same as the teleop --vr-gain')
-    default_linear, default_angular = CartesianDeltaTeleop.VR_SPEEDS
+    default_linear, default_angular = Teleop.VR_SPEEDS
     parser.add_argument('--linear-speed', type=float, default=default_linear, help='same as the teleop (m/s cap)')
     parser.add_argument('--angular-speed', type=float, default=default_angular, help='same as the teleop (rad/s cap)')
     parser.add_argument('--rate', type=float, default=1.0, help='playback speed (1 = real time)')

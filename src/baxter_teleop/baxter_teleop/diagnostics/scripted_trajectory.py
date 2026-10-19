@@ -2,7 +2,7 @@
 
 """Drive the teleop through a scripted TCP trajectory, for comparing controllers on equal input.
 
-The trajectory is a target like VRTarget and KeyTarget: spin_target servos the TCP onto its goal
+The trajectory is a target like VRTarget and KeyboardTarget: spin_target servos the TCP onto its goal
 (servo_twist, with the path velocity as feedforward), so this exercises the same control code as
 VR and the keyboard. It starts from the current TCP (run tuck_arms -u first) and holds the start
 orientation. Phases (offsets in the robot base frame, 0.1 m/s, 1 s pauses):
@@ -16,8 +16,8 @@ orientation. Phases (offsets in the robot base frame, 0.1 m/s, 1 s pauses):
 they start at the start TCP), --loops times at --circle-speed: a repeatable stimulus for comparing
 joint output stages (--output) on the robot, e.g. via run_circle_test.sh.
 
-  python -m baxter_teleop.diagnostics.trajectory_test --ik dls|bounded [--arm left]
-  python -m baxter_teleop.diagnostics.trajectory_test --arm right --protocol circle --output raw_id \
+  python -m baxter_teleop.diagnostics.scripted_trajectory --ik dls|bounded [--arm left]
+  python -m baxter_teleop.diagnostics.scripted_trajectory --arm right --protocol circle --output raw_id \
       --gain 3 --no-feedforward
 """
 
@@ -29,9 +29,9 @@ import numpy as np
 import rclpy
 from scipy.spatial.transform import Rotation
 
-from ..cartesian_delta_teleop import CartesianDeltaTeleop
-from ..pose_servo import servo_twist
-from .benchmark_trajectories import iso_protocol
+from ..servo import servo_twist
+from ..teleop import Teleop
+from .iso9283 import iso_protocol
 
 DT = 0.01
 SPEED = 0.1  # m/s
@@ -179,8 +179,8 @@ def main():
     parser.add_argument('--circle-speed', type=float, default=0.15, help='circle protocol: TCP speed, m/s')
     parser.add_argument('--loops', type=int, default=3, help='circle protocol: number of circles')
     args, ros_args = parser.parse_known_args()
-    rclpy.init(args=['trajectory_test', *ros_args])
-    teleop = CartesianDeltaTeleop(
+    rclpy.init(args=['scripted_trajectory', *ros_args])
+    teleop = Teleop(
         arm=args.arm,
         mode='velocity',
         output=args.output,

@@ -1,8 +1,8 @@
 #!/bin/bash
 # Repeatable right-arm control test: untuck (home), start recording, drive planar circles through the
-# teleop's own servo, IK and joint output stage (trajectory_test --protocol circle), stop recording.
+# teleop's own servo, IK and joint output stage (scripted_trajectory --protocol circle), stop recording.
 #
-# Usage: ./run_circle_test.sh [--output velocity|raw|raw_id] [trajectory_test options]
+# Usage: ./run_circle_test.sh [--output velocity|raw|raw_id] [scripted_trajectory options]
 #   default: --output raw_id, servo gain 3/s P-only (as VR teleop with --vr-gain 2 and linear_scale
 #   1.5), 3 circles of 15 cm radius at 0.15 m/s in x-y, toward the arm's outer side (right), ~21 s.
 #   e.g. ./run_circle_test.sh --output velocity      (the baseline, same stimulus)
@@ -27,7 +27,7 @@ if ! timeout 5 ros2 topic echo --once /robot/joint_states >/dev/null 2>&1; then
     echo "No /robot/joint_states on ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}: start the bridge (or the sim) first." >&2
     exit 1
 fi
-if pgrep -f "[c]artesian_delta_teleop.*--arm right|[t]rajectory_test" >/dev/null; then
+if pgrep -f "[b]axter_teleop[.]teleop.*--arm right|[s]cripted_trajectory" >/dev/null; then
     echo "A teleop is already driving the right arm: close it first (two controllers would fight)." >&2
     exit 1
 fi
@@ -50,7 +50,7 @@ grep -q '^Recording' "${LOG}/record.log" || { echo "ERROR: the recorder did not 
 sleep 3  # let the recorder subscribe to every topic before the motion starts
 
 echo "== Circles"
-"$PY" -m baxter_teleop.diagnostics.trajectory_test \
+"$PY" -m baxter_teleop.diagnostics.scripted_trajectory \
     --arm right --protocol circle --output "$OUTPUT" --gain 3 --no-feedforward "${ARGS[@]}" \
     2> >(grep -v -e jax -e GPU -e '^\[INFO\]' >&2)
 sleep 1  # the hold after the last circle

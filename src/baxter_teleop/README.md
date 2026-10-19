@@ -10,28 +10,20 @@ VR or learned policies can plug into the same runtime path.
 
 ## Module layout
 
-- `cartesian_delta_teleop.py`
-  - Runtime orchestration.
-  - Builds arm specific model from Baxter URDF.
-  - Exposes `apply_delta_cartesian` and `run_delta_source`.
-- `diff_ik.py`
-  - Differential IK solver.
-  - `BoundedDiffIKSolver` (default): least squares with the joint limits as hard bounds, so a joint
-    at its limit saturates and the hand keeps moving. `DiffIKSolver` (`--ik dls`): damped least
-    squares that scales the whole motion to a stop at a limit.
-- `delta_guard.py`
-  - Validation policy for modality delta streams.
-  - Enforces velocity, magnitude, and jump constraints.
-- `keymap.py`
-  - Keyboard to cartesian delta mapping.
-- `vr_target.py`
-  - VR adapter: servos the TCP toward the libsurvive_ros2 clutched target.
-- `urdf_tools.py`
-  - Baxter URDF discovery and arm chain extraction.
-- `diagnostics/`
-  - One-off tools for measuring the teleop: scripted trajectories (`trajectory_test`), the control
-    benchmark, bag and IK reports, key and VR replays. Run as `python -m baxter_teleop.diagnostics.<name>`;
-    the runtime never imports them.
+- `teleop.py`: the control loop (`Teleop`); `python -m baxter_teleop.teleop` runs it.
+- `kinematics.py`: the Baxter URDF, the arm chain, forward kinematics and the TCP.
+- `differential_ik.py`: `BoundedLeastSquaresIK` (default), joint limits as hard bounds, so a joint
+  at its limit saturates and the hand keeps moving; `DampedLeastSquaresIK` (`--ik dls`) scales the
+  whole motion to a stop at a limit.
+- `servo.py`: the one control law from a goal pose to a TCP twist, shared by every input.
+- `safety.py`: `CommandValidator`, the speed, step and jump limits on commanded deltas.
+- `inputs/`: command sources. `keyboard.py` (`KeyboardTarget`), `vr.py` (`VRTarget`, the
+  libsurvive_ros2 clutched target).
+- `outputs/`: joint command outputs. `raw_position.py` streams a jerk-limited setpoint
+  (`outputs/setpoint.py`) to Baxter in RAW_POSITION_MODE, with optional inverse dynamics.
+- `diagnostics/`: one-off tools for measuring the teleop (`scripted_trajectory`, the control
+  benchmark and its ISO 9283 paths, bag and IK comparison reports, key and VR replays). Run as
+  `python -m baxter_teleop.diagnostics.<name>`; the runtime never imports them.
 
 ## Data contract for modalities
 
@@ -171,7 +163,7 @@ The runtime resolves the Baxter URDF in this order:
 Create a callback that returns the modality delta in the contract format and pass it to `run_delta_source`.
 
 ```python
-teleop = CartesianDeltaTeleop(arm='right')
+teleop = Teleop(arm='right')
 teleop.run_delta_source(my_delta_source)
 ```
 

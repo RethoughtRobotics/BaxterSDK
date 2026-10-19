@@ -35,15 +35,14 @@ else:
 
 from baxter_external_devices.getch import getch
 
-from .delta_guard import CartesianDeltaGuard
-from .diff_ik import BoundedDiffIKSolver, DiffIKSolver
-from .keymap import KeyTarget, twist_from_key
-from .tcp import pose_msg, tcp_pose
-from .urdf_tools import extract_arm_chain_urdf, resolve_baxter_urdf
-from .vr_target import VRTarget
+from .differential_ik import BoundedLeastSquaresIK, DampedLeastSquaresIK
+from .inputs.keyboard import KeyboardTarget, twist_from_key
+from .inputs.vr import VRTarget
+from .kinematics import extract_arm_chain_urdf, pose_msg, resolve_baxter_urdf, tcp_pose
+from .safety import CommandValidator
 
 
-class CartesianDeltaTeleop:
+class Teleop:
     """Runtime that maps cartesian deltas to Baxter joint commands.
 
     This class is intentionally modality agnostic. Any input source can be used
@@ -143,7 +142,7 @@ class CartesianDeltaTeleop:
         self.tcp_twist_pub = self.node.create_publisher(TwistStamped, ns + 'tcp_twist', 10)
         self.ik_pub = self.node.create_publisher(JointState, ns + 'ik', 10)
         self.goal_pub = self.node.create_publisher(PoseStamped, ns + 'goal', 10)
-        self.tcp_pub = self.node.create_publisher(PoseStamped, ns + 'tcp', 10)  # measured TCP (tcp.py)
+        self.tcp_pub = self.node.create_publisher(PoseStamped, ns + 'tcp', 10)  # measured TCP (kinematics.tcp_pose)
         self.key_pub = self.node.create_publisher(String, ns + 'key', 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.config_pub = self.node.create_publisher(String, ns + 'config', latched)
@@ -194,8 +193,8 @@ class CartesianDeltaTeleop:
 
         self.dt = 0.01
         # posture_gain (1/s) pulls the spare DOF (elbow swing) toward untuck without moving the hand.
-        # 'bounded': joint limits as hard bounds of a least-squares solve (diff_ik.BoundedDiffIKSolver).
-        self.ik = (BoundedDiffIKSolver if ik == 'bounded' else DiffIKSolver)(
+        # 'bounded': joint limits as hard bounds of a least-squares solve (differential_ik.BoundedLeastSquaresIK).
+        self.ik = (BoundedLeastSquaresIK if ik == 'bounded' else DampedLeastSquaresIK)(
             dt=self.dt,
             damping=0.1,
             singular_threshold=0.1,
@@ -223,7 +222,7 @@ class CartesianDeltaTeleop:
         # Velocity-mode output stage. 'velocity': the ramped IK velocity in VELOCITY_MODE. 'raw' /
         # 'raw_id': the IK velocity is the target of a jerk-limited setpoint streamed at
         # RAW_OUTPUT_RATE in RAW_POSITION_MODE, raw_id with inverse dynamics feedforward
-        # (raw_output.py). Raw modes bypass Baxter's collision avoidance.
+        # (outputs/raw_position.py). Raw modes bypass Baxter's collision avoidance.
         # 'raw_id_step' is a test-only ablation (control benchmark): the stage raw_id replaced, which
         # integrates the ramped velocity into a setpoint once per control cycle and sends it with a
         # finite-difference qddot, i.e. a ~57 Hz staircase. Kept to measure what the jerk-limited
@@ -242,14 +241,14 @@ class CartesianDeltaTeleop:
         self.raw_output = None
         self._step_sink, self._q_step, self._qdot_step = None, None, np.zeros(7, dtype=np.float32)
         if output == 'raw_id_step':
-            from .raw_output import BaxterRawSink
+            from .outputs.raw_position import JointCommandPublisher
 
-            self._step_sink = BaxterRawSink(self.node, arm, self.joint_names, self.limb.joint_names())
+            self._step_sink = JointCommandPublisher(self.node, arm, self.joint_names, self.limb.joint_names())
         elif output != 'velocity':
             # Imported here: baxter_interface imports this module eagerly, and tools such as
             # tuck_arms run on the system Python, which has no ruckig (only .venv-ros does).
-            from .joint_setpoint import JointLimits, JointSetpointGenerator
-            from .raw_output import BaxterRawSink, RawJointOutput
+            from .outputs.raw_position import JointCommandPublisher, RawPositionOutput
+            from .outputs.setpoint import JointLimits, JointSetpointGenerator
 
             limits = JointLimits(
                 velocity=self.joint_velocity_limits,
@@ -258,10 +257,12 @@ class CartesianDeltaTeleop:
                 position_low=self.joint_position_limits[0],
                 position_high=self.joint_position_limits[1],
             )
-            sink = BaxterRawSink(
+            sink = JointCommandPublisher(
                 self.node, arm, self.joint_names, self.limb.joint_names(), inverse_dynamics=output == 'raw_id'
             )
-            self.raw_output = RawJointOutput(JointSetpointGenerator(limits, 1.0 / self.RAW_OUTPUT_RATE), sink).start()
+            self.raw_output = RawPositionOutput(
+                JointSetpointGenerator(limits, 1.0 / self.RAW_OUTPUT_RATE), sink
+            ).start()
         # A terminal cannot see key release, so a key stays active for a hold window after
         # each character. The first window covers the OS auto-repeat delay (500 ms default).
         self.key_hold_initial = float(key_hold_initial)
@@ -270,7 +271,7 @@ class CartesianDeltaTeleop:
         self.linear_speed = default_linear if linear_speed is None else float(linear_speed)
         self.angular_speed = default_angular if angular_speed is None else float(angular_speed)
 
-        self.delta_guard = CartesianDeltaGuard(
+        self.validator = CommandValidator(
             dt=self.dt,
             max_linear_velocity=max_linear_velocity,
             max_angular_velocity=max_angular_velocity,
@@ -452,7 +453,7 @@ class CartesianDeltaTeleop:
     def _send_step(self, qdot, q_meas, dt):
         """raw_id_step (ablation): integrate the ramped velocity once per cycle and send it in
         RAW_POSITION_MODE with a finite-difference qddot, as raw_id did before the setpoint generator."""
-        from .joint_setpoint import Setpoint
+        from .outputs.setpoint import Setpoint
 
         if self._q_step is None:
             self._q_step, self._qdot_step = q_meas.copy(), np.zeros(7, dtype=np.float32)
@@ -567,11 +568,11 @@ class CartesianDeltaTeleop:
             if np.linalg.norm(delta) < 1e-9:
                 continue
 
-            if not self.delta_guard.validate(delta, logger=self.node.get_logger()):
+            if not self.validator.validate(delta, logger=self.node.get_logger()):
                 continue
 
             self.apply_delta_cartesian(delta)
-            self.delta_guard.mark_accepted(delta)
+            self.validator.mark_accepted(delta)
 
     def _spin_position(self):
         def keyboard_delta_source():
@@ -592,7 +593,7 @@ class CartesianDeltaTeleop:
         self.run_delta_source(keyboard_delta_source)
 
     def spin_target(self, target, on_key=None, on_cycle=None):
-        """Servo the TCP to a target pose with velocity commands, for any input: KeyTarget
+        """Servo the TCP to a target pose with velocity commands, for any input: KeyboardTarget
         (keyboard) or VRTarget. target.twist() gives the base-frame twist toward target.goal, or
         None to hold position. The keyboard keeps gripper keys, H (home), SPACE (stop) and ESC;
         other keys go to on_key. on_cycle runs once per control cycle (e.g. the VR gripper) and may
@@ -646,7 +647,7 @@ class CartesianDeltaTeleop:
 
     def spin_keyboard(self):
         """Closed-loop keyboard: held keys move a goal pose that the TCP is servoed onto."""
-        target = KeyTarget(
+        target = KeyboardTarget(
             self.frame,
             self.linear_speed,
             self.angular_speed,
@@ -656,7 +657,7 @@ class CartesianDeltaTeleop:
 
         def on_key(key):
             v = twist_from_key(key, self.linear_speed, self.angular_speed)
-            if np.any(v) and self.delta_guard.validate(v * self.dt, logger=self.node.get_logger()):
+            if np.any(v) and self.validator.validate(v * self.dt, logger=self.node.get_logger()):
                 target.press(key)
 
         self.spin_target(target, on_key)
@@ -912,12 +913,12 @@ def main():
     if args.input == 'vr':
         if not os.path.exists(args.vr_config):
             args.vr_config = os.path.join(get_package_share_directory('baxter_teleop'), 'config', args.vr_config)
-        vr_linear, vr_angular = CartesianDeltaTeleop.VR_SPEEDS
+        vr_linear, vr_angular = Teleop.VR_SPEEDS
         args.linear_speed = vr_linear if args.linear_speed is None else args.linear_speed
         args.angular_speed = vr_angular if args.angular_speed is None else args.angular_speed
 
     rclpy.init(args=[sys.argv[0], *ros_args])
-    teleop = CartesianDeltaTeleop(
+    teleop = Teleop(
         arm=args.arm,
         mode=args.mode,
         output=args.output,

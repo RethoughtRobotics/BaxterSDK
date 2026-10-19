@@ -2,8 +2,8 @@
 
 """Control benchmark runner: one-factor sweeps of the teleop's control parameters on the robot.
 
-Every run plays the ISO 9283-style protocol (benchmark_trajectories.iso_protocol: pose, linear,
-circle) through trajectory_test with one set of parameters, recorded to its own bag. Parameters are
+Every run plays the ISO 9283-style protocol (iso9283.iso_protocol: pose, linear,
+circle) through scripted_trajectory with one set of parameters, recorded to its own bag. Parameters are
 varied one at a time around a reference configuration (REFERENCE); SWEEPS lists the values. A
 condition that occurs in several sweeps (e.g. the reference) is run once and symlinked into each
 sweep's folder. Runs are shuffled (seeded) so slow drift (temperature, cable routing, the operator
@@ -56,7 +56,7 @@ OVERHEAD_S = 20.0
 
 
 def protocol_seconds(speed):
-    from .benchmark_trajectories import iso_protocol
+    from .iso9283 import iso_protocol
 
     return len(iso_protocol(speed=speed)[0]) * 0.01
 
@@ -122,7 +122,7 @@ def trajectory_args(params, arm='right'):
 
 
 class Runner:
-    """Plays runs on the robot: home, record, trajectory_test, stop recording, write run.yaml."""
+    """Plays runs on the robot: home, record, scripted_trajectory, stop recording, write run.yaml."""
 
     def __init__(self, root, scripts_dir, python):
         self.root, self.scripts_dir, self.python = root, scripts_dir, python
@@ -146,7 +146,7 @@ class Runner:
             time.sleep(3.0)  # every topic subscribed before the motion starts
             t0 = time.monotonic()
             result = subprocess.run(
-                [self.python, '-m', 'baxter_teleop.diagnostics.trajectory_test', *trajectory_args(run.p)],
+                [self.python, '-m', 'baxter_teleop.diagnostics.scripted_trajectory', *trajectory_args(run.p)],
                 capture_output=True, text=True,
             )  # fmt: skip
             duration = time.monotonic() - t0
@@ -228,7 +228,7 @@ def main():
     with open(os.path.join(args.root, 'protocol.yaml'), 'w') as f:
         yaml.safe_dump(
             {'reference': REFERENCE, 'sweeps': {s: SWEEPS[s] for s in sweeps}, 'repeats': args.repeats, 'seed': args.seed,
-             'trajectories': 'benchmark_trajectories.iso_protocol (pose, linear, circle)'},
+             'trajectories': 'iso9283.iso_protocol (pose, linear, circle)'},
             f, sort_keys=False,
         )  # fmt: skip
     scripts_dir = os.path.realpath(os.path.join(os.path.dirname(os.path.realpath(__file__)), *['..'] * 5))

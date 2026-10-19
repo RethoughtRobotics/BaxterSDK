@@ -1,12 +1,12 @@
-"""RawJointOutput (activation, staleness, lead backstop, thread) and BaxterRawSink (messages)."""
+"""RawPositionOutput (activation, staleness, lead backstop, thread) and JointCommandPublisher (messages)."""
 
 import time
 
 import numpy as np
 import pytest
 
-from baxter_teleop.joint_setpoint import JointLimits, JointSetpointGenerator
-from baxter_teleop.raw_output import BaxterRawSink, RawJointOutput
+from baxter_teleop.outputs.raw_position import JointCommandPublisher, RawPositionOutput
+from baxter_teleop.outputs.setpoint import JointLimits, JointSetpointGenerator
 
 DT = 0.005
 VEL = np.array([1.2, 1.2, 1.2, 1.2, 3.2, 3.2, 3.2])
@@ -28,7 +28,7 @@ class FakeClock:
 def make(**kwargs):
     sent, clock = [], FakeClock()
     generator = JointSetpointGenerator(JointLimits(VEL, ACC, 10 * ACC, LOW, HIGH), DT)
-    return RawJointOutput(generator, sent.append, clock=clock, **kwargs), sent, clock
+    return RawPositionOutput(generator, sent.append, clock=clock, **kwargs), sent, clock
 
 
 def ticks(output, clock, n):
@@ -107,7 +107,7 @@ def test_setpoint_never_leads_the_measured_arm_by_more_than_max_lead():
 def test_thread_streams_at_the_generator_rate_and_closes():
     sent = []
     generator = JointSetpointGenerator(JointLimits(VEL, ACC, 10 * ACC, LOW, HIGH), DT)
-    output = RawJointOutput(generator, sent.append).start()
+    output = RawPositionOutput(generator, sent.append).start()
     try:
         output.command(np.zeros(7), Q0)
         time.sleep(0.25)
@@ -146,7 +146,7 @@ def ros_msgs():
 def test_sink_sends_raw_position_and_inverse_dynamics_in_limb_order(ros_msgs):
     node = FakeNode()
     limb_order = list(reversed(NAMES))  # the feedforward point must follow the limb's order
-    sink = BaxterRawSink(node, 'right', NAMES, limb_order, inverse_dynamics=True)
+    sink = JointCommandPublisher(node, 'right', NAMES, limb_order, inverse_dynamics=True)
     output, _, clock = make()
     output.send = sink
     output.command(np.full(7, 0.5), Q0)
@@ -162,5 +162,5 @@ def test_sink_sends_raw_position_and_inverse_dynamics_in_limb_order(ros_msgs):
 
 def test_sink_without_inverse_dynamics_sends_only_the_position(ros_msgs):
     node = FakeNode()
-    BaxterRawSink(node, 'right', NAMES, NAMES, inverse_dynamics=False)
+    JointCommandPublisher(node, 'right', NAMES, NAMES, inverse_dynamics=False)
     assert list(node.publishers) == ['/robot/limb/right/joint_command']

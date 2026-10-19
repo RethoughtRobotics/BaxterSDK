@@ -1,9 +1,9 @@
-"""BoundedDiffIKSolver: equals DLS when unconstrained, never exceeds its bounds, slides at a limit."""
+"""BoundedLeastSquaresIK: equals DLS when unconstrained, never exceeds its bounds, slides at a limit."""
 
 import numpy as np
 import pytest
 
-from baxter_teleop.diff_ik import BoundedDiffIKSolver, DiffIKSolver
+from baxter_teleop.differential_ik import BoundedLeastSquaresIK, DampedLeastSquaresIK
 
 VEL = np.array([1.2, 1.2, 1.2, 1.2, 3.2, 3.2, 3.2])
 ACC = np.array([4.0, 4.0, 4.0, 4.0, 6.0, 6.0, 6.0])
@@ -26,7 +26,7 @@ def solve(solver, J, v, q=Q0):
 @pytest.mark.parametrize('seed', range(10))
 def test_unconstrained_solution_equals_dls(seed):
     J, v = jacobian(seed), np.random.default_rng(seed).normal(size=6) * 0.05
-    np.testing.assert_allclose(solve(BoundedDiffIKSolver(), J, v), solve(DiffIKSolver(), J, v), atol=1e-3)
+    np.testing.assert_allclose(solve(BoundedLeastSquaresIK(), J, v), solve(DampedLeastSquaresIK(), J, v), atol=1e-3)
 
 
 @pytest.mark.parametrize('seed', range(20))
@@ -34,7 +34,7 @@ def test_never_exceeds_velocity_or_braking_bounds(seed):
     rng = np.random.default_rng(seed)
     q = LOW + rng.uniform(0, 1, 7) * (HIGH - LOW)
     J, v = jacobian(seed), rng.normal(size=6) * 2.0  # often infeasible
-    qdot = solve(BoundedDiffIKSolver(), J, v, q)
+    qdot = solve(BoundedLeastSquaresIK(), J, v, q)
     assert np.all(np.abs(qdot) <= VEL + 1e-6)
     assert np.all(qdot <= np.sqrt(2 * ACC * (HIGH - q)) + 1e-6)
     assert np.all(qdot >= -np.sqrt(2 * ACC * (q - LOW)) - 1e-6)
@@ -46,7 +46,7 @@ def test_at_a_joint_limit_the_hand_slides_instead_of_stopping():
     q[3] = LOW[3]  # e1 at its lower limit
     # a hand motion that the DLS solution would make with e1 moving further down
     v = J @ np.where(np.arange(7) == 3, -0.5, 0.1)
-    wall, bounded = solve(DiffIKSolver(), J, v, q), solve(BoundedDiffIKSolver(), J, v, q)
+    wall, bounded = solve(DampedLeastSquaresIK(), J, v, q), solve(BoundedLeastSquaresIK(), J, v, q)
     assert np.allclose(wall, 0, atol=1e-6)  # the wall stops every joint
     assert bounded[3] >= -1e-9  # e1 does not go past its limit
     err_wall, err_bounded = np.linalg.norm(J @ wall - v), np.linalg.norm(J @ bounded - v)
@@ -56,6 +56,6 @@ def test_at_a_joint_limit_the_hand_slides_instead_of_stopping():
 def test_posture_pull_stays_in_the_null_space():
     J, v = jacobian(5), np.zeros(6)
     posture = Q0 + 0.3
-    qdot = BoundedDiffIKSolver(posture=posture, posture_gain=1.0).joint_velocity(Q0, J, v, VEL, (LOW, HIGH), ACC)
+    qdot = BoundedLeastSquaresIK(posture=posture, posture_gain=1.0).joint_velocity(Q0, J, v, VEL, (LOW, HIGH), ACC)
     assert np.linalg.norm(qdot) > 1e-3  # it moves toward the posture...
     np.testing.assert_allclose(J @ qdot, 0, atol=1e-3)  # ...without moving the hand

@@ -8,7 +8,7 @@ import yaml
 from geometry_msgs.msg import PoseStamped
 from scipy.spatial.transform import Rotation
 
-from baxter_teleop import vr_target
+from baxter_teleop.inputs import vr
 
 BASE = {
     'linear_frame': 'base',
@@ -25,11 +25,11 @@ BASE = {
 
 def make(tmp_path, monkeypatch, **cfg):
     clock = [0.0]
-    monkeypatch.setattr(vr_target, 'time', types.SimpleNamespace(monotonic=lambda: clock[0]))
+    monkeypatch.setattr(vr, 'time', types.SimpleNamespace(monotonic=lambda: clock[0]))
     path = tmp_path / 'vr.yaml'
     path.write_text(yaml.safe_dump({**BASE, **cfg}))
     node = types.SimpleNamespace(create_subscription=lambda *a, **k: None)
-    return vr_target.VRTarget(node, '', str(path), 1.0, 2.0, 5.0), clock
+    return vr.VRTarget(node, '', str(path), 1.0, 2.0, 5.0), clock
 
 
 def send(target, clock, position, rotvec=(0, 0, 0)):
@@ -93,11 +93,11 @@ def test_tool_frame_maps_are_not_turned(tmp_path, monkeypatch):
 
 def test_swap_hands_argument_overrides_the_config(tmp_path, monkeypatch):
     clock = [0.0]
-    monkeypatch.setattr(vr_target, 'time', types.SimpleNamespace(monotonic=lambda: clock[0]))
+    monkeypatch.setattr(vr, 'time', types.SimpleNamespace(monotonic=lambda: clock[0]))
     path = tmp_path / 'vr.yaml'
     path.write_text(yaml.safe_dump({**BASE, 'swap_hands': True}))
     node = types.SimpleNamespace(create_subscription=lambda *a, **k: None)
-    target = vr_target.VRTarget(node, '', str(path), 1.0, 2.0, 5.0, swap_hands=False)
+    target = vr.VRTarget(node, '', str(path), 1.0, 2.0, 5.0, swap_hands=False)
     assert not target.swap_hands
     np.testing.assert_allclose(target.linear_axes, np.diag([-1.0, -1.0, 1.0]))
 

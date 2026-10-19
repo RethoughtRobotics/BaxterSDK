@@ -2,7 +2,7 @@
 
 """Report on teleop bags from record_teleop.sh: how well the hand followed the operator's intent.
 
-Intent is the held key's direction (keyboard, timed as KeyTarget does) or the VR servo goal's
+Intent is the held key's direction (keyboard, timed as KeyboardTarget does) or the VR servo goal's
 motion. Per motion segment and per bag it reports the direction error of the achieved TCP motion,
 off-axis drift, orientation drift, joint limits, torque saturation, Jacobian conditioning and how
 far the configuration wandered from the untuck pose; per bag also how well the robot tracked the
@@ -23,12 +23,12 @@ from scipy.spatial.transform import Rotation
 
 import baxter_interface
 
-from ..cartesian_delta_teleop import CartesianDeltaTeleop, frax, jax, jnp
-from ..keymap import twist_from_key
-from ..urdf_tools import extract_arm_chain_urdf, resolve_baxter_urdf
+from ..inputs.keyboard import twist_from_key
+from ..kinematics import extract_arm_chain_urdf, resolve_baxter_urdf
+from ..teleop import Teleop, frax, jax, jnp
 
 TORQUE_LIMITS = np.array([50.0, 100.0, 50.0, 50.0, 15.0, 15.0, 15.0])  # Baxter, N m
-SUFFIXES = CartesianDeltaTeleop.JOINT_SUFFIXES
+SUFFIXES = Teleop.JOINT_SUFFIXES
 
 
 def load(bag):
@@ -146,7 +146,7 @@ def analyze(data):
     rotation = Rotation.from_quat(ep[:, 4:8])
     turn = (rotation[1:] * rotation[:-1].inv()).magnitude()
     orientation_drift = np.degrees(turn[active[1:]].sum())
-    low, high = (np.asarray(x) for x in CartesianDeltaTeleop.JOINT_POSITION_LIMITS)
+    low, high = (np.asarray(x) for x in Teleop.JOINT_POSITION_LIMITS)
     at_limit = (q - low < 0.03) | (high - q < 0.03)
     saturated = np.abs(effort) > 0.98 * TORQUE_LIMITS
     home = np.asarray(baxter_interface.settings.UNTUCK_POSITIONS[data['arm']])

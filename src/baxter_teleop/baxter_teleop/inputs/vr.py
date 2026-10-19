@@ -7,7 +7,7 @@ import yaml
 from geometry_msgs.msg import PoseStamped
 from scipy.spatial.transform import Rotation
 
-from .pose_servo import servo_twist
+from ..servo import servo_twist
 
 
 def signed_permutation(axes, config):
