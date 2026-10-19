@@ -12,7 +12,6 @@
 #   --no-camera  don't start the RealSense
 # Squeeze the cuff to move the arm in zero-g. Ctrl+C stops -> data/<time>_<sim|real>_<label>/
 set -e
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LABEL=explore CUFF="" RAW="" NO_CAMERA=""
 while (( $# )); do
     case "$1" in
@@ -25,17 +24,13 @@ while (( $# )); do
     esac
     shift
 done
-set +u
-source /opt/ros/kilted/setup.bash
-source "${SCRIPT_DIR}/../install/setup.bash"
-export RMW_IMPLEMENTATION=rmw_zenoh_cpp ZENOH_ROUTER_CHECK_ATTEMPTS=-1  # as run_teleop.sh
+source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 # ROS_DOMAIN_ID: kept as exported (unset = 0, the real robot)
 
 TOPICS="$(ros2 topic list 2>/dev/null)"
 grep -qx /robot/joint_states <<< "$TOPICS" || { echo "No /robot/joint_states on ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}: is the robot (bridge) up?" >&2; exit 1; }
 ROBOT=real
 ros2 node list 2>/dev/null | grep -qx /baxter_sim && ROBOT=sim
-DATA_DIR="${DATA_DIR:-$(realpath "${SCRIPT_DIR}/../../data")}"  # FinalProject/data: every recording and result
 OUT="${DATA_DIR}/baxter_data/$(date +%Y%m%d_%H%M%S)_${ROBOT}_${LABEL}"
 mkdir -p "$(dirname "$OUT")"
 
@@ -47,7 +42,7 @@ elif ! pgrep -f "[r]ealsense2_camera_node.*third_eye" >/dev/null; then
     if lsusb 2>/dev/null | grep -qi realsense; then
         sed -e 's/^enable_depth: .*/enable_depth: true/' -e 's/^enable_gyro: .*/enable_gyro: true/' \
             -e 's/^enable_accel: .*/enable_accel: true/' \
-            "${SCRIPT_DIR}/../install/baxter_interface/share/baxter_interface/config/third_eye.yaml" > "${OUT}.camera.yaml"
+            "${WS_DIR}/install/baxter_interface/share/baxter_interface/config/third_eye.yaml" > "${OUT}.camera.yaml"
         printf 'depth_module.depth_profile: 640,480,30\nalign_depth.enable: true\nunite_imu_method: 2\n' >> "${OUT}.camera.yaml"
         setsid ros2 launch realsense2_camera rs_launch.py camera_namespace:=cameras camera_name:=third_eye \
             config_file:="${OUT}.camera.yaml" > "${OUT}.camera.log" 2>&1 < /dev/null & CAMERA_PID=$!

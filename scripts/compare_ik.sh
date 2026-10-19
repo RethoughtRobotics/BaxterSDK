@@ -5,14 +5,9 @@
 # Stops any running ROS processes first (teardown.sh) and again at the end.
 
 set -e
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SIM_DIR="${SIM_DIR:-$(realpath "${SCRIPT_DIR}/../src/baxter_mujoco")}"
 SOLVERS=("${@:-dls}")
 [[ $# -eq 0 ]] && SOLVERS=(dls bounded)
-set +u
-source /opt/ros/kilted/setup.bash
-source "${SCRIPT_DIR}/../install/setup.bash"
-export RMW_IMPLEMENTATION=rmw_zenoh_cpp ZENOH_ROUTER_CHECK_ATTEMPTS=-1
+source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 unset ROS_DOMAIN_ID
 LOG="$(mktemp -d)"
 trap '"${SCRIPT_DIR}/teardown.sh" >/dev/null' EXIT
@@ -31,7 +26,7 @@ for ik in "${SOLVERS[@]}"; do
     ros2 run baxter_tools tuck_arms -u >/dev/null 2>&1
     setsid "${SCRIPT_DIR}/record_teleop.sh" "trajectory_${ik}" >"${LOG}/record_${ik}.log" 2>&1 &
     sleep 4
-    "${SCRIPT_DIR}/../.venv-ros/bin/python" -m baxter_interface.baxter_teleop.trajectory_test --ik "$ik" \
+    "$PY" -m baxter_interface.baxter_teleop.trajectory_test --ik "$ik" \
         2>"${LOG}/teleop_${ik}.log" | grep -v '^\['
     pkill -INT -f '[r]os2 bag record' || true
     for _ in $(seq 60); do grep -q '^Saved ' "${LOG}/record_${ik}.log" && break; sleep 1; done
@@ -39,9 +34,8 @@ for ik in "${SOLVERS[@]}"; do
     bags+=("$(grep '^Saved ' "${LOG}/record_${ik}.log" | cut -d' ' -f2)")
 done
 
-DATA_DIR="${DATA_DIR:-$(realpath "${SCRIPT_DIR}/../../data")}"  # FinalProject/data: every recording and result
 REPORT="${DATA_DIR}/ik_comparisons/$(date +%Y%m%d_%H%M%S)_ik_comparison"
-"${SCRIPT_DIR}/../.venv-ros/bin/python" -m baxter_interface.baxter_teleop.ik_report "$REPORT" "${bags[@]}" \
+"$PY" -m baxter_interface.baxter_teleop.ik_report "$REPORT" "${bags[@]}" \
     2> >(grep -v -e jax -e GPU >&2)
 {
     echo -e "\n## Contacts\n"

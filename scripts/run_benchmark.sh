@@ -12,15 +12,10 @@
 # Each run aborts itself (and holds) on tracking error or contact force (trajectory_test --safety).
 
 set -e
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DATA_DIR="${DATA_DIR:-$(realpath "${SCRIPT_DIR}/../../data")}"  # FinalProject/data: every recording and result
+source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 ROOT="${DATA_DIR}/benchmarks/control_benchmark_$(date +%Y%m%d)"
 if [[ $# -gt 0 && "$1" != -* ]]; then ROOT="$(realpath -m "$1")"; shift; fi
-set +u
-source /opt/ros/kilted/setup.bash
-source "${SCRIPT_DIR}/../install/setup.bash"
-export RMW_IMPLEMENTATION=rmw_zenoh_cpp ZENOH_ROUTER_CHECK_ATTEMPTS=-1 BAXTER_SCRIPTS="$SCRIPT_DIR"
-PY="${SCRIPT_DIR}/../.venv-ros/bin/python"
+export BAXTER_SCRIPTS="$SCRIPT_DIR"
 
 if [[ " $* " != *" --dry-run "* ]]; then
     if ! timeout 5 ros2 topic echo --once /robot/joint_states >/dev/null 2>&1; then

@@ -11,12 +11,8 @@
 #              BAG_PATH=<dir> records to exactly that directory.
 
 set -e
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LABEL="${1:-session}"
-set +u
-source /opt/ros/kilted/setup.bash
-source "${SCRIPT_DIR}/../install/setup.bash"
-export RMW_IMPLEMENTATION=rmw_zenoh_cpp ZENOH_ROUTER_CHECK_ATTEMPTS=-1  # as run_teleop.sh
+source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 # ROS_DOMAIN_ID: kept as exported (unset = 0, the real robot); export another to run apart
 
 NODES="$(ros2 node list 2>/dev/null)"
@@ -24,7 +20,6 @@ ROBOT=real
 grep -qx /baxter_sim <<< "$NODES" && ROBOT=sim
 KIND=bags
 grep -qx -e /policy_runtime -e /policy_server <<< "$NODES" && KIND=rollouts
-DATA_DIR="${DATA_DIR:-$(realpath "${SCRIPT_DIR}/../../data")}"  # FinalProject/data: every recording and result
 ROOT="${DATA_DIR}/${KIND}"
 [[ -n "$SESSION" ]] && ROOT="${DATA_DIR}/sessions/${SESSION}"
 BAG="${ROOT}/$(date +%Y%m%d_%H%M%S)_${ROBOT}_${LABEL}"
@@ -49,7 +44,6 @@ if [[ "$KIND" == rollouts ]]; then
     TOPICS+='|^/policy/.*|^/cameras/(left_hand_camera/image|third_eye/color/image_raw)/compressed$'
     TOPICS+='|^/cameras/(left_hand_camera|third_eye/color)/camera_info$'
     # the running checkpoint, from RethoughtAI's `inference serve` / `inference run` command lines
-    RAI_DIR="$(realpath "${SCRIPT_DIR}/../../rethought_ai")"
     arg() { pgrep -af "[i]nference $1 " | grep -v "uv run" | head -1 | sed -n "s/.* $2 \([^ ]*\).*/\1/p"; }
     MODEL="$(arg serve --model)" REVISION="$(arg serve --revision)" EPISODE="$(arg run --start-at)"
     [[ -n "$MODEL" && -d "${RAI_DIR}/${MODEL}" ]] && MODEL="${RAI_DIR}/${MODEL}"

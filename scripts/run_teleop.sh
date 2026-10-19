@@ -97,17 +97,16 @@ else
     ARGS=" --input vr${SERVO} --vr-config vr_axes_raw_id.yaml${ARGS}"
 fi
 
-# .venv-ros is Python 3.12 (matches ROS Kilted rclpy) with frax + jax installed
+# Each pane sources env.sh. The python is spelled out instead of $PY: the terminal backend runs the
+# command through one more shell, which would expand $PY first, to nothing.
 teleop_cmd() {  # $1: arm, or empty when --arm was given directly
     local arm="${1:-$GIVEN_ARM}" policy_args=""
     if [[ -n "$POLICY" ]]; then
         policy_args=" --vr-config vr_axes_policy.yaml --vr-topic /policy/${arm}/target --vr-trigger-topic /policy/${arm}/trigger"
     fi
     echo "cd '${WS_DIR}' \
-  && source /opt/ros/kilted/setup.bash \
-  && source '${WS_DIR}/install/setup.bash' \
-  && export RMW_IMPLEMENTATION=rmw_zenoh_cpp \
-    && '${WS_DIR}/.venv-ros/bin/python' -m baxter_interface.baxter_teleop.cartesian_delta_teleop ${ARGS}${1:+ --arm $1}${policy_args}; \
+  && source '${SCRIPT_DIR}/env.sh' \
+  && '${WS_DIR}/.venv-ros/bin/python' -m baxter_interface.baxter_teleop.cartesian_delta_teleop ${ARGS}${1:+ --arm $1}${policy_args}; \
   echo; read -rp 'Teleop exited. Press Enter to close.'"
 }
 # RethoughtAI recorder; baxter_core_msgs (its button messages) come from the Baxter workspace
@@ -115,9 +114,7 @@ record_cmd() {
     # The single quotes go into the pane's command so a session name stays one word; ${SESSION} expands here.
     # shellcheck disable=SC2016
     echo "cd '${RAI_DIR}' \
-  && source /opt/ros/kilted/setup.bash \
-  && source '${WS_DIR}/install/setup.bash' \
-  && export RMW_IMPLEMENTATION=rmw_zenoh_cpp \
+  && source '${SCRIPT_DIR}/env.sh' \
   && source .venv/bin/activate \
   && record record baxter.yaml${SESSION:+ --session '${SESSION}'}${OTHER_ARM:+ --exclude ${OTHER_ARM}}${NO_VIZ:+ --no-viz}; \
   echo; read -rp 'Recorder exited. Press Enter to close.'"
@@ -150,8 +147,7 @@ fi
 if [[ -n "$CAMERA" ]] && ! pgrep -f "[r]ealsense2_camera_node.*third_eye" >/dev/null; then
     CAMERA_LOG="${XDG_RUNTIME_DIR:-/tmp}/baxter_teleop/third_eye.log"
     mkdir -p "$(dirname "$CAMERA_LOG")"
-    setsid bash -c "source /opt/ros/kilted/setup.bash && export RMW_IMPLEMENTATION=rmw_zenoh_cpp \
-        && exec ros2 launch realsense2_camera rs_launch.py camera_namespace:=cameras camera_name:=third_eye \
+    setsid bash -c "source '${SCRIPT_DIR}/env.sh' && exec ros2 launch realsense2_camera rs_launch.py camera_namespace:=cameras camera_name:=third_eye \
         config_file:='${WS_DIR}/install/baxter_interface/share/baxter_interface/config/third_eye.yaml'" \
         > "$CAMERA_LOG" 2>&1 < /dev/null &
     echo "third_eye camera starting (log: ${CAMERA_LOG})"

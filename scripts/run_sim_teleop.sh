@@ -12,8 +12,6 @@
 # kill -9) is stopped and replaced.
 
 set -e
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SIM_DIR="${SIM_DIR:-$(realpath "${SCRIPT_DIR}/../src/baxter_mujoco")}"
 
 INPUT=keyboard
 ARM=right
@@ -29,10 +27,7 @@ for a in "$@"; do
     esac
 done
 
-set +u
-source /opt/ros/kilted/setup.bash
-source "${SCRIPT_DIR}/../install/setup.bash"
-export RMW_IMPLEMENTATION=rmw_zenoh_cpp ZENOH_ROUTER_CHECK_ATTEMPTS=-1  # as run_teleop.sh
+source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 # ROS_DOMAIN_ID: kept as exported (unset = 0, the real robot); export another to run apart
 
 groups=()
