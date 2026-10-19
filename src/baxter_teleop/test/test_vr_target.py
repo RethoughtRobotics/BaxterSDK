@@ -8,7 +8,7 @@ import yaml
 from geometry_msgs.msg import PoseStamped
 from scipy.spatial.transform import Rotation
 
-from baxter_interface.baxter_teleop import vr_target
+from baxter_teleop import vr_target
 
 BASE = {
     'linear_frame': 'base',

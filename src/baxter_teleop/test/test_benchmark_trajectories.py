@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from baxter_interface.baxter_teleop.benchmark_trajectories import (
+from baxter_teleop.benchmark_trajectories import (
     DT,
     circle_test,
     iso_protocol,
@@ -78,7 +78,7 @@ def test_circle_test_has_the_radius_and_starts_at_rest():
 
 
 def test_safety_monitor_trips_on_sustained_error_or_force_only():
-    from baxter_interface.baxter_teleop.trajectory_test import SafetyMonitor
+    from baxter_teleop.trajectory_test import SafetyMonitor
 
     m = SafetyMonitor(max_error=0.1, error_time=0.3, max_force=60, force_time=0.1)
     goal, ok, far = (0, 0, 0), (0.05, 0, 0), (0.2, 0, 0)

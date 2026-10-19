@@ -13,10 +13,6 @@ setup(
             'share/' + package_name + '/config',
             [
                 'config/param.yaml',
-                'config/vr_axes.yaml',
-                'config/vr_axes_base.yaml',
-                'config/vr_axes_policy.yaml',
-                'config/vr_axes_raw_id.yaml',
                 'config/third_eye.yaml',
             ],
         ),
@@ -38,7 +34,6 @@ setup(
             'gripper_action_server = baxter_interface.gripper_action_server:main',
             'head_action_server = baxter_interface.head_action_server:main',
             'joint_trajectory_action_server = baxter_interface.joint_trajectory_action_server:main',
-            'baxter_teleop = baxter_interface.baxter_teleop.cartesian_delta_teleop:main',
         ],
     },
 )

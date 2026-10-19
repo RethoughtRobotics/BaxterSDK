@@ -57,7 +57,7 @@ if ! $LIVE; then
         -r joint_states:=/robot/joint_states "${ZEROS[@]}" &
     pids+=($!)
 fi
-RVIZ="${WS_DIR}/src/baxter_interface/config/teleop_frames.rviz"
+RVIZ="${WS_DIR}/src/baxter_teleop/config/teleop_frames.rviz"
 if $LIVE; then
     # Live view: right half of the desktop work area (teleop's Terminator takes the left), no frame names.
     LIVE_RVIZ="$(mktemp --suffix=.rviz)"

@@ -2,7 +2,7 @@
 
 """Report comparing IK solvers on trajectory_test bags: figures (PDF + PNG), tables (CSV + LaTeX).
 
-  python -m baxter_interface.baxter_teleop.ik_report <report_dir> <bag> [<bag> ...]
+  python -m baxter_teleop.ik_report <report_dir> <bag> [<bag> ...]
 
 Each bag is one trajectory_test run (compare_ik.sh records them). Errors are measured against the
 servo goal the teleop published (/teleop/<arm>/goal), the hand pose the robot reported
