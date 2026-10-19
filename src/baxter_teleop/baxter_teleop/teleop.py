@@ -23,7 +23,7 @@ from .kinematics import ArmKinematics
 from .outputs.raw_position import start_raw_position_output
 from .outputs.velocity import VelocityOutput
 from .safety import CommandValidator
-from .settings import LIMITS, joint_names
+from .settings import DEFAULTS, LIMITS, joint_names, servo_feedback_for
 from .telemetry import Telemetry
 
 ESC = '\x1b'
@@ -36,7 +36,9 @@ class Teleop:
                  velocity is the target of a jerk-limited setpoint streamed in RAW_POSITION_MODE,
                  raw_id with inverse dynamics feedforward (outputs/raw_position.py). Raw modes
                  bypass Baxter's collision avoidance.
-    servo_feedback  what the pose servo and IK close on. 'measured': the arm's joint states.
+    Defaults come from config/teleop.yaml (settings.DEFAULTS).
+
+    servo_feedback  what the pose servo and IK close on (None: settings.servo_feedback_for). 'measured': the arm's joint states.
                  'setpoint': the raw output's own setpoint (raw/raw_id only), so the Cartesian loop
                  is purely kinematic and cannot hunt on joint friction; Baxter's joint loop (with
                  inverse dynamics) tracks the setpoint.
@@ -58,11 +60,11 @@ class Teleop:
         self,
         arm='right',
         node=None,
-        output='velocity',
+        output=DEFAULTS['output'],
         ik='bounded',
-        posture_gain=0.0,
+        posture_gain=DEFAULTS['posture_gain'],
         joint_accel_scale=1.0,
-        servo_feedback='measured',
+        servo_feedback=None,
         frame='base',
         tcp_offset=None,
         linear_speed=None,
@@ -84,6 +86,7 @@ class Teleop:
             raise ValueError("frame must be 'tool' or 'base'")
         if output not in ('velocity', 'raw', 'raw_id'):
             raise ValueError("output must be 'velocity', 'raw' or 'raw_id'")
+        servo_feedback = servo_feedback_for(output, servo_feedback)
         if servo_feedback not in ('measured', 'setpoint'):
             raise ValueError("servo_feedback must be 'measured' or 'setpoint'")
         if servo_feedback == 'setpoint' and output == 'velocity':

@@ -1,13 +1,11 @@
 #!/bin/bash
-# Launch Baxter cartesian-delta teleop in its own window that reads key input.
+# Launch Baxter teleop (python -m baxter_teleop) in its own window that reads key input.
 # Usage: ./run_teleop.sh [--left|--right|--both] [--input keyboard] [--linear-speed 0.2] ...
-# Defaults: both arms, VR input, and the tuned VR control (2026-10-16 robot tests):
-#   --vr-gain 2 --output raw_id --servo-feedback setpoint --posture-gain 0.5 --vr-config vr_axes_raw_id.yaml
-# i.e. a jerk-limited raw setpoint with inverse dynamics, linear gain 6/s, rotation 2/2/6 /s, the servo
-# closing on its setpoint, a gentle null-space pull of the elbow toward untuck, motion_scale 0.5. Any of these given on the command line wins (the old
-# behaviour: --vr-gain 1 --output velocity --servo-feedback measured --vr-config vr_axes_base.yaml). Raw output
-# bypasses Baxter's collision avoidance. --policy uses the same servo with vr_axes_policy.yaml (1:1, no
-# deadband or smoothing); leads tuned for the old ~0.6 s servo lag over-lead with it.
+# Defaults: both arms, VR input, and the teleop's tuned control from
+# src/baxter_teleop/config/teleop.yaml (output, servo feedback, gains, VR axis map); any option given
+# here overrides them. Raw output bypasses Baxter's collision avoidance. --policy uses the same servo
+# with vr_axes_policy.yaml (1:1, no deadband or smoothing); leads tuned for the old ~0.6 s servo lag
+# over-lead with it.
 # --swap: swap_hands false for this run (you on Baxter's side: x/y of the axis maps negated, each arm
 # driven by its own hand's controller); default true (facing Baxter).
 # The null-space untuck pull defaults to 0.5/s; --null sets 1.4/s, --posture-gain VALUE any (0 = off).
@@ -86,17 +84,12 @@ while (( $# )); do
     shift
 done
 [[ -z "$ARMS" && -z "$GIVEN_ARM" ]] && ARMS="left right"
-# Tuned control defaults first, so anything given on the command line overrides them. --policy gets the
-# same servo; teleop_cmd adds its own mapping (vr_axes_policy.yaml) and topics.
-SERVO=(--vr-gain 2 --output raw_id --servo-feedback setpoint --posture-gain 0.5)
-if [[ -n "$POLICY" ]]; then
-    if [[ -n "$SWAP" ]]; then
-        echo "ERROR: --swap with --policy would mirror the policy's targets (x/y negated)." >&2; exit 1
-    fi
-    ARGS=(--input vr "${SERVO[@]}" "${ARGS[@]}")
-else
-    ARGS=(--input vr "${SERVO[@]}" --vr-config vr_axes_raw_id.yaml "${ARGS[@]}")
+# The control settings are the teleop's own defaults (teleop.yaml); --policy adds its own mapping
+# (vr_axes_policy.yaml) and topics in teleop_cmd.
+if [[ -n "$POLICY" && -n "$SWAP" ]]; then
+    echo "ERROR: --swap with --policy would mirror the policy's targets (x/y negated)." >&2; exit 1
 fi
+ARGS=(--input vr "${ARGS[@]}")
 
 # Each pane sources env.sh. The python is spelled out instead of $PY: the terminal backend runs the
 # command through one more shell, which would expand $PY first, to nothing.
