@@ -10,12 +10,9 @@
 # RViz reads only those topics, so both trees show as one, and nothing here adds to the robot's /tf.
 
 set -e
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WS_DIR="${SCRIPT_DIR}/.."
-source /opt/ros/kilted/setup.bash
-source "${WS_DIR}/install/setup.bash"
+source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 CALLER_ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-}"
-export RMW_IMPLEMENTATION=rmw_zenoh_cpp ROS_DOMAIN_ID=42 ZENOH_ROUTER_CHECK_ATTEMPTS=-1  # wait for the router
+export ROS_DOMAIN_ID=42
 case "${1:-}" in
     ''|--live|--vive) ;;
     *) echo "Unknown option '$1'. Usage: $0 [--live|--vive]" >&2; exit 2 ;;

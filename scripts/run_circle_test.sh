@@ -12,7 +12,6 @@
 # and still saves the bag. raw/raw_id bypass Baxter's collision avoidance: keep the circle clear.
 
 set -e
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT=raw_id
 ARGS=()
 while [[ $# -gt 0 ]]; do
@@ -22,10 +21,7 @@ while [[ $# -gt 0 ]]; do
     esac
     shift
 done
-set +u
-source /opt/ros/kilted/setup.bash
-source "${SCRIPT_DIR}/../install/setup.bash"
-export RMW_IMPLEMENTATION=rmw_zenoh_cpp ZENOH_ROUTER_CHECK_ATTEMPTS=-1  # as run_teleop.sh
+source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 
 if ! timeout 5 ros2 topic echo --once /robot/joint_states >/dev/null 2>&1; then
     echo "No /robot/joint_states on ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}: start the bridge (or the sim) first." >&2
@@ -54,7 +50,7 @@ grep -q '^Recording' "${LOG}/record.log" || { echo "ERROR: the recorder did not 
 sleep 3  # let the recorder subscribe to every topic before the motion starts
 
 echo "== Circles"
-"${SCRIPT_DIR}/../.venv-ros/bin/python" -m baxter_interface.baxter_teleop.trajectory_test \
+"$PY" -m baxter_interface.baxter_teleop.trajectory_test \
     --arm right --protocol circle --output "$OUTPUT" --gain 3 --no-feedforward "${ARGS[@]}" \
     2> >(grep -v -e jax -e GPU -e '^\[INFO\]' >&2)
 sleep 1  # the hold after the last circle
