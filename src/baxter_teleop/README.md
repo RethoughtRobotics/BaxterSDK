@@ -28,6 +28,10 @@ VR or learned policies can plug into the same runtime path.
   - VR adapter: servos the TCP toward the libsurvive_ros2 clutched target.
 - `urdf_tools.py`
   - Baxter URDF discovery and arm chain extraction.
+- `diagnostics/`
+  - One-off tools for measuring the teleop: scripted trajectories (`trajectory_test`), the control
+    benchmark, bag and IK reports, key and VR replays. Run as `python -m baxter_teleop.diagnostics.<name>`;
+    the runtime never imports them.
 
 ## Data contract for modalities
 
@@ -43,7 +47,7 @@ From the workspace root:
 
 ```bash
 source install/setup.bash
-ros2 run baxter_interface baxter_teleop --arm right
+ros2 run baxter_teleop baxter_teleop --arm right
 ```
 
 Use `--arm left` for the left arm.
@@ -143,7 +147,7 @@ The runtime enforces both velocity and delta limits before each command is appli
 These are configurable from CLI:
 
 ```bash
-ros2 run baxter_interface baxter_teleop \
+ros2 run baxter_teleop baxter_teleop \
   --arm right \
   --max-linear-velocity 0.20 \
   --max-angular-velocity 1.50 \

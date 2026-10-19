@@ -13,7 +13,7 @@ moving around the cell) does not line up with any sweep, and the runner resumes 
   <root>/<sweep>/bags/<label>__r<k>/   one bag per run (symlink when shared), with run.yaml
   <root>/runs.csv                      one line per finished run (status, abort reason, duration)
 
-  python -m baxter_teleop.benchmark <root> [--sweeps gain,speed] [--repeats 3] [--dry-run]
+  python -m baxter_teleop.diagnostics.benchmark <root> [--sweeps gain,speed] [--repeats 3] [--dry-run]
 
 Needs the robot (or the sim) up on ROS_DOMAIN_ID and scripts/record_teleop.sh (BAG_PATH).
 """
@@ -146,7 +146,7 @@ class Runner:
             time.sleep(3.0)  # every topic subscribed before the motion starts
             t0 = time.monotonic()
             result = subprocess.run(
-                [self.python, '-m', 'baxter_teleop.trajectory_test', *trajectory_args(run.p)],
+                [self.python, '-m', 'baxter_teleop.diagnostics.trajectory_test', *trajectory_args(run.p)],
                 capture_output=True, text=True,
             )  # fmt: skip
             duration = time.monotonic() - t0

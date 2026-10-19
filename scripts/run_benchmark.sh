@@ -27,7 +27,7 @@ if [[ " $* " != *" --dry-run "* ]]; then
         exit 1
     fi
 fi
-"$PY" -m baxter_teleop.benchmark "$ROOT" "$@" 2> >(grep -v -e jax -e GPU >&2)
+"$PY" -m baxter_teleop.diagnostics.benchmark "$ROOT" "$@" 2> >(grep -v -e jax -e GPU >&2)
 [[ " $* " == *" --dry-run "* ]] && exit 0
 echo "== Report"
 "$PY" -m baxter_teleop.benchmark_report "$ROOT" 2> >(grep -v -e jax -e GPU >&2) \

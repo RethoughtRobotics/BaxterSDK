@@ -23,9 +23,9 @@ from scipy.spatial.transform import Rotation
 
 import baxter_interface
 
-from .cartesian_delta_teleop import CartesianDeltaTeleop, frax, jax, jnp
-from .keymap import twist_from_key
-from .urdf_tools import extract_arm_chain_urdf, resolve_baxter_urdf
+from ..cartesian_delta_teleop import CartesianDeltaTeleop, frax, jax, jnp
+from ..keymap import twist_from_key
+from ..urdf_tools import extract_arm_chain_urdf, resolve_baxter_urdf
 
 TORQUE_LIMITS = np.array([50.0, 100.0, 50.0, 50.0, 15.0, 15.0, 15.0])  # Baxter, N m
 SUFFIXES = CartesianDeltaTeleop.JOINT_SUFFIXES

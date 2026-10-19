@@ -50,7 +50,7 @@ grep -q '^Recording' "${LOG}/record.log" || { echo "ERROR: the recorder did not 
 sleep 3  # let the recorder subscribe to every topic before the motion starts
 
 echo "== Circles"
-"$PY" -m baxter_teleop.trajectory_test \
+"$PY" -m baxter_teleop.diagnostics.trajectory_test \
     --arm right --protocol circle --output "$OUTPUT" --gain 3 --no-feedforward "${ARGS[@]}" \
     2> >(grep -v -e jax -e GPU -e '^\[INFO\]' >&2)
 sleep 1  # the hold after the last circle

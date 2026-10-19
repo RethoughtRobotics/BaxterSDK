@@ -2,7 +2,7 @@
 
 """Report comparing IK solvers on trajectory_test bags: figures (PDF + PNG), tables (CSV + LaTeX).
 
-  python -m baxter_teleop.ik_report <report_dir> <bag> [<bag> ...]
+  python -m baxter_teleop.diagnostics.ik_report <report_dir> <bag> [<bag> ...]
 
 Each bag is one trajectory_test run (compare_ik.sh records them). Errors are measured against the
 servo goal the teleop published (/teleop/<arm>/goal), the hand pose the robot reported
@@ -23,9 +23,9 @@ from scipy.spatial.transform import Rotation  # noqa: E402
 
 import baxter_interface  # noqa: E402
 
+from ..cartesian_delta_teleop import CartesianDeltaTeleop, frax, jax, jnp  # noqa: E402
+from ..urdf_tools import extract_arm_chain_urdf, resolve_baxter_urdf  # noqa: E402
 from .bag_report import load, save_joints  # noqa: E402
-from .cartesian_delta_teleop import CartesianDeltaTeleop, frax, jax, jnp  # noqa: E402
-from .urdf_tools import extract_arm_chain_urdf, resolve_baxter_urdf  # noqa: E402
 
 SUFFIXES = CartesianDeltaTeleop.JOINT_SUFFIXES
 LABELS = {'dls': 'DLS', 'bounded': 'Bounded DLS'}
