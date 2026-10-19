@@ -89,7 +89,7 @@ class CartesianDeltaTeleop:
         node=None,
         mode='velocity',
         output='velocity',
-        ik='dls',
+        ik=None,
         posture_gain=0.0,
         joint_accel_scale=1.0,
         servo_feedback='measured',
@@ -115,6 +115,9 @@ class CartesianDeltaTeleop:
             raise ValueError("arm must be 'left' or 'right'")
         if mode not in self.MODE_SPEEDS:
             raise ValueError("mode must be 'velocity' or 'position'")
+        # Bounded IK bounds joint velocities, so it is the default wherever the solve is for velocities.
+        if ik is None:
+            ik = 'bounded' if mode == 'velocity' else 'dls'
         if ik not in ('dls', 'bounded'):
             raise ValueError("ik must be 'dls' or 'bounded'")
         if ik == 'bounded' and mode != 'velocity':
@@ -841,9 +844,10 @@ def main():
     parser.add_argument(
         '--ik',
         choices=['dls', 'bounded'],
-        default='dls',
-        help="velocity IK: 'dls' damped least squares (default) or 'bounded': DLS "
-        'with joint limits as hard bounds, so a joint at its limit no longer stops the hand (velocity mode)',
+        default=None,
+        help="IK: 'bounded' (default in velocity mode) DLS with joint limits as hard bounds, so a joint at "
+        "its limit no longer stops the hand; 'dls' scales the whole motion to a stop at a limit (default in "
+        'position mode)',
     )
     parser.add_argument(
         '--servo-feedback',
