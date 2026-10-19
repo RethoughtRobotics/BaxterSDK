@@ -8,12 +8,24 @@ the hand's. Published live as /teleop/{arm}/tcp.
 
 import os
 import tempfile
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import numpy as np
-from geometry_msgs.msg import PoseStamped
-from scipy.spatial.transform import Rotation
+import rclpy
+
+from .settings import joint_names
+
+try:
+    import frax
+    import jax
+    import jax.numpy as jnp
+except ImportError as exc:  # pragma: no cover
+    frax = jax = jnp = None
+    FRAX_IMPORT_ERROR = exc
+else:
+    FRAX_IMPORT_ERROR = None
 
 try:
     from ament_index_python.packages import get_package_share_directory
@@ -88,13 +100,83 @@ def tcp_pose(hand_transform, tcp_offset):
     return T[:3, 3] + T[:3, :3] @ np.asarray(tcp_offset, dtype=np.float64), T[:3, :3]
 
 
-def pose_msg(position, rotation, stamp, frame_id='base'):
-    """PoseStamped from a position and a scipy Rotation or a rotation matrix."""
-    if not isinstance(rotation, Rotation):
-        rotation = Rotation.from_matrix(rotation)
-    msg = PoseStamped()
-    msg.header.stamp, msg.header.frame_id = stamp, frame_id
-    p, o = msg.pose.position, msg.pose.orientation
-    p.x, p.y, p.z = (float(x) for x in position)
-    o.x, o.y, o.z, o.w = (float(x) for x in rotation.as_quat())
-    return msg
+def require_frax():
+    """Raise a clear error when frax and jax are missing (they are pip-only: requirements.txt)."""
+    if frax is None:
+        raise RuntimeError(
+            'frax + jax are required: .venv-ros/bin/pip install -r src/baxter_teleop/requirements.txt'
+        ) from FRAX_IMPORT_ERROR
+
+
+class ArmKinematics:
+    """Forward kinematics, Jacobian and TCP of one Baxter arm (frax, compiled with jax.jit).
+
+    Joint vectors are in settings.JOINTS order. The TCP offset starts at the URDF {arm}_gripper frame;
+    measure_tcp_offset replaces it with the offset of the robot's own endpoint.
+    """
+
+    URDF_TCP_OFFSET = (0.0, 0.0, 0.025)  # the URDF {arm}_gripper frame, in the hand frame (m)
+
+    def __init__(self, arm, warm_up_at):
+        require_frax()
+        self.joint_names = joint_names(arm)
+        manipulator = getattr(getattr(frax, 'core', object()), 'manipulator', None)
+        if not manipulator or not hasattr(manipulator, 'Manipulator'):
+            raise RuntimeError('This frax version does not expose core.manipulator.Manipulator')
+        # A single arm model, so the Jacobian is 6 x 7.
+        urdf = extract_arm_chain_urdf(resolve_baxter_urdf(), arm, self.joint_names)
+        self.robot = manipulator.Manipulator(urdf, joint_ordering=self.joint_names)
+        self.jacobian = jax.jit(self.robot.ee_jacobian)
+        self.hand_transform = jax.jit(self.robot.ee_transform)
+        # Compile now, so the first command does not stall the control loop.
+        q = jnp.asarray(warm_up_at, dtype=jnp.float32)
+        self.jacobian(q).block_until_ready()
+        self.hand_transform(q).block_until_ready()
+        self.tcp_offset = np.asarray(self.URDF_TCP_OFFSET, dtype=np.float32)
+
+    def tcp(self, q):
+        """(position (3,), rotation matrix (3, 3)) of the TCP in the base frame at joints q."""
+        return tcp_pose(self.hand_transform(jnp.asarray(q)), self.tcp_offset)
+
+    def hand_twist(self, q, twist, frame):
+        """Convert a TCP twist into the base-frame twist of the hand link used by the Jacobian.
+
+        In tool frame the twist is expressed in the TCP axes; in base frame it is
+        expressed in the robot base axes. Either way rotation is about the TCP.
+        """
+        R = np.asarray(self.hand_transform(jnp.asarray(q)), dtype=np.float32)[:3, :3]
+        v = np.asarray(twist[:3], dtype=np.float32)
+        w = np.asarray(twist[3:], dtype=np.float32)
+        if frame == 'tool':
+            v = R @ v
+            w = R @ w
+        # v_tcp = v_hand + w x r, with r the hand-to-TCP vector in base frame.
+        v_hand = v - np.cross(w, R @ self.tcp_offset)
+        return np.concatenate([v_hand, w]).astype(np.float32)
+
+    def measure_tcp_offset(self, node, limb, read_q, num_samples=10, sample_period=0.02, timeout=3.0):
+        """Set the TCP offset to the robot endpoint expressed in the hand frame, averaged over samples.
+
+        The endpoint includes the configured gripper and fingers. Without one in `timeout` seconds
+        the offset stays at the URDF gripper frame. read_q() gives the current joints.
+        """
+        samples = []
+        deadline = time.monotonic() + timeout
+        next_sample = time.monotonic()
+        while len(samples) < num_samples and time.monotonic() < deadline:
+            rclpy.spin_once(node, timeout_sec=0.005)
+            if time.monotonic() < next_sample:
+                continue
+            pose = limb.endpoint_pose()
+            if pose and 'position' in pose:
+                T = np.asarray(self.hand_transform(jnp.asarray(read_q())), dtype=np.float32)
+                p = np.asarray(pose['position'], dtype=np.float32)
+                samples.append(T[:3, :3].T @ (p - T[:3, 3]))
+                next_sample = time.monotonic() + sample_period
+        if not samples:
+            node.get_logger().warn('No endpoint state received; using URDF gripper frame as TCP.')
+            return
+        samples = np.asarray(samples)
+        spread_mm = float(np.max(np.linalg.norm(samples - samples.mean(axis=0), axis=1))) * 1000.0
+        node.get_logger().info(f'TCP offset from {len(samples)} samples, max deviation {spread_mm:.1f} mm')
+        self.tcp_offset = samples.mean(axis=0).astype(np.float32)

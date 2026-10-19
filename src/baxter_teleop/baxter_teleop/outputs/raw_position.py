@@ -27,7 +27,13 @@ import time
 
 import numpy as np
 
-from .setpoint import JointSetpointGenerator, Setpoint
+from .setpoint import JointLimits, JointSetpointGenerator, Setpoint
+
+# Jerk limit = JERK_FACTOR x the acceleration limit, so full acceleration builds up in 0.1 s. A tuning
+# choice: short against the ~0.3 s velocity transitions (adds little lag), long enough that the
+# setpoint has no steps for the raw joint loop to ring on.
+JERK_FACTOR = 10.0
+RATE = 200.0  # Hz, setpoints per second: ~3.5 per control cycle (~57 Hz)
 
 
 class RawPositionOutput:
@@ -174,3 +180,20 @@ class JointCommandPublisher:
                     accelerations=[float(x) for x in setpoint.acceleration[i]],
                 )
             )
+
+
+def start_raw_position_output(
+    node, arm, joint_names, limb_joint_names, velocity, acceleration, low, high, inverse_dynamics
+):
+    """A started RawPositionOutput for one arm, publishing JointCommand (and the inverse dynamics
+    feedforward with inverse_dynamics), within these joint limits (rad/s, rad/s^2, rad)."""
+    acceleration = np.asarray(acceleration, dtype=np.float32)
+    limits = JointLimits(
+        velocity=np.asarray(velocity, dtype=np.float32),
+        acceleration=acceleration,
+        jerk=JERK_FACTOR * acceleration,
+        position_low=np.asarray(low, dtype=np.float32),
+        position_high=np.asarray(high, dtype=np.float32),
+    )
+    send = JointCommandPublisher(node, arm, joint_names, limb_joint_names, inverse_dynamics=inverse_dynamics)
+    return RawPositionOutput(JointSetpointGenerator(limits, 1.0 / RATE), send).start()

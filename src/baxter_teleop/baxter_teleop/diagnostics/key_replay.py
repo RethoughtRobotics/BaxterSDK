@@ -33,7 +33,7 @@ def main():
         angular_speed=session.get('angular_speed'),
         key_hold_initial=session.get('key_hold_initial', 0.55),
     )
-    teleop.publish_config({'key_replay_of': args.bag, 'args': session})
+    teleop.telemetry.config({'key_replay_of': args.bag, 'args': session})
     start = time.monotonic() - keys[0][0] + 1.0  # first key 1 s after the teleop is ready
     pending = iter(keys + [(keys[-1][0] + 3.0, '\x1b')])  # then settle 3 s and quit (ESC)
     upcoming = next(pending)
@@ -51,7 +51,7 @@ def main():
     try:
         teleop.spin()
     finally:
-        teleop.node.destroy_node()
+        teleop.close()
         rclpy.shutdown()
 
 

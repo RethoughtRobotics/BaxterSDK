@@ -6,6 +6,7 @@ import numpy as np
 import yaml
 from geometry_msgs.msg import PoseStamped
 from scipy.spatial.transform import Rotation
+from std_msgs.msg import Empty, Float32
 
 from ..servo import servo_twist
 
@@ -153,3 +154,24 @@ class VRTarget:
     def reset(self):
         """Re-anchor on the next cycle (e.g. after the arm was moved home)."""
         self.reference = None
+
+
+class VRController:
+    """The controller's analog trigger and B button (libsurvive_ros2 /vive/{hand}/trigger, b_button)."""
+
+    def __init__(self, node, trigger_topic, b_button_topic):
+        self.trigger = None  # (value 0 released .. 1 pulled, receive time)
+        self._b_pressed = False
+        node.create_subscription(Float32, trigger_topic, self._on_trigger, 10)
+        node.create_subscription(Empty, b_button_topic, self._on_b_button, 10)
+
+    def take_b_press(self):
+        """True once for each B press since the last call."""
+        pressed, self._b_pressed = self._b_pressed, False
+        return pressed
+
+    def _on_trigger(self, msg):
+        self.trigger = (msg.data, time.monotonic())
+
+    def _on_b_button(self, msg):
+        self._b_pressed = True

@@ -22,7 +22,7 @@ if [[ " $* " != *" --dry-run "* ]]; then
         echo "No /robot/joint_states on ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}: start the bridge (or the sim) first." >&2
         exit 1
     fi
-    if pgrep -f "[b]axter_teleop[.]teleop.*--arm right|[s]cripted_trajectory" >/dev/null; then
+    if pgrep -f "[-]m baxter_teleop( .*)? --arm right|[s]cripted_trajectory" >/dev/null; then
         echo "A teleop is already driving the right arm: close it first." >&2
         exit 1
     fi

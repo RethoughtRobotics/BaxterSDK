@@ -23,11 +23,11 @@ from scipy.spatial.transform import Rotation  # noqa: E402
 
 import baxter_interface  # noqa: E402
 
-from ..kinematics import extract_arm_chain_urdf, resolve_baxter_urdf  # noqa: E402
-from ..teleop import Teleop, frax, jax, jnp  # noqa: E402
+from ..kinematics import extract_arm_chain_urdf, frax, jax, jnp, resolve_baxter_urdf  # noqa: E402  # noqa: E402
+from ..settings import JOINTS, LIMITS
 from .bag_report import load, save_joints  # noqa: E402
 
-SUFFIXES = Teleop.JOINT_SUFFIXES
+SUFFIXES = JOINTS
 LABELS = {'dls': 'DLS', 'bounded': 'Bounded DLS'}
 COLORS = {'dls': '#2a78d6', 'bounded': '#eb6834'}  # validated categorical slots 1 and 2 (dataviz palette)
 SOLVERS = {
@@ -122,7 +122,7 @@ def run(bag):
 
 
 def phase_metrics(r):
-    low, high = (np.asarray(x) for x in Teleop.JOINT_POSITION_LIMITS)
+    low, high = (np.asarray(x) for x in (LIMITS.position_low, LIMITS.position_high))
     at_limit = ((r['q'] - low < 0.03) | (high - r['q'] < 0.03)).any(axis=1)
     rows = []
     for name, a, b in r['phases'] + [('whole run', 0.0, r['t'][-1])]:
@@ -217,7 +217,7 @@ def figure_configuration(runs, out):
 
 
 def figure_joints(runs, out):
-    low, high = (np.degrees(np.asarray(x)) for x in Teleop.JOINT_POSITION_LIMITS)
+    low, high = (np.degrees(np.asarray(x)) for x in (LIMITS.position_low, LIMITS.position_high))
     fig, axes = plt.subplots(4, 2, figsize=(FULL_WIDTH, 6.4), sharex=True)
     for j, ax in enumerate(axes.flat[:7]):
         shade(ax, runs[0]['phases'])  # too narrow for phase names; same bands as the full-width figures
