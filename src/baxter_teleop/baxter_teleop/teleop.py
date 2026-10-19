@@ -1,6 +1,6 @@
 """Teleop of one Baxter arm: servo its TCP toward a target pose, through differential IK.
 
-Each control cycle (~57 Hz) a target (inputs/: keyboard, VR, a policy through VRTarget) gives a
+Each control cycle (~76 Hz on the sim, 2026-10-19) a target (inputs/: keyboard, VR, a policy through VRTarget) gives a
 base-frame TCP twist toward its goal, the IK (differential_ik.py) turns it into joint velocities,
 and an output stage (outputs/) sends them to the arm. `python -m baxter_teleop` runs it (cli.py).
 """
@@ -23,7 +23,7 @@ from .kinematics import ArmKinematics
 from .outputs.raw_position import start_raw_position_output
 from .outputs.velocity import VelocityOutput
 from .safety import CommandValidator
-from .settings import DEFAULTS, LIMITS, joint_names, servo_feedback_for
+from .settings import DEFAULTS, LIMITS, TCP_OFFSET, joint_names, servo_feedback_for
 from .telemetry import Telemetry
 
 ESC = '\x1b'
@@ -107,11 +107,16 @@ class Teleop:
         self.telemetry = Telemetry(self.node, arm, self.joint_names)
         self.gripper = GripperControl(self.node, arm, gripper_step)
 
-        self.kinematics = ArmKinematics(arm, warm_up_at=self.home)
-        if tcp_offset is None:  # the robot's endpoint, which includes the fitted gripper and fingers
+        self.kinematics = ArmKinematics(arm)
+        # The TCP offset in the wrist frame: teleop.yaml's tcp.offset, or [0, 0, tcp_offset] if given.
+        offset = TCP_OFFSET if tcp_offset is None else [0.0, 0.0, float(tcp_offset)]
+        if offset == 'measured':  # the robot's endpoint, which includes the fitted gripper and fingers
             self.kinematics.measure_tcp_offset(self.node, self.limb, self._current_q)
-        else:
-            self.kinematics.tcp_offset = np.array([0.0, 0.0, float(tcp_offset)], dtype=np.float32)
+        elif offset != 'urdf':  # 'urdf': ArmKinematics starts at the URDF gripper frame
+            offset = np.asarray(offset, dtype=np.float32)
+            if offset.shape != (3,):
+                raise ValueError(f"tcp offset must be 'measured', 'urdf' or [x, y, z], got {offset.tolist()}")
+            self.kinematics.tcp_offset = offset
 
         self.ik = (BoundedLeastSquaresIK if ik == 'bounded' else DampedLeastSquaresIK)(
             dt=self.dt,
@@ -208,7 +213,7 @@ class Teleop:
         qdot_ik = self.ik.joint_velocity(
             q=q,
             jacobian=self.kinematics.jacobian(q),
-            v_ee=self.kinematics.hand_twist(q, v_ee, 'base'),
+            v_ee=self.kinematics.wrist_twist(q, v_ee, 'base'),
             joint_velocity_limits=self.joint_velocity_limits,
             joint_position_limits=self.joint_position_limits,
             joint_acceleration_limits=self.joint_acceleration_limits,
@@ -318,7 +323,7 @@ class Teleop:
         """Keyboard teleop: held keys move a goal pose that the TCP is servoed onto."""
         print(f'\n{self.arm.capitalize()} arm keyboard teleop ({type(self.ik).__name__})')
         print(f'speed {self.linear_speed:.2f} m/s, {self.angular_speed:.2f} rad/s')
-        print(f'{self.frame} frame, TCP offset in hand frame {np.round(self.tcp_offset, 3)} m')
+        print(f'{self.frame} frame, TCP offset in wrist frame {np.round(self.tcp_offset, 3)} m')
         print('W/S X, A/D Y, R/F Z, Q/E yaw, Z/C pitch, X/V roll, SPACE stop, ESC quit')
         print('H go to the untuck pose (home)')
         print('[/ ] gripper delta, G calibrate gripper')

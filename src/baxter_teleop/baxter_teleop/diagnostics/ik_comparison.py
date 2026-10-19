@@ -23,7 +23,7 @@ from scipy.spatial.transform import Rotation  # noqa: E402
 
 import baxter_interface  # noqa: E402
 
-from ..kinematics import extract_arm_chain_urdf, frax, jax, jnp, resolve_baxter_urdf  # noqa: E402  # noqa: E402
+from ..kinematics import ArmKinematics  # noqa: E402
 from ..settings import JOINTS, LIMITS
 from .bag_report import load, save_joints  # noqa: E402
 
@@ -94,11 +94,7 @@ def run(bag):
     tcp, goal_at = ep[ok], goal[index]
     q = js[:, 1:8]
     home = np.asarray(baxter_interface.settings.UNTUCK_POSITIONS[d['arm']])
-    names = d['joints'][:7]
-    robot = frax.core.manipulator.Manipulator(
-        extract_arm_chain_urdf(resolve_baxter_urdf(), d['arm'], names), joint_ordering=names
-    )
-    jacobian = jax.jit(robot.ee_jacobian)
+    kinematics = ArmKinematics(d['arm'])
     sub = slice(None, None, 10)
     return {
         'ik': test['ik'],
@@ -116,7 +112,7 @@ def run(bag):
         'q': q,
         'deviation': np.degrees(np.abs(q - home).max(axis=1)),
         'tc': js[sub, 0] - t0,
-        'cond': np.array([np.linalg.cond(np.asarray(jacobian(jnp.asarray(r, dtype=jnp.float32)))) for r in q[sub]]),
+        'cond': np.array([np.linalg.cond(kinematics.jacobian(r)) for r in q[sub]]),
         'home': home,
     }
 

@@ -1,6 +1,6 @@
 """Stream a jerk-limited joint setpoint to Baxter in RAW_POSITION_MODE, with optional inverse dynamics.
 
-Why a separate stream: the teleop's control cycle runs at ~57 Hz with jitter, but Baxter's raw
+Why a separate stream: the teleop's control cycle runs at ~76 Hz with jitter, but Baxter's raw
 position mode passes each setpoint straight to the joint controller boards, so the setpoint
 must itself be smooth. RawPositionOutput owns a JointSetpointGenerator and steps it on its own
 thread at a fixed rate; the control loop only updates the target velocity (command()).
@@ -33,7 +33,7 @@ from .setpoint import JointLimits, JointSetpointGenerator, Setpoint
 # choice: short against the ~0.3 s velocity transitions (adds little lag), long enough that the
 # setpoint has no steps for the raw joint loop to ring on.
 JERK_FACTOR = 10.0
-RATE = 200.0  # Hz, setpoints per second: ~3.5 per control cycle (~57 Hz)
+RATE = 200.0  # Hz, setpoints per second: ~2.6 per control cycle (~76 Hz)
 
 
 class RawPositionOutput:

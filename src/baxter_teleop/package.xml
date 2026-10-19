@@ -29,7 +29,8 @@
   <exec_depend>python3-numpy</exec_depend>
   <exec_depend>python3-scipy</exec_depend>
   <exec_depend>python3-yaml</exec_depend>
-  <!-- frax, jax and ruckig have no rosdep keys: requirements.txt, installed into .venv-ros -->
+  <exec_depend>pinocchio</exec_depend>
+  <!-- ruckig's Python bindings have no rosdep key: requirements.txt -->
 
   <test_depend>python3-pytest</test_depend>
 

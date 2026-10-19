@@ -8,7 +8,7 @@ WS_DIR="$(realpath "${SCRIPT_DIR}/..")"
 SIM_DIR="${SIM_DIR:-${WS_DIR}/src/baxter_mujoco}"
 RAI_DIR="${RAI_DIR:-$(realpath -m "${WS_DIR}/../rethought_ai")}"
 DATA_DIR="${DATA_DIR:-$(realpath -m "${WS_DIR}/../data")}"  # FinalProject/data: every recording and result
-PY="${WS_DIR}/.venv-ros/bin/python"                          # Python 3.12 (Kilted's rclpy) with frax and jax
+PY="${PY:-${WS_DIR}/.venv-ros/bin/python}"  # ROS Kilted's Python 3.12 plus ruckig (src/baxter_teleop/requirements.txt)
 
 # The ROS setup files read unset variables: source them with nounset off, then restore the caller's.
 [[ $- == *u* ]] && _env_nounset=1

@@ -29,3 +29,15 @@ joint_limits:
   # straight in circle_clockwise_20261001_184937).
   position_low: [-1.70168, -2.147, -3.05418, 0.35, -3.059, -1.5708, -3.059]
   position_high: [1.70168, 1.047, 3.05418, 2.618, 3.059, 2.094, 3.059]
+
+# The TCP: the point the servo moves and policies observe. Its orientation is always the wrist's
+# ({arm}_wrist, the w2 joint: the hand and gripper frames below it are not rotated). Its position is
+# an offset in that wrist frame, one of:
+#   measured   the robot's endpoint (endpoint_state, which includes the configured gripper and
+#              fingers); the URDF gripper frame when there is none
+#   urdf       the URDF {arm}_gripper frame: 0.13855 m along the wrist's z
+#   [x, y, z]  metres in the wrist frame
+# --tcp-offset Z on the command line sets [0, 0, Z]. Recordings store the offset used, in this frame,
+# as tcp_offset in /teleop/{arm}/config.
+tcp:
+  offset: measured

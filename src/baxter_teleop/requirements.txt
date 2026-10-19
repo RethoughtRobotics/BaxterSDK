@@ -1,8 +1,8 @@
-# Python packages without rosdep keys, installed into the workspace's .venv-ros (Python 3.12, the
-# interpreter Kilted's rclpy is built for, with the system site-packages so ROS stays visible):
-#   python3.12 -m venv --system-site-packages .venv-ros && .venv-ros/bin/pip install -r src/baxter_teleop/requirements.txt
-# Versions are the ones the teleop was tuned and tested with (2026-10-19).
-frax==0.0.4
-jax==0.6.2
-jaxlib==0.6.2
+# The one Python package the teleop needs that rosdep cannot install: ruckig's Python bindings (ROS
+# ships ruckig as a C++ library only). Everything else (numpy, scipy, pinocchio, rclpy) is ROS
+# Kilted's own, from rosdep. Install into a venv that sees the system packages, and install nothing
+# else into it: a pip numpy (2.x) would shadow the numpy 1.26 that ROS's apt Pinocchio is built for.
+#   python3.12 -m venv --system-site-packages .venv-ros
+#   .venv-ros/bin/pip install -r src/baxter_teleop/requirements.txt
+# Version as tuned and tested with (2026-10-19).
 ruckig==0.19.4

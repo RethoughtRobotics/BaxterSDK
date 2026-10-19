@@ -10,7 +10,6 @@ import yaml
 from ament_index_python.packages import get_package_share_directory
 
 from .inputs.vr import VRTarget
-from .kinematics import require_frax
 from .settings import DEFAULTS, servo_feedback_for
 from .teleop import Teleop
 
@@ -115,7 +114,7 @@ def parser():
         '--tcp-offset',
         type=float,
         default=None,
-        help='TCP distance along hand z in meters (default: measured from robot endpoint)',
+        help="TCP as [0, 0, Z] in the wrist frame, metres (default: teleop.yaml's tcp.offset)",
     )
     p.add_argument(
         '--linear-speed', type=float, default=None, help='key speed / VR cap in m/s (default: keys 0.20, VR 2.0)'
@@ -134,7 +133,6 @@ def parser():
 
 
 def main(argv=None):
-    require_frax()
     args, ros_args = parser().parse_known_args(sys.argv[1:] if argv is None else argv)
     args.servo_feedback = servo_feedback_for(args.output, args.servo_feedback)
     if args.input == 'vr':

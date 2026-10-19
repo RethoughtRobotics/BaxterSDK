@@ -40,7 +40,7 @@ PY
 pids=()
 trap 'kill "${pids[@]}" 2>/dev/null; rm -f "$PARAMS" "${LIVE_RVIZ:-}"' EXIT
 pgrep -f rmw_zenohd >/dev/null || { ros2 run rmw_zenoh_cpp rmw_zenohd & pids+=($!); }
-# The same URDF the teleop's frax model loads (resolve_baxter_urdf); the description launch's
+# The same URDF the teleop's kinematics load (kinematics.resolve_baxter_urdf); the description launch's
 # xacro differs (left_gripper ~12 cm apart), so it would show different TCP frames.
 URDF="$(ros2 pkg prefix baxter_description)/share/baxter_description/urdf/baxter.urdf"
 PARAMS="$(mktemp --suffix=.yaml)"

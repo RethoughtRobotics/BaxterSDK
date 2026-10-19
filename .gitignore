@@ -62,3 +62,6 @@ CATKIN_IGNORE
 recordings/
 assets/kasina_jyothi1.jpg
 assets/shuttingdown.gif
+
+# Python virtual environments (.venv-ros: src/baxter_teleop/requirements.txt)
+.venv*/
