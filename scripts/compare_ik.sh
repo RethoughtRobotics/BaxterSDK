@@ -23,14 +23,19 @@ for ik in "${SOLVERS[@]}"; do
     "${SCRIPT_DIR}/teardown.sh" >/dev/null
     setsid ros2 run rmw_zenoh_cpp rmw_zenohd >/dev/null 2>&1 &
     (cd "$SIM_DIR" && setsid ./launch_sim.sh --ros --no-viewer --empty >"${LOG}/sim_${ik}.log" 2>&1 &)
-    until timeout 5 ros2 topic echo --once /robot/joint_states >/dev/null 2>&1; do sleep 1; done
+    deadline=$((SECONDS + 120))
+    until timeout 5 ros2 topic echo --once /robot/joint_states >/dev/null 2>&1; do
+        ((SECONDS < deadline)) || { echo "ERROR: no /robot/joint_states from the sim in 120 s (${LOG}/sim_${ik}.log)" >&2; exit 1; }
+        sleep 1
+    done
     ros2 run baxter_tools tuck_arms -u >/dev/null 2>&1
     setsid "${SCRIPT_DIR}/record_teleop.sh" "trajectory_${ik}" >"${LOG}/record_${ik}.log" 2>&1 &
     sleep 4
     "${SCRIPT_DIR}/../.venv-ros/bin/python" -m baxter_interface.baxter_teleop.trajectory_test --ik "$ik" \
         2>"${LOG}/teleop_${ik}.log" | grep -v '^\['
     pkill -INT -f '[r]os2 bag record' || true
-    until grep -q '^Saved ' "${LOG}/record_${ik}.log"; do sleep 1; done
+    for _ in $(seq 60); do grep -q '^Saved ' "${LOG}/record_${ik}.log" && break; sleep 1; done
+    grep -q '^Saved ' "${LOG}/record_${ik}.log" || { echo "ERROR: the ${ik} bag was not saved in 60 s (${LOG}/record_${ik}.log)" >&2; exit 1; }
     bags+=("$(grep '^Saved ' "${LOG}/record_${ik}.log" | cut -d' ' -f2)")
 done
 

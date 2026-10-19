@@ -95,7 +95,8 @@ session_yaml() {
     return 0
 }
 # written as soon as the recorder creates the bag, so any way of stopping it keeps the file
-( until [[ -d "$BAG" ]]; do sleep 0.2; done; session_yaml > "${BAG}/session.yaml" ) &
+# Gives up after 60 s, so a recorder that dies before creating the bag cannot leave this loop running.
+( for _ in $(seq 300); do [[ -d "$BAG" ]] && { session_yaml > "${BAG}/session.yaml"; exit; }; sleep 0.2; done ) &
 echo "Recording ${ROBOT} robot to ${BAG}. Ctrl+C to stop."
 trap ':' INT  # let Ctrl+C stop the recorder, then finish below (an ignored INT would be inherited)
 SELECT=(--regex "$TOPICS")

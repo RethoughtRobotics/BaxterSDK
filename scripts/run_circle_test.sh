@@ -49,7 +49,8 @@ stop_recording() {
     grep -E '^(Duration|Messages|Saved)' "${LOG}/record.log" || echo "Recorder log: ${LOG}/record.log"
 }
 trap stop_recording EXIT
-until grep -q '^Recording' "${LOG}/record.log"; do sleep 0.2; done
+for _ in $(seq 150); do grep -q '^Recording' "${LOG}/record.log" && break; sleep 0.2; done
+grep -q '^Recording' "${LOG}/record.log" || { echo "ERROR: the recorder did not start in 30 s (${LOG}/record.log)" >&2; exit 1; }
 sleep 3  # let the recorder subscribe to every topic before the motion starts
 
 echo "== Circles"

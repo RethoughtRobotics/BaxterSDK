@@ -113,7 +113,10 @@ session_yaml() {
     done
     return 0
 }
-( until [[ -d "$OUT" ]]; do sleep 0.2; done; session_yaml > "${OUT}/session.yaml"
+# Gives up after 60 s, so a recorder that dies before creating the bag cannot leave this loop running.
+( for _ in $(seq 300); do [[ -d "$OUT" ]] && break; sleep 0.2; done
+  [[ -d "$OUT" ]] || exit 0
+  session_yaml > "${OUT}/session.yaml"
   for f in cuff.log camera.yaml camera.log; do [[ -f "${OUT}.$f" ]] && mv "${OUT}.$f" "$OUT/$f"; done; true ) &
 
 echo "Recording every topic (except: ${EXCLUDE}) to ${OUT}. Ctrl+C to stop."
