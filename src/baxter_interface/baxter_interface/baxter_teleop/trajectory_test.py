@@ -150,7 +150,7 @@ class TrajectoryTarget:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--ik', choices=['dls', 'bounded'], default='dls')
+    parser.add_argument('--ik', choices=['dls', 'bounded'], default='bounded')
     parser.add_argument('--arm', choices=['left', 'right'], default='left')
     parser.add_argument('--posture-gain', type=float, default=0.0, help='DLS null-space pull toward untuck, 1/s')
     parser.add_argument(
