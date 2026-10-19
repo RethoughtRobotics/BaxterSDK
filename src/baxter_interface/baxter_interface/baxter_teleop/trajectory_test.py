@@ -16,19 +16,17 @@ orientation. Phases (offsets in the robot base frame, 0.1 m/s, 1 s pauses):
 they start at the start TCP), --loops times at --circle-speed: a repeatable stimulus for comparing
 joint output stages (--output) on the robot, e.g. via run_circle_test.sh.
 
-  python -m baxter_interface.baxter_teleop.trajectory_test --ik dls|sns [--arm left]
+  python -m baxter_interface.baxter_teleop.trajectory_test --ik dls|bounded [--arm left]
   python -m baxter_interface.baxter_teleop.trajectory_test --arm right --protocol circle --output raw_id \
       --gain 3 --no-feedforward
 """
 
 import argparse
-import os
 import sys
 import time
 
 import numpy as np
 import rclpy
-from ament_index_python.packages import get_package_share_directory
 from scipy.spatial.transform import Rotation
 
 from .benchmark_trajectories import iso_protocol
@@ -152,7 +150,7 @@ class TrajectoryTarget:
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--ik', choices=['dls', 'sns', 'bounded'], default='dls')
+    parser.add_argument('--ik', choices=['dls', 'bounded'], default='dls')
     parser.add_argument('--arm', choices=['left', 'right'], default='left')
     parser.add_argument('--posture-gain', type=float, default=0.0, help='DLS null-space pull toward untuck, 1/s')
     parser.add_argument(
@@ -181,14 +179,12 @@ def main():
     parser.add_argument('--circle-speed', type=float, default=0.15, help='circle protocol: TCP speed, m/s')
     parser.add_argument('--loops', type=int, default=3, help='circle protocol: number of circles')
     args, ros_args = parser.parse_known_args()
-    sns_limits = os.path.join(get_package_share_directory('baxter_interface'), 'config', 'sns_joint_limits.yaml')
     rclpy.init(args=['trajectory_test', *ros_args])
     teleop = CartesianDeltaTeleop(
         arm=args.arm,
         mode='velocity',
         output=args.output,
         ik=args.ik,
-        sns_limits=sns_limits,
         frame='base',
         posture_gain=args.posture_gain,
         servo_feedback=args.servo_feedback,

@@ -67,7 +67,7 @@ class CartesianDeltaTeleop:
     RAW_OUTPUT_RATE = 200.0  # Hz, setpoints per second: ~3.5 per control cycle (~57 Hz)
     # URDF joint position limits (rad), except e1: the elbow is kept from straightening past
     # 0.35 rad, where the arm becomes singular (condition number 9-14 bent vs 100-1000+ straight
-    # in circle_clockwise_20261001_184937). config/sns_joint_limits.yaml sets the same for SNS.
+    # in circle_clockwise_20261001_184937).
     JOINT_POSITION_LIMITS = (
         [-1.70168, -2.147, -3.05418, 0.35, -3.059, -1.5708, -3.059],
         [1.70168, 1.047, 3.05418, 2.618, 3.059, 2.094, 3.059],
@@ -90,7 +90,6 @@ class CartesianDeltaTeleop:
         mode='velocity',
         output='velocity',
         ik='dls',
-        sns_limits=None,
         posture_gain=0.0,
         joint_accel_scale=1.0,
         servo_feedback='measured',
@@ -116,9 +115,9 @@ class CartesianDeltaTeleop:
             raise ValueError("arm must be 'left' or 'right'")
         if mode not in self.MODE_SPEEDS:
             raise ValueError("mode must be 'velocity' or 'position'")
-        if ik not in ('dls', 'sns', 'bounded'):
-            raise ValueError("ik must be 'dls', 'sns' or 'bounded'")
-        if ik in ('sns', 'bounded') and mode != 'velocity':
+        if ik not in ('dls', 'bounded'):
+            raise ValueError("ik must be 'dls' or 'bounded'")
+        if ik == 'bounded' and mode != 'velocity':
             raise ValueError(f'{ik} IK is only wired for velocity mode')
         if frame not in ('tool', 'base'):
             raise ValueError("frame must be 'tool' or 'base'")
@@ -202,19 +201,6 @@ class CartesianDeltaTeleop:
             posture=baxter_interface.settings.UNTUCK_POSITIONS[arm],
             posture_gain=posture_gain,
         )
-        if ik == 'sns':
-            # Rethink's SNS-IK replaces the DLS solve; it brings its own Jacobian and joint limits.
-            from .sns_ik import SNSIKSolver
-
-            # Its nullspace bias holds the elbow near the home (untuck) posture.
-            self.ik = SNSIKSolver(
-                baxter_urdf,
-                arm,
-                self.joint_names,
-                self.dt,
-                joint_limits=sns_limits,
-                posture=baxter_interface.settings.UNTUCK_POSITIONS[arm],
-            )
         self.joint_velocity_limits = np.asarray(self.JOINT_VELOCITY_LIMITS, dtype=np.float32)
         # joint_accel_scale scales every use of these limits: the IK's braking toward joint limits, the
         # velocity-mode ramp, and the raw-output setpoint generator (whose jerk limit follows, JERK_FACTOR).
@@ -854,9 +840,9 @@ def main():
     )
     parser.add_argument(
         '--ik',
-        choices=['dls', 'sns', 'bounded'],
+        choices=['dls', 'bounded'],
         default='dls',
-        help="velocity IK: 'dls' damped least squares (default), 'sns' Rethink's SNS-IK, or 'bounded': DLS "
+        help="velocity IK: 'dls' damped least squares (default) or 'bounded': DLS "
         'with joint limits as hard bounds, so a joint at its limit no longer stops the hand (velocity mode)',
     )
     parser.add_argument(
@@ -888,12 +874,6 @@ def main():
         default=argparse.SUPPRESS,
         help='Enable the DLS null-space untuck pull at 1.4/s (default: off). '
         'If combined with --posture-gain, the last option wins.',
-    )
-    parser.add_argument(
-        '--sns-limits',
-        default=None,
-        help="SNS-IK joint limits YAML (default: Rethink's example_baxter_joint_limits.yaml; "
-        'config/sns_joint_limits.yaml matches the DLS joint speeds)',
     )
     parser.add_argument(
         '--frame', choices=['tool', 'base'], default='base', help='frame keys are expressed in (default: base)'
@@ -938,7 +918,6 @@ def main():
         mode=args.mode,
         output=args.output,
         ik=args.ik,
-        sns_limits=args.sns_limits,
         posture_gain=args.posture_gain,
         joint_accel_scale=args.joint_accel_scale,
         servo_feedback=args.servo_feedback,
