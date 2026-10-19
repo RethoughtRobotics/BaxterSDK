@@ -28,7 +28,6 @@ def main():
     rclpy.init(args=['key_replay', *ros_args])
     teleop = Teleop(
         arm=recorded['arm'],
-        mode=session.get('mode', 'velocity'),
         frame=session.get('frame', 'base'),
         linear_speed=session.get('linear_speed'),
         angular_speed=session.get('angular_speed'),

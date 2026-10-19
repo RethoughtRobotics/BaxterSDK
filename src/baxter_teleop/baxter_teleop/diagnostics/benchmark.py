@@ -42,9 +42,9 @@ REFERENCE = {
 }
 
 # sweep name -> list of parameter overrides. Output stages are compared on measured feedback, the
-# only setting all four support (velocity and raw_id_step cannot close on a streamed setpoint).
+# only setting all three support (velocity cannot close on a streamed setpoint).
 SWEEPS = {
-    'output_stage': [{'output': o, 'servo_feedback': 'measured'} for o in ('velocity', 'raw_id_step', 'raw', 'raw_id')],
+    'output_stage': [{'output': o, 'servo_feedback': 'measured'} for o in ('velocity', 'raw', 'raw_id')],
     'gain': [{'gain': float(k), 'feedforward': ff} for ff in (False, True) for k in range(1, 11)],
     'servo_feedback': [{'servo_feedback': f} for f in ('measured', 'setpoint')],
     'accel_limit': [{'joint_accel_scale': s} for s in (1.0, 1.5, 2.0, 2.5, 3.0)],
