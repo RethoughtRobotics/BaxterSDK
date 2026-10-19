@@ -4,11 +4,13 @@ Run `./launch_sim.sh --ros`. bringbackbaxter's baxter_interface (teleop, tuck_ar
 drive and show this simulated Baxter exactly as they do the real one, over the same topics:
 
   publishes   /robot/joint_states, /robot/limb/{arm}/endpoint_state, /robot/state,
-              /robot/head/head_state, /sim/config (scene, latched), /sim/scene (RViz markers of
+              /robot/head/head_state, /robot/end_effector/{arm}_gripper/{state,properties},
+              /sim/config (scene, latched), /sim/scene (RViz markers of
               everything else the arms can hit: the table, objects)
   subscribes  /robot/limb/{arm}/joint_command (position, velocity, torque, raw position modes),
               /robot/limb/{arm}/joint_command_timeout, /robot/limb/{arm}/set_speed_ratio,
-              /robot/set_super_enable, /robot/head/command_head_pan
+              /robot/set_super_enable, /robot/head/command_head_pan,
+              /robot/end_effector/{arm}_gripper/command (electric gripper: calibrate, go, ...)
 
 Baxter's own joint controllers are emulated with computed torque plus gravity compensation
 (critically damped at OMEGA, about 0.1 s of lag like the real arm) inside the actuators' torque
@@ -21,7 +23,10 @@ import json
 import threading
 import time
 
-from baxter_core_msgs.msg import AssemblyState, EndpointState, HeadPanCommand, HeadState, JointCommand
+from baxter_core_msgs.msg import (
+    AssemblyState, EndEffectorCommand, EndEffectorProperties, EndEffectorState, EndpointState, HeadPanCommand,
+    HeadState, JointCommand,
+)
 import mujoco
 import numpy as np
 import rclpy
@@ -46,6 +51,78 @@ SCENE_COLORS = {'static': (0.62, 0.60, 0.55, 0.85), 'free': (0.80, 0.42, 0.22, 0
 DT_PUBLISH = 0.01  # s, state publishing period (100 Hz)
 FINGER_JOINTS = ('l_gripper_l_finger_joint', 'l_gripper_r_finger_joint', 'r_gripper_l_finger_joint',
                  'r_gripper_r_finger_joint')
+
+
+def remove_table(m):
+    """Take the table out of the scene: no collisions, and hidden (geom group 5 is not drawn)."""
+    body = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, 'table')
+    for g in np.flatnonzero(m.geom_bodyid == body):
+        m.geom_contype[g] = m.geom_conaffinity[g] = 0
+        m.geom_group[g] = 5
+
+
+class Gripper:
+    """One electric parallel gripper on the real robot's end-effector topics.
+
+    Position is Baxter's 0 (closed) .. 100 (open). Like the real gripper it starts uncalibrated
+    and refuses to move until 'calibrate'; 'go' moves toward a position at the configured
+    velocity (percent of full speed, full stroke FULL_STROKE_S at 100). Each command is
+    acknowledged by echoing its sender and sequence in the state, which baxter_interface waits on.
+    """
+
+    FINGER = 0.0115  # m, finger joint travel either side of centre (MuJoCo actuator, sim model)
+    FULL_STROKE_S = 0.5
+    ID = 65538
+
+    def __init__(self, node, m, side):
+        self.acts = [mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_ACTUATOR, f'gripper0_{side}_gripper_{f}_finger_joint')
+                     for f in ('r', 'l')]
+        self.joint = m.jnt_qposadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f'gripper0_{side}_r_finger_joint')]
+        self.calibrated, self.target, self.command_pct = False, 100.0, 100.0
+        self.velocity, self.dead_zone = 50.0, 5.0
+        self.ack = ('', '', 0)
+        ns = f'/robot/end_effector/{side}_gripper/'
+        latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.state_pub = node.create_publisher(EndEffectorState, ns + 'state', latched)
+        props = node.create_publisher(EndEffectorProperties, ns + 'properties', latched)
+        props.publish(EndEffectorProperties(
+            id=self.ID, ui_type=EndEffectorProperties.ELECTRIC_GRIPPER, manufacturer='Rethink Research Robot (sim)',
+            product='Electric Parallel Gripper', firmware_date='2014/07/07 00:00:00', has_calibration=True,
+            controls_grip=True, senses_grip=True, controls_force=True, senses_force=True,
+            controls_position=True, senses_position=True))
+        node.create_subscription(EndEffectorCommand, ns + 'command', self.on_command, QoSProfile(depth=1))
+
+    def on_command(self, msg):
+        args = json.loads(msg.args) if msg.args else {}
+        if msg.command == EndEffectorCommand.CMD_CALIBRATE:
+            self.calibrated, self.target = True, 100.0
+        elif msg.command == EndEffectorCommand.CMD_CLEAR_CALIBRATION:
+            self.calibrated = False
+        elif msg.command == EndEffectorCommand.CMD_CONFIGURE:
+            self.velocity = float(args.get('velocity', self.velocity))
+            self.dead_zone = float(args.get('dead_zone', self.dead_zone))
+        elif msg.command == EndEffectorCommand.CMD_GO and self.calibrated:
+            self.target = float(np.clip(args.get('position', self.target), 0.0, 100.0))
+        elif msg.command == EndEffectorCommand.CMD_STOP:
+            self.target = self.command_pct
+        self.ack = (msg.command, msg.sender, msg.sequence)
+
+    def ctrl(self, dt):
+        """Finger actuator targets: the commanded opening moves toward the target at the set speed."""
+        step = 100.0 * self.velocity / 100.0 / self.FULL_STROKE_S * dt
+        self.command_pct += float(np.clip(self.target - self.command_pct, -step, step))
+        r = self.FINGER * (1.0 - 2.0 * self.command_pct / 100.0)  # +FINGER closed, -FINGER open
+        return [r, -r]
+
+    def publish(self, d, stamp):
+        position = float(np.clip(100.0 * (self.FINGER - d.qpos[self.joint]) / (2 * self.FINGER), 0.0, 100.0))
+        moving = abs(self.target - self.command_pct) > 0.5
+        blocked = abs(position - self.command_pct) > self.dead_zone  # fingers held apart by an object
+        command, sender, sequence = self.ack
+        self.state_pub.publish(EndEffectorState(
+            timestamp=stamp, id=self.ID, enabled=1, calibrated=int(self.calibrated), ready=1, moving=int(moving),
+            gripping=int(blocked and not moving and self.target < position), missed=0, error=0,
+            position=position, force=0.0, command=command, command_sender=sender, command_sequence=sequence))
 
 
 class Arm:
@@ -93,7 +170,7 @@ class Arm:
 
 
 class SimBaxter:
-    def __init__(self, node, render, empty=False):
+    def __init__(self, node, render, empty=False, table=True):
         self.node, self.render = node, render
         self.env = make_env(render=render)
         self.env.reset()
@@ -102,8 +179,11 @@ class SimBaxter:
             for j in np.flatnonzero(self.m.jnt_type == mujoco.mjtJoint.mjJNT_FREE):
                 self.d.qpos[self.m.jnt_qposadr[j]:self.m.jnt_qposadr[j] + 3] = [0.0, -3.0, 0.2]
             mujoco.mj_forward(self.m, self.d)
+        if not table:
+            remove_table(self.m)
         self.base = mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, 'robot0_base')
         self.arms = {side: Arm(self.m, self.d, side) for side in ARMS}
+        self.grippers = {side: Gripper(node, self.m, side) for side in ARMS}
         self.enabled = True
         self.head_pan, self.head_target, self.head_speed = 0.0, 0.0, 0.0
         self.lock = threading.Lock()
@@ -130,7 +210,7 @@ class SimBaxter:
         self.scene_geoms = [g for g in range(self.m.ngeom)  # collision shapes the arms can hit
                             if self.m.geom_contype[g] and int(self.m.geom_type[g]) in SCENE_SHAPES
                             and not body(g).startswith(robot)]
-        self.config_pub.publish(String(data=json.dumps({'scene': 'TwoArmLift', 'empty': empty})))
+        self.config_pub.publish(String(data=json.dumps({'scene': 'TwoArmLift', 'empty': empty, 'table': table})))
 
     def on_command(self, arm, msg):
         index = {name: i for i, name in enumerate(arm.names)}
@@ -159,6 +239,8 @@ class SimBaxter:
                 q, qd = d.qpos[arm.qpos], d.qvel[arm.dof]
                 M = self.M[np.ix_(arm.dof, arm.dof)]
                 d.ctrl[arm.act] = arm.torque(q, qd, M, d.qfrc_bias[arm.dof], now, dt, self.enabled)
+            for gripper in self.grippers.values():
+                d.ctrl[gripper.acts] = gripper.ctrl(dt)
         mujoco.mj_step(m, d)
 
     def publish(self):
@@ -194,6 +276,8 @@ class SimBaxter:
         self.state_pub.publish(AssemblyState(ready=self.enabled, enabled=self.enabled))
         turning = abs(self.head_target - self.head_pan) > 1e-3
         self.head_pub.publish(HeadState(pan=self.head_pan, is_turning=turning, is_pan_enabled=True))
+        for gripper in self.grippers.values():
+            gripper.publish(self.d, stamp)
 
     def publish_scene(self):
         m, d = self.m, self.d
@@ -233,7 +317,8 @@ class SimBaxter:
             if frame % 10 == 0:
                 self.publish_scene()
             if self.render and frame % 3 == 0:
-                self.env.render()
+                # robosuite's render() is a no-op for its mjviewer; update() opens the window, then syncs it
+                self.env.viewer.update()
             next_tick += DT_PUBLISH
             time.sleep(max(0.0, next_tick - time.monotonic()))
 
@@ -244,6 +329,7 @@ def main():
     parser = argparse.ArgumentParser(description='Simulated Baxter on the real robot ROS 2 interface')
     parser.add_argument('--no-viewer', action='store_true', help='run without the MuJoCo viewer')
     parser.add_argument('--empty', action='store_true', help='no objects in reach (for controller tests)')
+    parser.add_argument('--no-table', action='store_true', help='no table: the arms can reach down freely')
     args, ros_args = parser.parse_known_args()
 
     rclpy.init(args=['baxter_sim', *ros_args])
@@ -254,7 +340,7 @@ def main():
     if node.count_publishers('/robot/joint_states'):
         raise SystemExit('/robot/joint_states already has a publisher (a real robot or another sim); not starting.')
 
-    sim = SimBaxter(node, render=not args.no_viewer, empty=args.empty)
+    sim = SimBaxter(node, render=not args.no_viewer, empty=args.empty, table=not args.no_table)
     def spin():
         try:
             rclpy.spin(node)
@@ -267,6 +353,9 @@ def main():
         sim.run()
     except (KeyboardInterrupt, ExternalShutdownException):
         pass
+    except Exception:  # Ctrl+C shut ROS down between the loop's check and a publish
+        if rclpy.ok():
+            raise
 
 
 if __name__ == '__main__':
