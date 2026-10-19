@@ -107,6 +107,8 @@ teleop_cmd() {  # $1: arm, or empty when --arm was given directly
 }
 # RethoughtAI recorder; baxter_core_msgs (its button messages) come from the Baxter workspace
 record_cmd() {
+    # The single quotes go into the pane's command so a session name stays one word; ${SESSION} expands here.
+    # shellcheck disable=SC2016
     echo "cd '${RAI_DIR}' \
   && source /opt/ros/kilted/setup.bash \
   && source '${WS_DIR}/install/setup.bash' \

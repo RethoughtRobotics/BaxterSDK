@@ -70,10 +70,10 @@ TOPICS="$(ros2 topic list 2>/dev/null)"  # again, with the camera's topics
 for arm in left right; do
     cmd=$(ros2 topic info -v "/robot/limb/${arm}/joint_command" 2>/dev/null \
         | awk '/^Node name:/ {node=$3} /Endpoint type: PUBLISHER/ && node != "ros_bridge" {print node}')
-    [[ -n "$cmd" ]] && echo "Note: $(echo $cmd) command(s) the ${arm} arm; stop it for zero-g (teleop, rethoughtai's scripts/run_inference)."
+    [[ -n "$cmd" ]] && echo "Note: ${cmd//$'\n'/ } command(s) the ${arm} arm; stop it for zero-g (teleop, rethoughtai's scripts/run_inference)."
 done
 # Topics whose message type isn't installed here would stop the recorder (e.g. baxter_core_msgs/HomingCommand)
-MISSING=($(ros2 topic list -t 2>/dev/null | python3 -c "
+mapfile -t MISSING < <(ros2 topic list -t 2>/dev/null | python3 -c "
 import sys
 from rosidl_runtime_py.utilities import get_message
 seen = set()
@@ -81,13 +81,13 @@ for line in sys.stdin:
     t = line.strip().rsplit(' [', 1)[-1].rstrip(']')
     try: get_message(t)
     except Exception: seen.add(t)
-print(' '.join(sorted(seen)))"))
+sys.stdout.write(''.join(t + '\\n' for t in sorted(seen)))")
 
 # the head screen image, image transport duplicates, unaligned depth (aligned is recorded)
 EXCLUDE='^/robot/xdisplay$|/(theora|compressedDepth)$|^/cameras/third_eye/depth/image_rect_raw$'
 PIDS=()
 if [[ -z "$RAW" ]]; then  # colour cameras as JPEG; depth stays raw
-    CAMERAS=($(grep -E '^/cameras/.*/(image|image_raw)$' <<< "$TOPICS" | grep -v -i depth || true))
+    mapfile -t CAMERAS < <(grep -E '^/cameras/.*/(image|image_raw)$' <<< "$TOPICS" | grep -v -i depth || true)
     if (( ${#CAMERAS[@]} )); then
         python3 "${SCRIPT_DIR}/compress_images.py" "${CAMERAS[@]}" & PIDS+=($!)
         EXCLUDE+="|^($(IFS='|'; echo "${CAMERAS[*]}"))\$"

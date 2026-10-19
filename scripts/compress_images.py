@@ -3,6 +3,7 @@
 recordings: raw images are ~3 GB a minute. Stands in for image_transport's compressed plugin,
 which is not installed (apt: ros-kilted-image-transport-plugins).
 Usage: compress_images.py TOPIC [TOPIC ...]   (Ctrl+C stops)"""
+
 import sys
 
 import cv2
@@ -26,7 +27,9 @@ def main():
             bgr = a if msg.encoding.startswith('bgr') else a[..., ::-1]
             ok, jpeg = cv2.imencode('.jpg', np.ascontiguousarray(bgr), [cv2.IMWRITE_JPEG_QUALITY, QUALITY])
             if ok:
-                pub.publish(CompressedImage(header=msg.header, format='bgr8; jpeg compressed bgr8', data=jpeg.tobytes()))
+                pub.publish(
+                    CompressedImage(header=msg.header, format='bgr8; jpeg compressed bgr8', data=jpeg.tobytes())
+                )
 
         node.create_subscription(Image, topic, on_image, qos_profile_sensor_data)
     try:

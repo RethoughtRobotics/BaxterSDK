@@ -21,17 +21,17 @@ p=$PPID
 while [[ "$p" -gt 1 ]]; do keep+="$p "; p=$(ps -o ppid= -p "$p" | tr -d ' '); done
 targets() { for pid in $(pgrep -f -- "$PATTERN"); do [[ "$keep" == *" $pid "* ]] || echo "$pid"; done; }
 
-pids=$(targets)
+mapfile -t pids < <(targets)
 if $DRY; then
     echo "Would stop:"
-    [[ -n "$pids" ]] && ps -o pid=,cmd= -p $pids | cut -c1-150 || echo "  no ROS processes"
+    (( ${#pids[@]} )) && ps -o pid=,cmd= -p "${pids[*]}" | cut -c1-150 || echo "  no ROS processes"
 else
     for sig in INT TERM KILL; do  # politely first, so nodes and the sim run their own shutdown
-        [[ -z "$pids" ]] && break
-        kill -"$sig" $pids 2>/dev/null
-        for _ in 1 2 3 4 5; do sleep 1; pids=$(targets); [[ -z "$pids" ]] && break; done
+        (( ${#pids[@]} )) || break
+        kill -"$sig" "${pids[@]}" 2>/dev/null
+        for _ in 1 2 3 4 5; do sleep 1; mapfile -t pids < <(targets); (( ${#pids[@]} )) || break; done
     done
-    [[ -n "$pids" ]] && echo "Could not stop: $pids"
+    (( ${#pids[@]} )) && echo "Could not stop: ${pids[*]}"
 fi
 
 if [[ -f "${LIBSURVIVE_DIR}/docker-compose.yml" ]] \
