@@ -35,7 +35,7 @@
 # and goes on without it. --no-camera skips it.
 # Opens a Terminator window if a display is available, otherwise a tmux window.
 
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WS_DIR="${SCRIPT_DIR}/.."
@@ -43,7 +43,8 @@ RAI_DIR="$(realpath "${SCRIPT_DIR}/../../rethought_ai")"
 # --left / --right / --both pick the arms (default both); --arm X is passed through as before
 ARMS=""
 GIVEN_ARM=""
-ARGS=""
+ARGS=()  # passed to every teleop, each element one argument
+SWAP=""
 RECORD=""
 CAMERA=1
 SESSION=""
@@ -64,7 +65,7 @@ while (( $# )); do
                 left|right) ;;
                 *) echo "ERROR: --arm needs left or right" >&2; exit 1 ;;
             esac
-            ARGS+=" --arm ${GIVEN_ARM}"
+            ARGS+=(--arm "$GIVEN_ARM")
             [[ "$1" != --arm ]] || shift
             ;;
         --record) RECORD=1 ;;
@@ -79,22 +80,22 @@ while (( $# )); do
         --no-camera) CAMERA="" ;;
         --policy) POLICY=1 ;;
         --no-viz) NO_VIZ=1 ;;
-        --swap)  ARGS+=" --swap-hands false" ;;
-        *)       ARGS+=" $1" ;;
+        --swap)  SWAP=1; ARGS+=(--swap-hands false) ;;
+        *)       ARGS+=("$1") ;;
     esac
     shift
 done
 [[ -z "$ARMS" && -z "$GIVEN_ARM" ]] && ARMS="left right"
 # Tuned control defaults first, so anything given on the command line overrides them. --policy gets the
 # same servo; teleop_cmd adds its own mapping (vr_axes_policy.yaml) and topics.
-SERVO=" --vr-gain 2 --output raw_id --servo-feedback setpoint --posture-gain 0.5"
+SERVO=(--vr-gain 2 --output raw_id --servo-feedback setpoint --posture-gain 0.5)
 if [[ -n "$POLICY" ]]; then
-    if [[ "$ARGS" == *"--swap-hands false"* ]]; then
+    if [[ -n "$SWAP" ]]; then
         echo "ERROR: --swap with --policy would mirror the policy's targets (x/y negated)." >&2; exit 1
     fi
-    ARGS=" --input vr${SERVO}${ARGS}"
+    ARGS=(--input vr "${SERVO[@]}" "${ARGS[@]}")
 else
-    ARGS=" --input vr${SERVO} --vr-config vr_axes_raw_id.yaml${ARGS}"
+    ARGS=(--input vr "${SERVO[@]}" --vr-config vr_axes_raw_id.yaml "${ARGS[@]}")
 fi
 
 # Each pane sources env.sh. The python is spelled out instead of $PY: the terminal backend runs the
@@ -106,7 +107,7 @@ teleop_cmd() {  # $1: arm, or empty when --arm was given directly
     fi
     echo "cd '${WS_DIR}' \
   && source '${SCRIPT_DIR}/env.sh' \
-  && '${WS_DIR}/.venv-ros/bin/python' -m baxter_interface.baxter_teleop.cartesian_delta_teleop ${ARGS}${1:+ --arm $1}${policy_args}; \
+  && '${WS_DIR}/.venv-ros/bin/python' -m baxter_interface.baxter_teleop.cartesian_delta_teleop$(printf ' %q' "${ARGS[@]}")${1:+ --arm $1}${policy_args}; \
   echo; read -rp 'Teleop exited. Press Enter to close.'"
 }
 # RethoughtAI recorder; baxter_core_msgs (its button messages) come from the Baxter workspace
@@ -153,28 +154,30 @@ if [[ -n "$CAMERA" ]] && ! pgrep -f "[r]ealsense2_camera_node.*third_eye" >/dev/
     echo "third_eye camera starting (log: ${CAMERA_LOG})"
 fi
 
-if [[ -n "$DISPLAY" ]] && command -v terminator >/dev/null; then
-    # Teleop on top (one pane per arm, left arm on the left, first one focused); below,
-    # record_teleop.sh typed in and waiting for Enter, or with --record the RethoughtAI recorder.
-    RUN_DIR="${XDG_RUNTIME_DIR:-/tmp}/baxter_teleop"
-    mkdir -p "$RUN_DIR"
-    for arm in "${ARM_LIST[@]}"; do
-        teleop_cmd "${arm/given/}" > "${RUN_DIR}/teleop_${arm}.sh"
-    done
-    if [[ -n "$RECORD" ]]; then
-        record_cmd > "${RUN_DIR}/record_prompt.sh"
-    else
+# One script per pane, run by either terminal backend: the teleop per arm and, below, record_teleop.sh
+# typed in and waiting for Enter, or with --record the RethoughtAI recorder.
+RUN_DIR="${XDG_RUNTIME_DIR:-/tmp}/baxter_teleop"
+mkdir -p "$RUN_DIR"
+for arm in "${ARM_LIST[@]}"; do
+    teleop_cmd "${arm/given/}" > "${RUN_DIR}/teleop_${arm}.sh"
+done
+if [[ -n "$RECORD" ]]; then
+    record_cmd > "${RUN_DIR}/record_prompt.sh"
+else
     cat > "${RUN_DIR}/record_prompt.sh" <<PROMPT
 cd '${SCRIPT_DIR}'
 echo 'Press Enter to record this session (edit the label first if you like). Ctrl+C stops recording.'
 read -e -p '\$ ' -i './record_teleop.sh baseline' cmd && history -s "\$cmd" && eval "\$cmd"
 exec bash
 PROMPT
-    fi
+fi
+
+if [[ -n "${DISPLAY:-}" ]] && command -v terminator >/dev/null; then
+    # Teleop on top (one pane per arm, left arm on the left, first one focused), the record pane below.
     {
         echo '[global_config]'
         echo '  suppress_multiple_term_dialog = True'
-        sed -n '/^\[profiles\]/,/^\[[a-z]/p' ~/.config/terminator/config 2>/dev/null | sed '$d'
+        { sed -n '/^\[profiles\]/,/^\[[a-z]/p' ~/.config/terminator/config 2>/dev/null || true; } | sed '$d'
         cat <<LAYOUT
 [layouts]
   [[teleop]]
@@ -212,10 +215,10 @@ LAYOUT
     terminator -u -g "${RUN_DIR}/terminator.config" -l teleop --working-directory "${WS_DIR}" &
     echo "Teleop opened in a new Terminator window (one pane per arm, recorder ready below). Click a pane to give it keyboard focus."
 else
-    # tmux: one window per arm
+    # tmux: one window per arm, then the recorder with --record
     for arm in "${ARM_LIST[@]}"; do
-        cmd="bash -c \"$(teleop_cmd "${arm/given/}")\""
-        if [[ -n "$TMUX" ]]; then
+        cmd="bash $(printf %q "${RUN_DIR}/teleop_${arm}.sh")"
+        if [[ -n "${TMUX:-}" ]]; then
             tmux new-window -n "teleop-${arm}" "$cmd"
         elif tmux has-session -t baxter-teleop 2>/dev/null; then
             tmux new-window -t baxter-teleop -n "teleop-${arm}" "$cmd"
@@ -224,9 +227,9 @@ else
         fi
     done
     if [[ -n "$RECORD" ]]; then  # the teleop windows above made sure a session exists
-        cmd="bash -c \"$(record_cmd)\""
-        if [[ -n "$TMUX" ]]; then tmux new-window -n record "$cmd"
+        cmd="bash $(printf %q "${RUN_DIR}/record_prompt.sh")"
+        if [[ -n "${TMUX:-}" ]]; then tmux new-window -n record "$cmd"
         else tmux new-window -t baxter-teleop -n record "$cmd"; fi
     fi
-    [[ -n "$TMUX" ]] || tmux attach -t baxter-teleop
+    [[ -n "${TMUX:-}" ]] || tmux attach -t baxter-teleop
 fi
