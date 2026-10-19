@@ -1,0 +1,8 @@
+# Python packages without rosdep keys, installed into the workspace's .venv-ros (Python 3.12, the
+# interpreter Kilted's rclpy is built for, with the system site-packages so ROS stays visible):
+#   python3.12 -m venv --system-site-packages .venv-ros && .venv-ros/bin/pip install -r src/baxter_teleop/requirements.txt
+# Versions are the ones the teleop was tuned and tested with (2026-10-19).
+frax==0.0.4
+jax==0.6.2
+jaxlib==0.6.2
+ruckig==0.19.4

@@ -15,7 +15,7 @@ DRY=false
 # Only what this stack starts (BaxterSDK, RethoughtAI, the camera, RViz, recorders, routers), never
 # every ROS process on the machine: other ROS programs (a micro-ROS agent, Foxglove) are left alone.
 PATTERN='baxter_sdk/(install|build|\.venv)|rethought_ai/(\.venv|launch)|policy\.launch\.py'
-PATTERN+='|baxter_mujoco[.](baxter_ros|sim)|baxter_interface|baxter_tools|baxter_examples|move_group'
+PATTERN+='|baxter_mujoco[.](baxter_ros|sim)|baxter_interface|baxter_teleop|baxter_tools|baxter_examples|move_group'
 PATTERN+='|robot_state_publisher|joint_state_publisher|realsense2_camera|rs_launch\.py|rviz2'
 PATTERN+='|ros2 bag (record|play)|rmw_zenohd|ros2cli\.daemon'
 PATTERN+='|(run_sim_teleop|run_teleop|launch_sim|view_teleop_frames|record_teleop)\.sh'

@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from baxter_interface.baxter_teleop.diff_ik import BoundedDiffIKSolver, DiffIKSolver
+from baxter_teleop.diff_ik import BoundedDiffIKSolver, DiffIKSolver
 
 VEL = np.array([1.2, 1.2, 1.2, 1.2, 3.2, 3.2, 3.2])
 ACC = np.array([4.0, 4.0, 4.0, 4.0, 6.0, 6.0, 6.0])

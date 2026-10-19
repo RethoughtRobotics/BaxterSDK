@@ -16,8 +16,8 @@ orientation. Phases (offsets in the robot base frame, 0.1 m/s, 1 s pauses):
 they start at the start TCP), --loops times at --circle-speed: a repeatable stimulus for comparing
 joint output stages (--output) on the robot, e.g. via run_circle_test.sh.
 
-  python -m baxter_interface.baxter_teleop.trajectory_test --ik dls|bounded [--arm left]
-  python -m baxter_interface.baxter_teleop.trajectory_test --arm right --protocol circle --output raw_id \
+  python -m baxter_teleop.trajectory_test --ik dls|bounded [--arm left]
+  python -m baxter_teleop.trajectory_test --arm right --protocol circle --output raw_id \
       --gain 3 --no-feedforward
 """
 

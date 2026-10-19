@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from baxter_interface.baxter_teleop.joint_setpoint import JointLimits, JointSetpointGenerator
+from baxter_teleop.joint_setpoint import JointLimits, JointSetpointGenerator
 
 DT = 0.005
 # Baxter teleop limits (CartesianDeltaTeleop): velocity 0.8 x URDF, acceleration as the old ramp,

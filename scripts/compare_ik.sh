@@ -26,7 +26,7 @@ for ik in "${SOLVERS[@]}"; do
     ros2 run baxter_tools tuck_arms -u >/dev/null 2>&1
     setsid "${SCRIPT_DIR}/record_teleop.sh" "trajectory_${ik}" >"${LOG}/record_${ik}.log" 2>&1 &
     sleep 4
-    "$PY" -m baxter_interface.baxter_teleop.trajectory_test --ik "$ik" \
+    "$PY" -m baxter_teleop.trajectory_test --ik "$ik" \
         2>"${LOG}/teleop_${ik}.log" | grep -v '^\['
     pkill -INT -f '[r]os2 bag record' || true
     for _ in $(seq 60); do grep -q '^Saved ' "${LOG}/record_${ik}.log" && break; sleep 1; done
@@ -35,7 +35,7 @@ for ik in "${SOLVERS[@]}"; do
 done
 
 REPORT="${DATA_DIR}/ik_comparisons/$(date +%Y%m%d_%H%M%S)_ik_comparison"
-"$PY" -m baxter_interface.baxter_teleop.ik_report "$REPORT" "${bags[@]}" \
+"$PY" -m baxter_teleop.ik_report "$REPORT" "${bags[@]}" \
     2> >(grep -v -e jax -e GPU >&2)
 {
     echo -e "\n## Contacts\n"

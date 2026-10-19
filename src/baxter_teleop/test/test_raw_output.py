@@ -5,8 +5,8 @@ import time
 import numpy as np
 import pytest
 
-from baxter_interface.baxter_teleop.joint_setpoint import JointLimits, JointSetpointGenerator
-from baxter_interface.baxter_teleop.raw_output import BaxterRawSink, RawJointOutput
+from baxter_teleop.joint_setpoint import JointLimits, JointSetpointGenerator
+from baxter_teleop.raw_output import BaxterRawSink, RawJointOutput
 
 DT = 0.005
 VEL = np.array([1.2, 1.2, 1.2, 1.2, 3.2, 3.2, 3.2])

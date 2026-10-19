@@ -807,7 +807,7 @@ def main():
     )
     parser.add_argument(
         '--vr-config',
-        default=os.path.join(get_package_share_directory('baxter_interface'), 'config', 'vr_axes.yaml'),
+        default=os.path.join(get_package_share_directory('baxter_teleop'), 'config', 'vr_axes.yaml'),
         help='VR mapping YAML, a path or a file in the installed config/ (default: vr_axes.yaml; '
         'vr_axes_base.yaml maps translation onto the robot base frame)',
     )
@@ -911,7 +911,7 @@ def main():
 
     if args.input == 'vr':
         if not os.path.exists(args.vr_config):
-            args.vr_config = os.path.join(get_package_share_directory('baxter_interface'), 'config', args.vr_config)
+            args.vr_config = os.path.join(get_package_share_directory('baxter_teleop'), 'config', args.vr_config)
         vr_linear, vr_angular = CartesianDeltaTeleop.VR_SPEEDS
         args.linear_speed = vr_linear if args.linear_speed is None else args.linear_speed
         args.angular_speed = vr_angular if args.angular_speed is None else args.angular_speed

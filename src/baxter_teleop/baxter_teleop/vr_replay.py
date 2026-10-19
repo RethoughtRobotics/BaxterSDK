@@ -101,7 +101,7 @@ def snap_to_signed_permutation(M):
 
 def simulate(bag, arm, gain, linear_speed, angular_speed):
     target_msgs, endpoint = read_bag(bag, arm)
-    config_dir = os.path.join(get_package_share_directory('baxter_interface'), 'config')
+    config_dir = os.path.join(get_package_share_directory('baxter_teleop'), 'config')
     cfg, cfg_base = (os.path.join(config_dir, f) for f in ('vr_axes.yaml', 'vr_axes_base.yaml'))
     clock = [0.0]
     vr_target.time = types.SimpleNamespace(monotonic=lambda: clock[0])  # VRTarget's clock -> bag time

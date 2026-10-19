@@ -107,7 +107,7 @@ teleop_cmd() {  # $1: arm, or empty when --arm was given directly
     fi
     echo "cd '${WS_DIR}' \
   && source '${SCRIPT_DIR}/env.sh' \
-  && '${WS_DIR}/.venv-ros/bin/python' -m baxter_interface.baxter_teleop.cartesian_delta_teleop$(printf ' %q' "${ARGS[@]}")${1:+ --arm $1}${policy_args}; \
+  && '${WS_DIR}/.venv-ros/bin/python' -m baxter_teleop.cartesian_delta_teleop$(printf ' %q' "${ARGS[@]}")${1:+ --arm $1}${policy_args}; \
   echo; read -rp 'Teleop exited. Press Enter to close.'"
 }
 # RethoughtAI recorder; baxter_core_msgs (its button messages) come from the Baxter workspace
