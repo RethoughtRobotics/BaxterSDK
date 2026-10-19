@@ -44,3 +44,11 @@ with open(settings_path()) as f:
     _settings = yaml.safe_load(f)
 DEFAULTS = dict(_settings['defaults'])
 LIMITS = JointLimitTable(**{name: tuple(float(x) for x in v) for name, v in _settings['joint_limits'].items()})
+
+
+def servo_feedback_for(output, servo_feedback=None):
+    """servo_feedback as given, else the default, except measured for the velocity output (which has
+    no setpoint to close on), so --output velocity alone works."""
+    if servo_feedback is not None:
+        return servo_feedback
+    return 'measured' if output == 'velocity' else DEFAULTS['servo_feedback']

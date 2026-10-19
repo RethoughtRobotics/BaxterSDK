@@ -30,6 +30,7 @@ import rclpy
 from scipy.spatial.transform import Rotation
 
 from ..servo import servo_twist
+from ..settings import DEFAULTS, servo_feedback_for
 from ..teleop import Teleop
 from .iso9283 import iso_protocol
 
@@ -152,9 +153,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--ik', choices=['dls', 'bounded'], default='bounded')
     parser.add_argument('--arm', choices=['left', 'right'], default='left')
-    parser.add_argument('--posture-gain', type=float, default=0.0, help='DLS null-space pull toward untuck, 1/s')
-    parser.add_argument('--output', choices=['velocity', 'raw', 'raw_id'], default='velocity', help='as the teleop')
-    parser.add_argument('--servo-feedback', choices=['measured', 'setpoint'], default='measured', help='as the teleop')
+    parser.add_argument('--posture-gain', type=float, default=DEFAULTS['posture_gain'], help='as the teleop')
+    parser.add_argument(
+        '--output', choices=['velocity', 'raw', 'raw_id'], default=DEFAULTS['output'], help='as the teleop'
+    )
+    parser.add_argument('--servo-feedback', choices=['measured', 'setpoint'], default=None, help='as the teleop')
     parser.add_argument('--joint-accel-scale', type=float, default=1.0, help='as the teleop')
     parser.add_argument('--gain', type=float, default=5.0, help='servo gain, 1/s (VR: --vr-gain x linear_scale)')
     parser.add_argument('--no-feedforward', dest='feedforward', action='store_false', help='P-only servo, as VR')
@@ -177,6 +180,7 @@ def main():
     parser.add_argument('--circle-speed', type=float, default=0.15, help='circle protocol: TCP speed, m/s')
     parser.add_argument('--loops', type=int, default=3, help='circle protocol: number of circles')
     args, ros_args = parser.parse_known_args()
+    args.servo_feedback = servo_feedback_for(args.output, args.servo_feedback)
     rclpy.init(args=['scripted_trajectory', *ros_args])
     teleop = Teleop(
         arm=args.arm,

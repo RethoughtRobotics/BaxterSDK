@@ -11,6 +11,7 @@ from ament_index_python.packages import get_package_share_directory
 
 from .inputs.vr import VRTarget
 from .kinematics import require_frax
+from .settings import DEFAULTS, servo_feedback_for
 from .teleop import Teleop
 
 
@@ -37,11 +38,12 @@ def parser():
     )
     p.add_argument(
         '--vr-config',
-        default='vr_axes.yaml',
-        help='VR mapping YAML, a path or a file in the installed config/ (default: vr_axes.yaml; '
-        'vr_axes_base.yaml maps translation onto the robot base frame)',
+        default=DEFAULTS['vr_config'],
+        help='VR mapping YAML, a path or a file in the installed config/ (default: %(default)s)',
     )
-    p.add_argument('--vr-gain', type=float, default=1.0, help='VR pose servo gain in 1/s')
+    p.add_argument(
+        '--vr-gain', type=float, default=DEFAULTS['vr_gain'], help='VR pose servo gain in 1/s (default: %(default)s)'
+    )
     p.add_argument(
         '--vr-trigger-topic', default=None, help='VR trigger topic for the gripper (default: /vive/{arm}/trigger)'
     )
@@ -65,8 +67,8 @@ def parser():
     p.add_argument(
         '--output',
         choices=['velocity', 'raw', 'raw_id'],
-        default='velocity',
-        help="joint command: VELOCITY_MODE (default), 'raw' a jerk-limited setpoint streamed at 200 Hz in "
+        default=DEFAULTS['output'],
+        help="joint command (default: %(default)s): VELOCITY_MODE, 'raw' a jerk-limited setpoint streamed at 200 Hz in "
         "RAW_POSITION_MODE, 'raw_id' raw plus inverse dynamics feedforward (raw modes bypass collision avoidance)",
     )
     p.add_argument(
@@ -79,9 +81,10 @@ def parser():
     p.add_argument(
         '--servo-feedback',
         choices=['measured', 'setpoint'],
-        default='measured',
-        help='what the pose servo closes on: the measured arm (default) or, with a raw output, its own '
-        'setpoint, so the Cartesian loop cannot hunt on joint friction (pick-and-place bag 20261016_212004)',
+        default=None,
+        help='what the pose servo closes on: the measured arm or, with a raw output, its own setpoint, so '
+        'the Cartesian loop cannot hunt on joint friction (pick-and-place bag 20261016_212004); default: '
+        f'{DEFAULTS["servo_feedback"]} with a raw output, measured with velocity',
     )
     p.add_argument(
         '--joint-accel-scale',
@@ -93,9 +96,9 @@ def parser():
     p.add_argument(
         '--posture-gain',
         type=float,
-        default=0.0,
-        help='pull the elbow toward untuck in the null space of the hand task, in 1/s (0 = off); '
-        '1/s cost circle tracking in the sim (posture_damping report), 0.5 did not',
+        default=DEFAULTS['posture_gain'],
+        help='pull the elbow toward untuck in the null space of the hand task, in 1/s (0 = off; default: '
+        '%(default)s); 1/s cost circle tracking in the sim (posture_damping report), 0.5 did not',
     )
     p.add_argument(
         '--null',
@@ -133,6 +136,7 @@ def parser():
 def main(argv=None):
     require_frax()
     args, ros_args = parser().parse_known_args(sys.argv[1:] if argv is None else argv)
+    args.servo_feedback = servo_feedback_for(args.output, args.servo_feedback)
     if args.input == 'vr':
         args.vr_config = config_file(args.vr_config)
         vr_linear, vr_angular = Teleop.VR_SPEEDS
