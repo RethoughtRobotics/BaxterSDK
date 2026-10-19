@@ -7,7 +7,7 @@ set -e
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 set -u
 
-"$PY" -m baxter_teleop.bag_report "$@" 2> >(grep -v -e jax -e GPU >&2)
+"$PY" -m baxter_teleop.diagnostics.bag_report "$@" 2> >(grep -v -e jax -e GPU >&2)
 for bag in "$@"; do
     if [[ "$bag" == *_sim_* && -d "$SIM_DIR" ]]; then
         echo -e "\n=== $(basename "$bag")"

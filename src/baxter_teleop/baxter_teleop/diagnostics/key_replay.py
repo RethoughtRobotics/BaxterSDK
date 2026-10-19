@@ -6,7 +6,7 @@ Same operator input through the current code, so a recording of the replay compa
 with the original bag (analyze_teleop_bag.sh <original> <replay>). The teleop is built with the
 original session's arm, frame and speeds; start the robot (or sim) from the same pose.
 
-  python -m baxter_teleop.key_replay <bag>
+  python -m baxter_teleop.diagnostics.key_replay <bag>
 """
 
 import argparse
@@ -14,8 +14,8 @@ import time
 
 import rclpy
 
+from ..cartesian_delta_teleop import CartesianDeltaTeleop
 from .bag_report import load
-from .cartesian_delta_teleop import CartesianDeltaTeleop
 
 
 def main():

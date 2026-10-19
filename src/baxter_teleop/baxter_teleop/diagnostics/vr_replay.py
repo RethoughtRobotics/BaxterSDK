@@ -34,10 +34,10 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 import baxter_interface
 
-from . import vr_target
-from .cartesian_delta_teleop import CartesianDeltaTeleop, frax, jax, jnp
-from .diff_ik import DiffIKSolver
-from .urdf_tools import extract_arm_chain_urdf, resolve_baxter_urdf
+from .. import vr_target
+from ..cartesian_delta_teleop import CartesianDeltaTeleop, frax, jax, jnp
+from ..diff_ik import DiffIKSolver
+from ..urdf_tools import extract_arm_chain_urdf, resolve_baxter_urdf
 
 DT = 0.01
 RUNS = {'current': (0.0, 1.0, 0.3, 1.0), 'proposed': (0.1, 0.8, 0.3, 1.0)}  # name: marker RGBA

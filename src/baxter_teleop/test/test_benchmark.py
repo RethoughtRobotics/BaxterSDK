@@ -4,7 +4,7 @@ import os
 
 import yaml
 
-from baxter_teleop.benchmark import REFERENCE, SWEEPS, is_done, label, plan, trajectory_args
+from baxter_teleop.diagnostics.benchmark import REFERENCE, SWEEPS, is_done, label, plan, trajectory_args
 
 
 def test_each_condition_runs_once_per_repeat_and_shared_ones_are_owned_by_all_their_sweeps():
