@@ -68,8 +68,13 @@ while (( $# )); do
             [[ "$1" != --arm ]] || shift
             ;;
         --record) RECORD=1 ;;
-        --session) SESSION="${2:?--session needs a name}"; RECORD=1; shift ;;
-        --session=*) SESSION="${1#*=}"; RECORD=1 ;;
+        --session|--session=*)
+            if [[ "$1" == --session ]]; then SESSION="${2:-}"; shift; else SESSION="${1#*=}"; fi
+            # A name, never the next flag: "--session --policy" once created a session called --policy.
+            if [[ ! "$SESSION" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+                echo "ERROR: --session needs a name (letters, digits, _ . -), got '${SESSION}'" >&2; exit 1
+            fi
+            RECORD=1 ;;
         --camera) CAMERA=1 ;;
         --no-camera) CAMERA="" ;;
         --policy) POLICY=1 ;;
