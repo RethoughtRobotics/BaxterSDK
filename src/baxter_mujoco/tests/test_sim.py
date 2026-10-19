@@ -1,6 +1,6 @@
 import numpy as np
 
-from baxflow.sim import make_env
+from baxter_mujoco.sim import make_env
 
 
 def test_baxter_steps():

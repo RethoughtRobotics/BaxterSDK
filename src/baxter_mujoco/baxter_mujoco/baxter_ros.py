@@ -1,6 +1,6 @@
 """The MuJoCo Baxter behind the real robot's ROS 2 interface (baxter_core_msgs).
 
-Run `./launch_sim.sh --ros`. bringbackbaxter's baxter_interface (teleop, tuck_arms) and RViz then
+Run `./launch_sim.sh --ros`. baxter_interface (teleop, tuck_arms) and RViz then
 drive and show this simulated Baxter exactly as they do the real one, over the same topics:
 
   publishes   /robot/joint_states, /robot/limb/{arm}/endpoint_state, /robot/state,
@@ -37,7 +37,7 @@ from sensor_msgs.msg import JointState
 from visualization_msgs.msg import Marker, MarkerArray
 from std_msgs.msg import Bool, Float64, String
 
-from baxflow.sim import make_env
+from baxter_mujoco.sim import make_env
 
 ARMS = ('left', 'right')
 JOINTS = ('s0', 's1', 'e0', 'e1', 'w0', 'w1', 'w2')

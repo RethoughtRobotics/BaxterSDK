@@ -1,5 +1,5 @@
 [project]
-name = "baxflow-t"
+name = "baxter-mujoco"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
@@ -9,7 +9,7 @@ dependencies = [
 
 [dependency-groups]
 dev = ["pytest"]
-# Python deps of the sourced ROS 2 (Kilted) packages, for baxflow.baxter_ros
+# Python deps of the sourced ROS 2 (Kilted) packages, for baxter_mujoco.baxter_ros
 ros = ["pyyaml"]
 
 [build-system]
@@ -17,7 +17,7 @@ requires = ["uv_build>=0.8,<1"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-module-name = "baxflow"
+module-name = "baxter_mujoco"
 module-root = ""
 
 [tool.pytest.ini_options]

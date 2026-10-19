@@ -1,6 +1,6 @@
 """Replay recorded Baxter joint angles in the MuJoCo scene and list what the arms touched.
 
-  uv run python -m baxflow.contacts <bag>/joints.npz   (written by bringbackbaxter's bag_report)
+  uv run python -m baxter_mujoco.contacts <bag>/joints.npz   (written by baxter_interface's bag_report)
 
 Kinematic replay: objects (the pot) sit at their start pose (or out of reach if the run used
 --empty), so contacts with them are where the arm reached them, not what happened afterwards.
@@ -11,8 +11,8 @@ import sys
 import mujoco
 import numpy as np
 
-from baxflow.baxter_ros import remove_table
-from baxflow.sim import make_env
+from baxter_mujoco.baxter_ros import remove_table
+from baxter_mujoco.sim import make_env
 
 TOUCH = 0.002  # m: closer than this counts as contact (recorded poses are where physics already pushed things apart)
 

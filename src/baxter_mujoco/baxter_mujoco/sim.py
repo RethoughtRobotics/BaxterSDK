@@ -1,6 +1,6 @@
 """Baxter simulation in MuJoCo via robosuite.
 
-Run `uv run python -m baxflow.sim` to open the viewer.
+Run `uv run python -m baxter_mujoco.sim` to open the viewer.
 """
 
 import numpy as np
