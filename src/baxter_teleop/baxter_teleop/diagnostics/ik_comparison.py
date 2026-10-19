@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
-"""Report comparing IK solvers on trajectory_test bags: figures (PDF + PNG), tables (CSV + LaTeX).
+"""Report comparing IK solvers on scripted_trajectory bags: figures (PDF + PNG), tables (CSV + LaTeX).
 
-  python -m baxter_teleop.diagnostics.ik_report <report_dir> <bag> [<bag> ...]
+  python -m baxter_teleop.diagnostics.ik_comparison <report_dir> <bag> [<bag> ...]
 
-Each bag is one trajectory_test run (compare_ik.sh records them). Errors are measured against the
+Each bag is one scripted_trajectory run (compare_ik.sh records them). Errors are measured against the
 servo goal the teleop published (/teleop/<arm>/goal), the hand pose the robot reported
 (/robot/limb/<arm>/endpoint_state) and the joint states, aligned on the robot's clock.
 """
@@ -23,11 +23,11 @@ from scipy.spatial.transform import Rotation  # noqa: E402
 
 import baxter_interface  # noqa: E402
 
-from ..cartesian_delta_teleop import CartesianDeltaTeleop, frax, jax, jnp  # noqa: E402
-from ..urdf_tools import extract_arm_chain_urdf, resolve_baxter_urdf  # noqa: E402
+from ..kinematics import extract_arm_chain_urdf, resolve_baxter_urdf  # noqa: E402
+from ..teleop import Teleop, frax, jax, jnp  # noqa: E402
 from .bag_report import load, save_joints  # noqa: E402
 
-SUFFIXES = CartesianDeltaTeleop.JOINT_SUFFIXES
+SUFFIXES = Teleop.JOINT_SUFFIXES
 LABELS = {'dls': 'DLS', 'bounded': 'Bounded DLS'}
 COLORS = {'dls': '#2a78d6', 'bounded': '#eb6834'}  # validated categorical slots 1 and 2 (dataviz palette)
 SOLVERS = {
@@ -82,7 +82,7 @@ PHASE_NAMES = {
 
 
 def run(bag):
-    """Time series of one trajectory_test bag, t = 0 at the trajectory start."""
+    """Time series of one scripted_trajectory bag, t = 0 at the trajectory start."""
     d = load(bag)
     save_joints(bag, d)
     test = d['config']['trajectory_test']
@@ -122,7 +122,7 @@ def run(bag):
 
 
 def phase_metrics(r):
-    low, high = (np.asarray(x) for x in CartesianDeltaTeleop.JOINT_POSITION_LIMITS)
+    low, high = (np.asarray(x) for x in Teleop.JOINT_POSITION_LIMITS)
     at_limit = ((r['q'] - low < 0.03) | (high - r['q'] < 0.03)).any(axis=1)
     rows = []
     for name, a, b in r['phases'] + [('whole run', 0.0, r['t'][-1])]:
@@ -217,7 +217,7 @@ def figure_configuration(runs, out):
 
 
 def figure_joints(runs, out):
-    low, high = (np.degrees(np.asarray(x)) for x in CartesianDeltaTeleop.JOINT_POSITION_LIMITS)
+    low, high = (np.degrees(np.asarray(x)) for x in Teleop.JOINT_POSITION_LIMITS)
     fig, axes = plt.subplots(4, 2, figsize=(FULL_WIDTH, 6.4), sharex=True)
     for j, ax in enumerate(axes.flat[:7]):
         shade(ax, runs[0]['phases'])  # too narrow for phase names; same bands as the full-width figures
@@ -317,7 +317,7 @@ Runs: {', '.join(f'`{r["bag"]}` ({LABELS[r["ik"]]})' for r in runs)}. Code versi
 ## Setup
 
 The baxter_mujoco simulator on the real robot's ROS 2 interface, no objects in reach (`--empty`), left
-arm, starting from the untuck pose. `trajectory_test` drives the teleop through a scripted TCP
+arm, starting from the untuck pose. `scripted_trajectory` drives the teleop through a scripted TCP
 trajectory at 0.1 m/s with the start orientation held, using the same servo as VR and keyboard
 input (goal pose, gain 5/s, path velocity as feedforward). The only difference between runs is the
 velocity IK:

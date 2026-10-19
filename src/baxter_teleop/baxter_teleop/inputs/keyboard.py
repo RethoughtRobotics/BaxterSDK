@@ -5,7 +5,7 @@ import time
 import numpy as np
 from scipy.spatial.transform import Rotation
 
-from .pose_servo import servo_twist
+from ..servo import servo_twist
 
 
 def twist_from_key(key, linear_speed, angular_speed):
@@ -42,7 +42,7 @@ def twist_from_key(key, linear_speed, angular_speed):
     return v
 
 
-class KeyTarget:
+class KeyboardTarget:
     """Closed-loop keyboard: a held key moves a goal pose at the key speed, and the TCP is servoed
     onto it (servo_twist, with the key twist as feedforward). Lag, blocked motion and IK error are
     pulled back instead of accumulating, and the orientation holds when only translating.

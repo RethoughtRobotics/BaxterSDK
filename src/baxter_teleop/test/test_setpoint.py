@@ -3,10 +3,10 @@
 import numpy as np
 import pytest
 
-from baxter_teleop.joint_setpoint import JointLimits, JointSetpointGenerator
+from baxter_teleop.outputs.setpoint import JointLimits, JointSetpointGenerator
 
 DT = 0.005
-# Baxter teleop limits (CartesianDeltaTeleop): velocity 0.8 x URDF, acceleration as the old ramp,
+# Baxter teleop limits (Teleop): velocity 0.8 x URDF, acceleration as the old ramp,
 # jerk 10 x acceleration.
 VEL = np.array([1.2, 1.2, 1.2, 1.2, 3.2, 3.2, 3.2])
 ACC = np.array([4.0, 4.0, 4.0, 4.0, 6.0, 6.0, 6.0])

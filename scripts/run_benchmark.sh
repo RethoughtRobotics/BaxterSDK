@@ -9,7 +9,7 @@
 #        ./run_benchmark.sh experiments/cb --repeats 1      quick pass
 # Runs on ROS_DOMAIN_ID as exported (unset = 0, the real robot). Ctrl+C stops after holding the arm;
 # rerunning resumes. Raw outputs bypass collision avoidance: keep the 30 cm area to the arm's right clear.
-# Each run aborts itself (and holds) on tracking error or contact force (trajectory_test --safety).
+# Each run aborts itself (and holds) on tracking error or contact force (scripted_trajectory --safety).
 
 set -e
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
@@ -22,7 +22,7 @@ if [[ " $* " != *" --dry-run "* ]]; then
         echo "No /robot/joint_states on ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}: start the bridge (or the sim) first." >&2
         exit 1
     fi
-    if pgrep -f "[c]artesian_delta_teleop.*--arm right|[t]rajectory_test" >/dev/null; then
+    if pgrep -f "[b]axter_teleop[.]teleop.*--arm right|[s]cripted_trajectory" >/dev/null; then
         echo "A teleop is already driving the right arm: close it first." >&2
         exit 1
     fi

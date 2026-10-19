@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run trajectory_test once per IK solver on the simulated Baxter (no objects in reach), record each
+# Run scripted_trajectory once per IK solver on the simulated Baxter (no objects in reach), record each
 # run, and write a report (figures, tables) comparing them.
 # Usage: ./compare_ik.sh [solver ...]   (default: dls bounded)  ->  data/ik_comparisons/<time>_ik_comparison/
 # Stops any running ROS processes first (teardown.sh) and again at the end.
@@ -26,7 +26,7 @@ for ik in "${SOLVERS[@]}"; do
     ros2 run baxter_tools tuck_arms -u >/dev/null 2>&1
     setsid "${SCRIPT_DIR}/record_teleop.sh" "trajectory_${ik}" >"${LOG}/record_${ik}.log" 2>&1 &
     sleep 4
-    "$PY" -m baxter_teleop.diagnostics.trajectory_test --ik "$ik" \
+    "$PY" -m baxter_teleop.diagnostics.scripted_trajectory --ik "$ik" \
         2>"${LOG}/teleop_${ik}.log" | grep -v '^\['
     pkill -INT -f '[r]os2 bag record' || true
     for _ in $(seq 60); do grep -q '^Saved ' "${LOG}/record_${ik}.log" && break; sleep 1; done
@@ -35,7 +35,7 @@ for ik in "${SOLVERS[@]}"; do
 done
 
 REPORT="${DATA_DIR}/ik_comparisons/$(date +%Y%m%d_%H%M%S)_ik_comparison"
-"$PY" -m baxter_teleop.diagnostics.ik_report "$REPORT" "${bags[@]}" \
+"$PY" -m baxter_teleop.diagnostics.ik_comparison "$REPORT" "${bags[@]}" \
     2> >(grep -v -e jax -e GPU >&2)
 {
     echo -e "\n## Contacts\n"

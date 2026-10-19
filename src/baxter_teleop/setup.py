@@ -22,7 +22,7 @@ setup(
     extras_require={'test': ['pytest']},
     entry_points={
         'console_scripts': [
-            'baxter_teleop = baxter_teleop.cartesian_delta_teleop:main',
+            'baxter_teleop = baxter_teleop.teleop:main',
         ],
     },
 )

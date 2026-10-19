@@ -3,7 +3,7 @@
 import numpy as np
 
 
-class CartesianDeltaGuard:
+class CommandValidator:
     """Stateful guard that validates modality deltas before IK is applied."""
 
     def __init__(

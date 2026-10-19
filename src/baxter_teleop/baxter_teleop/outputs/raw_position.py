@@ -2,7 +2,7 @@
 
 Why a separate stream: the teleop's control cycle runs at ~57 Hz with jitter, but Baxter's raw
 position mode passes each setpoint straight to the joint controller boards, so the setpoint
-must itself be smooth. RawJointOutput owns a JointSetpointGenerator and steps it on its own
+must itself be smooth. RawPositionOutput owns a JointSetpointGenerator and steps it on its own
 thread at a fixed rate; the control loop only updates the target velocity (command()).
 
 With inverse dynamics, each setpoint is also sent as /robot/limb/{arm}/inverse_dynamics_command
@@ -27,10 +27,10 @@ import time
 
 import numpy as np
 
-from .joint_setpoint import JointSetpointGenerator, Setpoint
+from .setpoint import JointSetpointGenerator, Setpoint
 
 
-class RawJointOutput:
+class RawPositionOutput:
     """Fixed-rate setpoint stream fed by a velocity target; publishing is delegated to `send`.
 
     `send(setpoint)` is called once per period while active (from the stream thread, or from
@@ -100,7 +100,7 @@ class RawJointOutput:
             self.send(setpoint)
         return setpoint
 
-    def start(self) -> 'RawJointOutput':
+    def start(self) -> 'RawPositionOutput':
         """Run tick() every generator period on a daemon thread, on absolute deadlines."""
         if self._thread is not None:
             raise RuntimeError('already started')
@@ -129,8 +129,8 @@ class RawJointOutput:
                 deadline = time.monotonic()
 
 
-class BaxterRawSink:
-    """`send` for RawJointOutput: JointCommand(RAW_POSITION_MODE) and, optionally, the inverse
+class JointCommandPublisher:
+    """`send` for RawPositionOutput: JointCommand(RAW_POSITION_MODE) and, optionally, the inverse
     dynamics feedforward, both for one Baxter arm. ROS message construction only."""
 
     def __init__(self, node, arm, joint_names, limb_joint_names, inverse_dynamics=True):
