@@ -1,0 +1,39 @@
+---
+# Expected sim_regression results: value and allowed deviation per metric (same units).
+# Written by python -m baxter_teleop.diagnostics.sim_regression --write-baseline; tolerances
+# are kept across rewrites, so tighten them here by hand.
+# keys travel varies run to run (177-218 mm for W over two runs): after release, KeyboardTarget
+# drops the goal once the TCP stops closing in by 1 mm per 0.2 s, so only the direction is tight.
+circle:
+  e0_range_deg:
+    tolerance: 3.16
+    value: 31.56
+  goal_error_max_mm:
+    tolerance: 6.44
+    value: 64.35
+  goal_error_rms_mm:
+    tolerance: 4.74
+    value: 47.4
+keys:
+  a_travel_y_mm:
+    tolerance: 30.0
+    value: 190.0
+  w_cross_axis_mm:
+    tolerance: 2.0
+    value: 0.75
+  w_travel_x_mm:
+    tolerance: 45.0
+    value: 200.0
+vr:
+  goals_during_stroke:
+    tolerance: 17.4
+    value: 174.0
+  hold_drift_mm:
+    tolerance: 2.0
+    value: 1.99
+  home_from_start_mm:
+    tolerance: 2.0
+    value: 2.46
+  stroke_x_mm:
+    tolerance: 4.15
+    value: 41.53
