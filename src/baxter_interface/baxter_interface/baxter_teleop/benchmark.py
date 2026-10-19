@@ -15,7 +15,7 @@ moving around the cell) does not line up with any sweep, and the runner resumes 
 
   python -m baxter_interface.baxter_teleop.benchmark <root> [--sweeps gain,speed] [--repeats 3] [--dry-run]
 
-Needs the robot (or the sim) up on ROS_DOMAIN_ID and record_teleop.sh (BAG_PATH) next to ros2_ws.
+Needs the robot (or the sim) up on ROS_DOMAIN_ID and scripts/record_teleop.sh (BAG_PATH).
 """
 
 import argparse

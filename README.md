@@ -16,7 +16,7 @@ git clone git@github.com:RethoughtRobotics/BaxterSDK.git
 ```
 
 ```bash
-cd ~/BaxterSDK/ros2_ws
+cd ~/BaxterSDK
 ```
 
 ## 1. One-time setup
