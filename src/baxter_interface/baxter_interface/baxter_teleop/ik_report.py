@@ -28,8 +28,14 @@ from .cartesian_delta_teleop import CartesianDeltaTeleop, frax, jax, jnp  # noqa
 from .urdf_tools import extract_arm_chain_urdf, resolve_baxter_urdf  # noqa: E402
 
 SUFFIXES = CartesianDeltaTeleop.JOINT_SUFFIXES
-LABELS = {'dls': 'DLS', 'sns': 'SNS with posture bias'}
-COLORS = {'dls': '#2a78d6', 'sns': '#eb6834'}  # validated categorical slots 1 and 2 (dataviz palette)
+LABELS = {'dls': 'DLS', 'bounded': 'Bounded DLS'}
+COLORS = {'dls': '#2a78d6', 'bounded': '#eb6834'}  # validated categorical slots 1 and 2 (dataviz palette)
+SOLVERS = {
+    'dls': 'damped least squares, minimum norm, the redundant elbow left free; at a joint limit the\n'
+    '  whole motion is scaled to a stop.',
+    'bounded': 'the same least-squares objective with the joint limits as hard bounds (a bounded-variable\n'
+    '  least-squares solve), so a joint at its limit saturates and the rest of the motion continues.',
+}
 REFERENCE = '#52514e'  # commanded path, neutral
 BAND = '#f1f1ef'
 MUTED = '#6f6e69'
@@ -316,12 +322,7 @@ trajectory at 0.1 m/s with the start orientation held, using the same servo as V
 input (goal pose, gain 5/s, path velocity as feedforward). The only difference between runs is the
 velocity IK:
 
-* **DLS**: damped least squares, minimum norm, the redundant elbow left free; at a joint limit the
-  whole motion is scaled to a stop.
-* **SNS with posture bias**: Rethink's SNS-IK (Flacco, De Luca, Khatib) with its nullspace bias task
-  pulling toward the untuck posture at 1/s; joints saturate at their limits and the remaining
-  motion is resolved in the nullspace. Same joint velocity limits and e1 limit as DLS
-  (`config/sns_joint_limits.yaml`).
+{chr(10).join(f'* **{LABELS[k]}**: {SOLVERS[k]}' for k in dict.fromkeys(r['ik'] for r in runs))}
 
 Phases: a 20 cm square three times, 20 cm down and up, a reach 35 cm forward and 30 cm out
 (9 cm past where the e1 elbow limit stops the arm, clear of the torso) and back, a 10 cm radius
@@ -333,9 +334,8 @@ circle twice. Contacts during each run
 {chr(10).join(table)}
 
 Over the whole run, the joint deviation from home at the end is
-{whole[LABELS['dls']]['joint deviation from home at end (deg)']:.1f} deg with DLS and
-{whole[LABELS['sns']]['joint deviation from home at end (deg)']:.1f} deg with SNS
-(the hand returns to the start in both).
+{', '.join(f'{whole[label]["joint deviation from home at end (deg)"]:.1f} deg with {label}' for label in whole)}
+(the hand returns to the start in each).
 
 ## Figures
 
