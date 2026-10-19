@@ -26,6 +26,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 import errno
+import time
 
 import baxter_dataflow
 from baxter_core_msgs.msg import (
@@ -49,17 +50,24 @@ class DigitalIO(object):
       - read current output state
     """
 
-    def __init__(self, component_id: str, node: Node):
+    def __init__(self, component_id: str, node: Node, timeout: float = 2.0, debounce: float = 0.0):
         """
         Constructor.
 
         @param component_id: unique id of the digital component
+        @param timeout: seconds to wait for the first state; 0 does not wait, and state is None
+            until it arrives (e.g. a simulator that publishes no IO)
+        @param debounce: seconds a press must follow the last release to signal state_changed;
+            Baxter's navigator buttons bounce on release (0.2 s is enough)
         """
         self._node = node
         self._id = component_id
         self._component_type = 'digital_io'
         self._is_output = False
         self._state = None
+        self._debounce = float(debounce)
+        self._released = -float('inf')  # when the state last went False
+        self._pub_output = None
         self._callback_group = MutuallyExclusiveCallbackGroup()
 
         self.state_changed = baxter_dataflow.Signal()
@@ -81,16 +89,14 @@ class DigitalIO(object):
             callback_group=self._callback_group,
         )
 
-        baxter_dataflow.wait_for(
-            self._node,
-            lambda: self._state is not None,
-            timeout=2.0,
-            timeout_msg=f'Failed to get current digital_io state from {topic_base}',
-        )
-
-        # check if output-capable before creating publisher
-        if self._is_output:
-            self._pub_output = self._node.create_publisher(DigitalOutputCommand, type_ns + '/command', qos)
+        self._command_topic, self._qos = type_ns + '/command', qos
+        if timeout:
+            baxter_dataflow.wait_for(
+                self._node,
+                lambda: self._state is not None,
+                timeout=timeout,
+                timeout_msg=f'Failed to get current digital_io state from {topic_base}',
+            )
 
     def _on_io_state(self, msg):
         """
@@ -102,8 +108,13 @@ class DigitalIO(object):
         old_state = self._state
         self._state = new_state
 
-        # trigger signal if changed
+        # trigger signal if changed, a press only once debounce has passed since the last release
         if old_state is not None and old_state != new_state:
+            now = time.monotonic()
+            if not new_state:
+                self._released = now
+            if new_state and now - self._released < self._debounce:
+                return
             self.state_changed(new_state)
 
     @property
@@ -144,6 +155,8 @@ class DigitalIO(object):
         """
         if not self._is_output:
             raise IOError(errno.EACCES, f'Component is not an output [{self._component_type}: {self._id}]')
+        if self._pub_output is None:
+            self._pub_output = self._node.create_publisher(DigitalOutputCommand, self._command_topic, self._qos)
         cmd = DigitalOutputCommand()
         cmd.name = self._id
         cmd.value = value
