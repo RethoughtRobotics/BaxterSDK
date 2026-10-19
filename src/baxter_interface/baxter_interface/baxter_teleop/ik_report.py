@@ -310,7 +310,7 @@ Runs: {', '.join(f'`{r["bag"]}` ({LABELS[r["ik"]]})' for r in runs)}. Code versi
 
 ## Setup
 
-BaxFlow-T MuJoCo Baxter on the real robot's ROS 2 interface, no objects in reach (`--empty`), left
+The baxter_mujoco simulator on the real robot's ROS 2 interface, no objects in reach (`--empty`), left
 arm, starting from the untuck pose. `trajectory_test` drives the teleop through a scripted TCP
 trajectory at 0.1 m/s with the start orientation held, using the same servo as VR and keyboard
 input (goal pose, gain 5/s, path velocity as feedforward). The only difference between runs is the

@@ -126,7 +126,7 @@ qdot = J⁺·v        (damped least squares, minimum norm)
 
 as with SNS-IK. A posture pull toward a fixed rest posture leaked into the hand
 motion: from the untuck pose, 0.1 m/s key moves came out 38-55 mm off-axis per
-100 mm in simulation (BaxFlow-T `launch_sim.sh --ros`), against ~1 mm without it.
+100 mm in simulation (`src/baxter_mujoco/launch_sim.sh --ros`), against ~1 mm without it.
 
 ## Safety limits
 

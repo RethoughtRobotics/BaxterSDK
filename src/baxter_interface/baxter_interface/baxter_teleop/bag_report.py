@@ -80,7 +80,7 @@ def load(bag):
 
 
 def save_joints(bag, data):
-    """<bag>/joints.npz for BaxFlow-T's contact replay (baxflow.contacts)."""
+    """<bag>/joints.npz for baxter_mujoco's contact replay (baxter_mujoco.contacts)."""
     np.savez(
         os.path.join(bag, 'joints.npz'),
         t=data['js'][:, 0],
