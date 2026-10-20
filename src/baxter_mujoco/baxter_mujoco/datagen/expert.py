@@ -20,7 +20,8 @@ before it as the dataset export does, and every frame's expert chunk, in <bag>/e
   tcp        (N, 7) TCP position and quaternion [x y z w], base frame
   gripper    (N,) 0 open .. 1 closed (1 - opening / 100)
   cup, container  (N, 7) base-frame poses from /sim/objects
-  chunk      (N, HORIZON, 8) the expert's chunk; NaN where it has no plan (valid False)
+  chunk      (N, horizon, 8) the expert's chunk, HORIZON + LEAD steps by default (a chunk of labels
+             led by LEAD steps); NaN where it has no plan (valid False)
   valid      (N,) bool
   home       (7,) the TCP at the first frame (the attempt starts at home), where every plan ends
 """
@@ -36,6 +37,8 @@ from baxter_mujoco.datagen.motion import min_jerk, move_duration
 
 FPS = 25.0  # the datasets' rate
 HORIZON = 32  # steps, the sim checkpoints' chunk
+# steps (640 ms) the sim checkpoints' labels lead the TCP: a chunk of HORIZON labels needs this many more
+LEAD = 16
 LAG = 0.0  # s, the measured TCP behind the expert's target: none beyond STRETCH in the fit
 # PolicyArm streams its targets with a sleep of 1 / RATE per step, so its moves and holds take longer
 # than planned by this factor (fitted on the demonstrations)
@@ -274,7 +277,9 @@ def main():
     parser.add_argument('bags', nargs='+', help='bag directories (the evaluator --bags writes seed_NNNN)')
     parser.add_argument('--task', choices=sorted(TASKS), default='cup')
     parser.add_argument('--arm', default='left')
-    parser.add_argument('--horizon', type=int, default=HORIZON)
+    parser.add_argument(
+        '--horizon', type=int, default=HORIZON + LEAD, help='steps per chunk (default: a chunk and its lead)'
+    )
     parser.add_argument('--out', default='expert.npz', help='file name inside each bag directory')
     parser.add_argument('--force', action='store_true', help='rewrite an existing one')
     args = parser.parse_args()
