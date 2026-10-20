@@ -20,8 +20,13 @@ TABLE_TOP = LAB['table']['top']  # m, base frame
 TABLE_CENTER, TABLE_HALF = LAB['table']['center'], LAB['table']['half']  # m, base frame
 CUP_RADIUS, CUP_HEIGHT, CUP_WALL = 0.03, 0.09, 0.004  # m
 CONTAINER_HALF, CONTAINER_HEIGHT, CONTAINER_WALL = 0.06, 0.05, 0.005  # m: 12 cm square inside
-CUP_RANGE = ((0.46, 0.95), (-0.20, 0.44))  # m, base frame: where real cups were grasped
-CONTAINER_RANGE = ((0.42, 0.94), (-0.28, 0.36))  # m, base frame: where real cups were released
+# Where real cups were grasped (x 0.46 to 0.95, y -0.20 to 0.44) and released (x 0.42 to 0.94, y -0.28
+# to 0.36), capped at the sim arm's reach: its fingers are 4.5 cm shorter than the real ones, and every
+# failed attempt of the first 60-episode run had the cup (x 0.872 or more) or the container (0.883 or
+# more) beyond 0.87 m.
+REACH_X = 0.87  # m
+CUP_RANGE = ((0.46, REACH_X), (-0.20, 0.44))  # m, base frame
+CONTAINER_RANGE = ((0.42, REACH_X), (-0.28, 0.36))  # m, base frame
 MIN_SEPARATION = 0.18  # m between cup and container centres
 DEFAULT_CUP, DEFAULT_CONTAINER = (0.85, 0.17), (0.69, -0.12)  # m, base frame: the real medians
 BLUE, RED = '0.12 0.32 0.85 1', '0.85 0.12 0.10 1'

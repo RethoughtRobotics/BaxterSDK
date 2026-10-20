@@ -20,12 +20,18 @@ def test_slow_moves_take_longer():
     assert move_duration(HOME, goal, slow=True) > move_duration(HOME, goal)
 
 
-def test_layouts_reproducible_and_inside_real_ranges():
+def test_layouts_reproducible_and_inside_reach():
     a, b = CupTask().sample(np.random.default_rng(3)), CupTask().sample(np.random.default_rng(3))
     assert a == b
     (x0, x1), (y0, y1) = scenes.CUP_RANGE
     assert x0 <= a[0] <= x1 and y0 <= a[1] <= y1
     assert np.hypot(a[0] - a[2], a[1] - a[3]) >= scenes.MIN_SEPARATION
+
+
+def test_layouts_never_beyond_reach():
+    rng = np.random.default_rng(0)
+    layouts = np.array([CupTask().sample(rng) for _ in range(500)])
+    assert layouts[:, 0].max() <= scenes.REACH_X and layouts[:, 2].max() <= scenes.REACH_X
 
 
 def test_plan_ends_at_home_and_grasps_the_wall():
