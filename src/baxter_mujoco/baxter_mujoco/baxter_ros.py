@@ -113,6 +113,7 @@ class Gripper:
     """
 
     FINGER = 0.0115  # m, finger joint travel either side of centre (MuJoCo actuator, sim model)
+    URDF_STROKE = 0.020833  # m, the real gripper's {l,r}_finger_joint travel (rethink_electric_gripper.xacro)
     FULL_STROKE_S = 0.5
     ID = 65538
 
@@ -169,8 +170,17 @@ class Gripper:
         r = self.FINGER * (1.0 - 2.0 * self.command_pct / 100.0)  # +FINGER closed, -FINGER open
         return [r, -r]
 
+    def position(self, d):
+        """Measured opening, 0 (closed) .. 100 (open)."""
+        return float(np.clip(100.0 * (self.FINGER - d.qpos[self.joint]) / (2 * self.FINGER), 0.0, 100.0))
+
+    def finger_joints(self, d):
+        """The real robot's l and r finger joint positions at the measured opening: l opens positive."""
+        travel = self.URDF_STROKE * self.position(d) / 100.0
+        return [travel, -travel]
+
     def publish(self, d, stamp):
-        position = float(np.clip(100.0 * (self.FINGER - d.qpos[self.joint]) / (2 * self.FINGER), 0.0, 100.0))
+        position = self.position(d)
         moving = abs(self.target - self.command_pct) > 0.5
         blocked = abs(position - self.command_pct) > self.dead_zone  # fingers held apart by an object
         command, sender, sequence = self.ack
@@ -381,7 +391,8 @@ class SimBaxter:
         stamp = self.node.get_clock().now().to_msg()
         step = self.head_speed * DT_PUBLISH
         self.head_pan += float(np.clip(self.head_target - self.head_pan, -step, step))
-        name, position = ['head_pan', *FINGER_JOINTS], [self.head_pan] + [0.0] * 4
+        fingers = [q for gripper in self.grippers.values() for q in gripper.finger_joints(d)]
+        name, position = ['head_pan', *FINGER_JOINTS], [self.head_pan, *fingers]
         velocity, effort = [0.0] * 5, [0.0] * 5
         Rb, pb = d.xmat[self.base].reshape(3, 3), d.xpos[self.base]
         for side, arm in self.arms.items():
