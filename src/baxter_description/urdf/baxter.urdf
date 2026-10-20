@@ -555,6 +555,9 @@
       <geometry>
         <mesh filename="package://rethink_ee_description/meshes/electric_gripper/electric_gripper_base.STL" />
       </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
     </visual>
     <inertial>
       <origin rpy="0 0 0" xyz="0.000000 0.000000 0.000000"/>
@@ -981,6 +984,9 @@
       <geometry>
         <mesh filename="package://rethink_ee_description/meshes/electric_gripper/electric_gripper_base.STL" />
       </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
     </visual>
     <inertial>
       <origin rpy="0 0 0" xyz="0.000000 0.000000 0.000000"/>
@@ -1559,6 +1565,9 @@
       <geometry>
         <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/extended_narrow.STL" />
       </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
     </visual>
     <collision>
       <origin rpy="0 0 -3.141592653589793" xyz="0 0.01725 0.0615" />
@@ -1579,6 +1588,9 @@
       <geometry>
         <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/paddle_tip.STL" />
       </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
     </visual>
     <collision>
       <origin rpy="0 0 3.141592653589793" xyz="0 -0.0045 -0.015" />
@@ -1598,6 +1610,9 @@
       <geometry>
         <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/extended_narrow.STL" />
       </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
     </visual>
     <collision>
       <origin rpy="0 0 -0.0" xyz="0 -0.01725 0.0615" />
@@ -1618,6 +1633,9 @@
       <geometry>
         <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/paddle_tip.STL" />
       </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
     </visual>
     <collision>
       <origin rpy="0 0 0.0" xyz="0 0.0045 -0.015" />
@@ -1654,6 +1672,9 @@
       <geometry>
         <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/extended_narrow.STL" />
       </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
     </visual>
     <collision>
       <origin rpy="0 0 -3.141592653589793" xyz="0 0.01725 0.0615" />
@@ -1674,6 +1695,9 @@
       <geometry>
         <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/half_round_tip.STL" />
       </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
     </visual>
     <collision>
       <origin rpy="0 0 3.141592653589793" xyz="0 -0.0045 -0.015" />
@@ -1693,6 +1717,9 @@
       <geometry>
         <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/extended_narrow.STL" />
       </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
     </visual>
     <collision>
       <origin rpy="0 0 -0.0" xyz="0 -0.01725 0.0615" />
@@ -1713,6 +1740,9 @@
       <geometry>
         <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/half_round_tip.STL" />
       </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
     </visual>
     <collision>
       <origin rpy="0 0 0.0" xyz="0 0.0045 -0.015" />
