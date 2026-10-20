@@ -11,7 +11,9 @@ A seed's attempt has the layout and lighting the generator gives that seed's fir
 engaged through the runtime's engage service (as its scripts/start) for at most --timeout s, stopped at
 success or a stall, released and sent home. One JSON line per attempt (outcome.py); seeds already in
 --out are skipped, so a rerun resumes. With --bags, a bag per attempt of BAG_TOPICS (and the policy's
-cameras with --bag-images), from just before the engage to the release.
+cameras with --bag-images), from just before the engage to the release, its chunks zstd compressed
+(the cameras' 2 GB of an attempt to about a ninth). The expert's chunk at every frame of a bag:
+python -m baxter_mujoco.datagen.expert.
 """
 
 import argparse
@@ -119,7 +121,7 @@ class Evaluator:
         recorder = None
         if bag:
             recorder = subprocess.Popen(
-                ['ros2', 'bag', 'record', '-o', str(bag), *bag_topics],
+                ['ros2', 'bag', 'record', '-o', str(bag), '--storage-preset-profile', 'zstd_fast', *bag_topics],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
