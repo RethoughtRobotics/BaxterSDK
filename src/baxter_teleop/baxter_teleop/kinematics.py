@@ -94,6 +94,22 @@ class ArmKinematics:
         J = pin.computeFrameJacobian(self.model, self._data, self._full(q), self._wrist, pin.LOCAL_WORLD_ALIGNED)
         return J[:, self._iv]
 
+    def inverse_dynamics(self, q, qd, qdd):
+        """Joint torques (7,) for this motion, without gravity: M(q) qdd + C(q, qd) qd. Gravity is left
+        out because Baxter compensates it itself in torque mode (as the sim does)."""
+        v, a = np.zeros(self.model.nv), np.zeros(self.model.nv)
+        v[self._iv], a[self._iv] = qd, qdd
+        q_full = self._full(q)
+        tau = pin.rnea(self.model, self._data, q_full, v, a) - pin.computeGeneralizedGravity(
+            self.model, self._data, q_full
+        )
+        return tau[self._iv]
+
+    def mass_matrix(self, q):
+        """7 x 7 joint-space inertia M(q) of the arm."""
+        M = pin.crba(self.model, self._data, self._full(q))[np.ix_(self._iv, self._iv)]
+        return np.triu(M) + np.triu(M, 1).T  # crba fills the upper triangle
+
     def tcp(self, q):
         """(position (3,), rotation matrix (3, 3)) of the TCP in the base frame at joints q."""
         return tcp_pose(self.wrist_transform(q), self.tcp_offset)

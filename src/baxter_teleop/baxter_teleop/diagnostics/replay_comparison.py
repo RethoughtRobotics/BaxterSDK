@@ -5,6 +5,7 @@ write_report(out, demo, runs, arms, settings) writes into `out`:
                  the replay with the demo, and the measured joint torque difference
   summary.yaml   the same numbers, and the replay settings
   <arm>_joints.png, <arm>_tcp_error.png, <arm>_torque.png
+  replay_<mode>.npz  each run's log: per arm t, q, qd, effort, wrench_t, wrench
 Errors compare the replay at each demo instant (replay time x speed = demo time). The TCP is the
 URDF gripper frame for both, from the same kinematics, so it measures the motion, not the TCP offset.
 """
@@ -59,6 +60,8 @@ def write_report(out, demo, runs, arms, settings):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     speed = float(settings.get('speed', 1.0))
+    for mode, run in runs.items():  # the raw logs, for analysis beyond this report
+        np.savez(out / f'replay_{mode}.npz', **{f'{arm}_{k}': v for arm, d in run.items() for k, v in d.items()})
     summary, lines = {'settings': settings, 'results': {}}, []
     colors = {'pose': 'tab:blue', 'force': 'tab:orange'}
     for arm in arms:
