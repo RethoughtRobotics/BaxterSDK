@@ -1,6 +1,6 @@
 """Teleop of one Baxter arm: servo its TCP toward a target pose, through differential IK.
 
-Each control cycle (~76 Hz on the sim, 2026-10-19) a target (inputs/: keyboard, VR, a policy through VRTarget) gives a
+Each control cycle (~75 Hz on the sim, 2026-10-19; ~69 with frax) a target (inputs/: keyboard, VR, a policy through VRTarget) gives a
 base-frame TCP twist toward its goal, the IK (differential_ik.py) turns it into joint velocities,
 and an output stage (outputs/) sends them to the arm. `python -m baxter_teleop` runs it (cli.py).
 """
@@ -15,7 +15,6 @@ import baxter_interface
 from baxter_external_devices.getch import getch
 
 from .differential_ik import BoundedLeastSquaresIK, DampedLeastSquaresIK
-from .gripper import GripperControl
 from .inputs.cuff import Cuff
 from .inputs.keyboard import KeyboardTarget, twist_from_key
 from .inputs.vr import VRController
@@ -54,6 +53,7 @@ class Teleop:
     # After a position-mode move Baxter ignores velocity commands until ~1.4-1.9 s after it ends
     # (rollouts Clean-SmolVLA*, ACT_Rollout; 20 ms otherwise): wait that out at home.
     HOME_SETTLE = 2.0  # s
+    GRIPPER_VELOCITY = 80.0  # % of the electric gripper's max speed (SDK default 50)
     DT = 0.01  # s: the key read timeout each cycle, and the IK's step
 
     def __init__(
@@ -105,7 +105,11 @@ class Teleop:
         self.limb.set_joint_position_speed(1.0)
         self.key_source = getch  # (timeout) -> character or None; key_replay swaps in recorded keys
         self.telemetry = Telemetry(self.node, arm, self.joint_names)
-        self.gripper = GripperControl(self.node, arm, gripper_step)
+        self.gripper = self._connect_gripper(arm)  # baxter_interface.Gripper, or None without one
+        self.gripper_step = float(gripper_step)  # % per [ or ] keypress
+        self.drive_gripper = True  # False (--no-gripper): the VR trigger and going home leave it to the cuff buttons
+        self._gripper_target = None  # last commanded opening (%), where a key step starts from
+        self._vr = None  # inputs.vr.VRController while VR teleop runs
 
         self.kinematics = ArmKinematics(arm)
         # The TCP offset in the wrist frame: teleop.yaml's tcp.offset, or [0, 0, tcp_offset] if given.
@@ -163,6 +167,44 @@ class Teleop:
         )
         self._cuff = None  # inputs.cuff.Cuff while VR teleop runs
         self._home_requested = False
+
+    def _connect_gripper(self, arm):
+        try:
+            gripper = baxter_interface.Gripper(arm, node=self.node)
+        except Exception as exc:
+            self.node.get_logger().warn(f'Gripper control unavailable: {exc}')
+            return None
+        if gripper.type() != 'electric':
+            self.node.get_logger().info(f'Gripper control only supports electric grippers; detected {gripper.type()}.')
+            return gripper
+        gripper.set_velocity(self.GRIPPER_VELOCITY)
+        if gripper.calibrated():
+            self._gripper_target = float(gripper.position())
+        else:
+            self.node.get_logger().info('Gripper is not calibrated; press G before using the gripper keys.')
+        return gripper
+
+    @property
+    def _gripper_ready(self):
+        return self.gripper is not None and self.gripper.type() == 'electric' and self.gripper.calibrated()
+
+    def _command_gripper(self, opening):
+        """Command the opening (%: 0 closed, 100 open), if the gripper is ready."""
+        if self._gripper_ready:
+            self.gripper.command_position(opening, block=False)
+            self._gripper_target = float(opening)
+
+    def _step_gripper(self, direction):
+        """Open (+1) or close (-1) by one keyboard step from the last command."""
+        if not self._gripper_ready:
+            self.node.get_logger().warn('The gripper is unavailable or not calibrated (press G).')
+            return
+        start = self._gripper_target if self._gripper_target is not None else float(self.gripper.position())
+        self._command_gripper(float(np.clip(start + direction * self.gripper_step, 0.0, 100.0)))
+
+    def _calibrate_gripper(self):
+        if self.gripper is not None and self.gripper.calibrate(block=True):
+            self._gripper_target = float(self.gripper.position())
 
     @property
     def tcp_offset(self):
@@ -235,7 +277,10 @@ class Teleop:
         """Open the gripper (if enabled) and move to the untuck pose (as tuck_arms -u) with a slow,
         blocking move."""
         self._hold()
-        self.gripper.open_for_home()
+        if self.drive_gripper and self._gripper_ready:
+            self._command_gripper(100.0)
+            if self._vr is not None:  # the trigger filter restarts open
+                self._vr.restart_opening(100.0)
         self.node.get_logger().info('Moving to the untuck pose...')
         self.limb.set_joint_position_speed(0.3)
         try:
@@ -256,11 +301,11 @@ class Teleop:
     def _handle_key(self, key):
         """Gripper and home keys, in every input mode; returns whether `key` was one."""
         if key == 'g':
-            self.gripper.calibrate()
+            self._calibrate_gripper()
         elif key == '[':
-            self.gripper.step_by(-1)
+            self._step_gripper(-1)
         elif key == ']':
-            self.gripper.step_by(+1)
+            self._step_gripper(+1)
         elif key == 'h':
             self.go_home()
         else:
@@ -354,10 +399,10 @@ class Teleop:
             'B, H or the right navigator OK home, ESC quit. By hand: squeeze the cuff to move, its '
             'dash/circle buttons close/open'
         )
-        controller = VRController(self.node, trigger_topic, b_button_topic)
-        if self.gripper.electric and not self.gripper.calibrated:
+        controller = self._vr = VRController(self.node, trigger_topic, b_button_topic)
+        if self.gripper is not None and self.gripper.type() == 'electric' and not self.gripper.calibrated():
             self.node.get_logger().info('Calibrating the gripper...')
-            self.gripper.calibrate()
+            self._calibrate_gripper()
         if home_button:  # Baxter's navigator buttons bounce on release: a press counts 0.2 s after one
             self._home_button = baxter_interface.DigitalIO(home_button, self.node, timeout=0, debounce=0.2)
             self._home_button.state_changed.connect(self._on_home_button)
@@ -366,10 +411,14 @@ class Teleop:
 
         def on_cycle():
             nonlocal cuff_was_squeezed
-            self.gripper.follow_trigger(controller.trigger)
-            action = self._cuff.take_button()
-            if action is not None:
-                self.gripper.cuff_button(action)
+            if self.drive_gripper and self._gripper_ready:
+                opening = controller.gripper_opening()
+                if opening is not None:
+                    self._command_gripper(opening)
+            action = self._cuff.take_button()  # open or close fully, also with --no-gripper
+            if action is not None and self.gripper is not None and self.gripper.calibrated() and self.gripper.ready():
+                (self.gripper.close if action == 'close' else self.gripper.open)()
+                self._gripper_target = 0.0 if action == 'close' else 100.0
             # On release of the cuff Baxter's position hold would pull the arm back to where it was
             # held before. Not streaming (no stroke under way): hold where the hand left it.
             squeezed = self._cuff.squeezed

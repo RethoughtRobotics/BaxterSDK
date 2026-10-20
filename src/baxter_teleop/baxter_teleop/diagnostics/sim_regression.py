@@ -12,7 +12,8 @@ right arm, and drives the real entry point, then measures what the arm did:
           TCP tracking error to the servo goal (rms, max) and the elbow roll (e0) range
   vr      `python -m baxter_teleop --input vr` with its defaults, driven by a fake libsurvive_ros2
           controller (this module): a 10 cm stroke, a release, the trigger, then B. Measures the
-          TCP stroke, the drift while released, and the distance from the start pose after B (home)
+          TCP stroke, the drift while released, the gripper opening the trigger set (0.3 pulled:
+          70 %), and the distance from the start pose after B (home)
   keys    `python -m baxter_teleop` (keyboard) with keys typed into its terminal: W for 1 s, then
           A for 1 s. Measures the TCP's x and y travel
 
@@ -57,6 +58,7 @@ class Probe:
 
     def __init__(self):
         import rclpy
+        from baxter_core_msgs.msg import EndEffectorState
         from geometry_msgs.msg import PoseStamped
         from rclpy.executors import SingleThreadedExecutor
         from sensor_msgs.msg import JointState
@@ -66,6 +68,13 @@ class Probe:
         rclpy.init()
         self.node = rclpy.create_node('sim_regression')
         self.tcp, self.goals, self.e0 = [], [], []
+        self.gripper = None  # the gripper's measured opening (%)
+        self.node.create_subscription(
+            EndEffectorState,
+            f'/robot/end_effector/{ARM}_gripper/state',
+            lambda m: setattr(self, 'gripper', m.position),
+            10,
+        )
         self.node.create_subscription(PoseStamped, f'/teleop/{ARM}/tcp', self._on_tcp, 10)
         self.node.create_subscription(PoseStamped, f'/teleop/{ARM}/goal', self._on_goal, 10)
         self.node.create_subscription(JointState, '/robot/joint_states', self._on_joints, 10)
@@ -183,7 +192,7 @@ class Terminal:
         os.write(self._master, text.encode())
 
     def hold_key(self, key, seconds, rate=20.0):
-        """Type key repeatedly, as a held key's auto-repeat does, slower than the control loop (~76 Hz)
+        """Type key repeatedly, as a held key's auto-repeat does, slower than the control loop (~75 Hz)
         reads keys, so none queue up and stretch the press."""
         end = time.monotonic() + seconds
         while time.monotonic() < end:
@@ -244,6 +253,7 @@ def scenario_vr(probe):
         probe.play_vr(2.0, lambda t: 0.1)  # frozen pose: released, the arm holds
         held = probe.latest_tcp()
         goals = len(probe.goals)
+        opening = probe.gripper  # trigger 0.3 the whole time: 70 % open
         probe.press_b()
         time.sleep(15)  # the home move (0.3 speed) and its settle
         home = probe.latest_tcp()
@@ -254,6 +264,7 @@ def scenario_vr(probe):
         'hold_drift_mm': 1000.0 * float(np.linalg.norm(held - stroked)),
         'goals_during_stroke': float(goals),
         'home_from_start_mm': 1000.0 * float(np.linalg.norm(home - start)),
+        'gripper_opening_pct': float('nan') if opening is None else float(opening),
     }
 
 
