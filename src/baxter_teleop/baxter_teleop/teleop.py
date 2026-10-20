@@ -340,12 +340,16 @@ class Teleop:
                 # /teleop/{arm}/tcp stays the measured TCP; the servo closes on _servo_q().
                 self.telemetry.tcp(tcp_position, tcp_rotation)
                 if self._cuff is not None and self._cuff.squeezed:
-                    # Cuff squeezed: the operator guides the arm in Baxter's zero-g mode. Command
-                    # nothing (raw output bypasses Baxter's cuff override, so a running stream would
-                    # hold the arm against the hand), and re-anchor the target so the next stroke or
-                    # policy step continues from where the hand leaves the arm instead of pulling it back.
-                    if self.raw_output is not None:
-                        self.raw_output.stop()
+                    # Cuff squeezed: the operator guides the arm in Baxter's zero-g mode. The squeeze
+                    # releases the position loop, but the joint controller keeps applying the last
+                    # command's torque (in raw_id, the motion's inverse dynamics feedforward) until
+                    # the command timeout, which flings the free arm. A position hold at the current
+                    # angles replaces that command at once, as at a stroke end; the cuff keeps the
+                    # arm in zero-g over it (reports/2026-10-20-cuff-takeover). Then command nothing,
+                    # and re-anchor the target so the next stroke or policy step continues from where
+                    # the hand leaves the arm instead of pulling it back.
+                    if moving:
+                        self._hold()
                     target.reset()
                     moving = False
                     continue
