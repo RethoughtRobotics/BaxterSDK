@@ -11,7 +11,7 @@ import sys
 import mujoco
 import numpy as np
 
-from baxter_mujoco.baxter_ros import remove_table
+from baxter_mujoco.baxter_ros import remove_table, torso_ignores_arms
 from baxter_mujoco.sim import make_env
 
 TOUCH = 0.002  # m: closer than this counts as contact (recorded poses are where physics already pushed things apart)
@@ -27,6 +27,7 @@ def main(path):
             d.qpos[m.jnt_qposadr[j] : m.jnt_qposadr[j] + 3] = [0.0, -3.0, 0.2]
     if 'table' in data and not bool(data['table']):  # the run had no table (--no-table)
         remove_table(m)
+    torso_ignores_arms(m)
     adr = [m.jnt_qposadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f'robot0_{n}')] for n in data['names']]
 
     def body(geom):
