@@ -1,23 +1,23 @@
-"""The cup scene: the BlueCupRedContainer task on a table at the real robot's height.
+"""The cup scene: the BlueCupRedContainer task in the lab where it was demonstrated.
 
-Measured on the 56 real demonstrations of BlueCupRedContainer_kin_pose (teleop TCP, robot base frame):
-the gripper closes at z = -0.045 m (median, std 0.01) with its fingertips just above the tabletop in
-the wrist camera, so the table top is put at z = -0.06 m, 6.4 cm above robosuite's default table. The
-cup was grasped at x 0.46 to 0.95 m, y -0.20 to 0.44 m and released at x 0.42 to 0.94 m, y -0.28 to
-0.36 m; the table is enlarged to cover both. The cup is 6 cm across, the widest the sim gripper's
-fingertips (7.7 cm apart, open) close around with their pads, and 9 cm tall.
+The lab (its table and third_eye camera) is data, lab.toml; the task's objects and ranges are here,
+from the 56 real demonstrations of BlueCupRedContainer_kin_pose. The cup is 6 cm across and 9 cm
+tall, wider than the gripper opens (4.2 cm), so it is held by its wall.
 
 Poses are given in the robot base frame, as the teleop and the recorded datasets use it.
 """
 
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 import mujoco
 import numpy as np
+import tomllib
+from scipy.spatial.transform import Rotation
 
-TABLE_TOP = -0.06  # m, base frame
-TABLE_CENTER = (0.70, 0.08)  # m, base frame
-TABLE_HALF = (0.45, 0.62, 0.025)  # m: x 0.25 to 1.15, y -0.54 to 0.70
+LAB = tomllib.loads((Path(__file__).parent / 'lab.toml').read_text())
+TABLE_TOP = LAB['table']['top']  # m, base frame
+TABLE_CENTER, TABLE_HALF = LAB['table']['center'], LAB['table']['half']  # m, base frame
 CUP_RADIUS, CUP_HEIGHT, CUP_WALL = 0.03, 0.09, 0.004  # m
 CONTAINER_HALF, CONTAINER_HEIGHT, CONTAINER_WALL = 0.06, 0.05, 0.005  # m: 12 cm square inside
 CUP_RANGE = ((0.46, 0.95), (-0.20, 0.44))  # m, base frame: where real cups were grasped
@@ -25,6 +25,14 @@ CONTAINER_RANGE = ((0.42, 0.94), (-0.28, 0.36))  # m, base frame: where real cup
 MIN_SEPARATION = 0.18  # m between cup and container centres
 DEFAULT_CUP, DEFAULT_CONTAINER = (0.85, 0.17), (0.69, -0.12)  # m, base frame: the real medians
 BLUE, RED = '0.12 0.32 0.85 1', '0.85 0.12 0.10 1'
+# Lighting randomisation for data generation, around the lab's (lab.toml): per light a position offset
+# (which moves its shadows), an intensity scale, a colour tint and whether it casts shadows; and the
+# ambient level. /sim/lighting carries [ambient scale, then per light dx dy dz scale r g b shadow].
+LIGHT_OFFSET = (0.6, 0.6, 0.4)  # m, +- in base x y z
+LIGHT_SCALE = (0.5, 4.0)  # the lab's spots are weak (mostly ambient): up to hard shadows
+LIGHT_TINT = (0.85, 1.15)  # per colour channel
+LIGHT_SHADOW_P = 0.8  # probability a light casts shadows
+AMBIENT_SCALE = (0.5, 1.1)
 
 
 def _f(values):
@@ -45,6 +53,7 @@ def _cup(name):
         rgba=BLUE,
         friction='1.5 0.01 0.001',
         density='600',
+        group='1',
     )
     n = 16
     half_width = CUP_RADIUS * np.tan(np.pi / n) + 0.001
@@ -62,6 +71,7 @@ def _cup(name):
             rgba=BLUE,
             friction='1.5 0.01 0.001',
             density='600',
+            group='1',
         )
     return body
 
@@ -72,7 +82,14 @@ def _container(name):
     ET.SubElement(body, 'freejoint', name=f'{name}_joint')
     h, t, H = CONTAINER_HALF, CONTAINER_WALL, CONTAINER_HEIGHT
     ET.SubElement(
-        body, 'geom', name=f'{name}_floor', type='box', size=_f([h + t, h + t, t / 2]), pos=_f([0, 0, t / 2]), rgba=RED
+        body,
+        'geom',
+        name=f'{name}_floor',
+        type='box',
+        size=_f([h + t, h + t, t / 2]),
+        pos=_f([0, 0, t / 2]),
+        rgba=RED,
+        group='1',
     )
     for i, (x, y, sx, sy) in enumerate((
         (h + t / 2, 0, t / 2, h + t),
@@ -81,9 +98,115 @@ def _container(name):
         (0, -h - t / 2, h, t / 2),
     )):
         ET.SubElement(
-            body, 'geom', name=f'{name}_wall{i}', type='box', size=_f([sx, sy, H / 2]), pos=_f([x, y, H / 2]), rgba=RED
+            body,
+            'geom',
+            name=f'{name}_wall{i}',
+            type='box',
+            size=_f([sx, sy, H / 2]),
+            pos=_f([x, y, H / 2]),
+            rgba=RED,
+            group='1',
         )
     return body
+
+
+def _camera(name, cam, pb, Rb):
+    """A pinhole camera from a calibration: base-frame pose and camera_info intrinsics, in pixels."""
+    (w, h), (fx, fy), (cx, cy) = cam['size'], cam['focal'], cam['principal']
+    pixel = 1e-5  # m, any pitch: MuJoCo uses focal / pitch
+    R = Rb @ Rotation.from_quat(cam['quat'], scalar_first=True).as_matrix()
+    return ET.Element(
+        'camera',
+        name=name,
+        pos=_f(pb + Rb @ np.array(cam['pos'])),
+        xyaxes=_f([*R[:, 0], *R[:, 1]]),
+        resolution=f'{w} {h}',
+        sensorsize=_f([w * pixel, h * pixel]),
+        focal=_f([fx * pixel, fy * pixel]),
+        # MuJoCo's principal point is an offset from the image centre, y up; camera_info's is from
+        # the top-left corner, y down
+        principal=_f([(cx - w / 2) * pixel, (h / 2 - cy) * pixel]),
+    )
+
+
+def _floor(root, floor):
+    """The floor's texture as a builtin speckle."""
+    asset = root.find('asset')
+    name = next(m for m in asset.iter('material') if m.get('name') == 'floorplane').get('texture')
+    for texture in [t for t in asset.iter('texture') if t.get('name') == name]:
+        asset.remove(texture)
+    ET.SubElement(
+        asset,
+        'texture',
+        name=name,
+        type='2d',
+        builtin='flat',
+        mark='random',
+        rgb1=_f(floor['rgb1']),
+        rgb2=_f(floor['rgb2']),
+        random=f'{floor["random"]}',
+        width='512',
+        height='512',
+    )
+
+
+def _lights(root, lighting, pb, Rb):
+    """The lab's lights in place of robosuite's, and its headlight."""
+    world = root.find('worldbody')
+    for light in world.findall('light'):
+        world.remove(light)
+    for i, light in enumerate(lighting['lights']):
+        ET.SubElement(
+            world,
+            'light',
+            name=f'lab_light{i}',
+            type='spot',
+            pos=_f(pb + Rb @ np.array(light['pos'])),
+            dir=_f(Rb @ np.array([0.0, 0.0, -1.0])),
+            diffuse=_f([light['diffuse']] * 3),
+            specular='0.1 0.1 0.1',
+            cutoff=f'{lighting["cutoff"]}',
+            exponent=f'{lighting["exponent"]}',
+            castshadow='true',
+        )
+    visual = root.find('visual')
+    if visual is None:
+        visual = ET.SubElement(root, 'visual')
+    headlight = visual.find('headlight')
+    if headlight is None:
+        headlight = ET.SubElement(visual, 'headlight')
+    headlight.set('ambient', _f([lighting['headlight_ambient']] * 3))
+    headlight.set('diffuse', _f([lighting['headlight_diffuse']] * 3))
+    headlight.set('specular', '0 0 0')
+
+
+def apply_lighting(env, values):
+    """Set the lights from a /sim/lighting vector, relative to the lab's (lab.toml)."""
+    m = env.sim.model._model
+    pb, Rb = base_pose(env)
+    lighting = LAB['lighting']
+    m.vis.headlight.ambient[:] = lighting['headlight_ambient'] * values[0]
+    for i, light in enumerate(lighting['lights']):
+        dx, dy, dz, scale, r, g, b, shadow = values[1 + 8 * i : 9 + 8 * i]
+        lid = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_LIGHT, f'lab_light{i}')
+        m.light_pos[lid] = pb + Rb @ (np.array(light['pos']) + [dx, dy, dz])
+        m.light_diffuse[lid] = light['diffuse'] * scale * np.array([r, g, b])
+        m.light_castshadow[lid] = shadow > 0.5
+
+
+def lab_lighting():
+    """The /sim/lighting vector of the lab's own lighting."""
+    return [1.0] + [0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0] * len(LAB['lighting']['lights'])
+
+
+def sample_lighting(rng):
+    """A random /sim/lighting vector around the lab's lighting."""
+    values = [rng.uniform(*AMBIENT_SCALE)]
+    for _ in LAB['lighting']['lights']:
+        values += [rng.uniform(-o, o) for o in LIGHT_OFFSET]
+        values += [rng.uniform(*LIGHT_SCALE), *rng.uniform(*LIGHT_TINT, size=3)]
+        values += [float(rng.random() < LIGHT_SHADOW_P)]
+    return values
 
 
 def base_pose(env):
@@ -94,8 +217,8 @@ def base_pose(env):
 
 
 def build_cup_scene(env):
-    """Rebuild env's model with the raised, enlarged table, the cup, the container and a third-eye
-    camera; the task's pot is moved out of reach. Returns env, reset onto the new model."""
+    """Rebuild env's model as the lab (lab.toml: its table and third_eye camera) with the cup and the
+    container; the task's pot is moved out of reach. Returns env, reset onto the new model."""
     pb, Rb = base_pose(env)
     root = ET.fromstring(env.sim.model.get_xml())
     world = root.find('worldbody')
@@ -105,19 +228,15 @@ def build_cup_scene(env):
     for geom in table.iter('geom'):
         if geom.get('name') in ('table_collision', 'table_visual'):
             geom.set('size', _f(TABLE_HALF))
+            geom.attrib.pop('material', None)
+            geom.set('rgba', _f(LAB['table']['rgba']))
         elif 'leg' in (geom.get('name') or ''):
             geom.set('rgba', '0 0 0 0')  # the legs are sized for the old table
     world.append(_cup('cup'))
     world.append(_container('container'))
-    # Above the table's far edge, looking back down at it with the robot on the left of the image, as
-    # the real overhead camera does.
-    eye = pb + Rb @ np.array([1.25, -0.35, 1.05])
-    target = pb + Rb @ np.array([0.65, 0.10, TABLE_TOP])
-    z = (eye - target) / np.linalg.norm(eye - target)  # MuJoCo cameras look along -z
-    x = np.cross([0, 0, 1], z)
-    x /= np.linalg.norm(x)
-    y = np.cross(z, x)
-    ET.SubElement(world, 'camera', name='third_eye', pos=_f(eye), xyaxes=_f([*x, *y]), fovy='58')
+    world.append(_camera('third_eye', LAB['third_eye'], pb, Rb))
+    _floor(root, LAB['floor'])
+    _lights(root, LAB['lighting'], pb, Rb)
     env.reset_from_xml_string(ET.tostring(root, encoding='unicode'))
     m, d = env.sim.model._model, env.sim.data._data
     for j in np.flatnonzero(m.jnt_type == mujoco.mjtJoint.mjJNT_FREE):

@@ -1,10 +1,11 @@
 #!/bin/bash
 # Teleop the simulated Baxter: starts the sim and RViz, untucks, then opens run_teleop.sh.
-# Usage: scripts/run_sim_teleop.sh [--vr] [--table|--objects|--cup] [run_teleop.sh options]
+# Usage: scripts/run_sim_teleop.sh [--vr] [--table|--objects|--cup [--headless]] [run_teleop.sh options]
 #   --vr       live VR (start libsurvive_ros2 first); default keyboard
 #   --table    keep the table
 #   --objects  keep the table and its objects
-#   --cup      the BlueCupRedContainer scene: real table height, cup, container, cameras
+#   --cup      the BlueCupRedContainer scene: real table height, cup, container
+#   --headless no MuJoCo viewer; the sim then publishes its cameras (for recording)
 #   run_teleop.sh options, e.g. --left, --policy (scripts/run_teleop.sh -h)
 
 # The sim is baxter_mujoco on the real robot's ROS 2 interface. RViz shows the sim's table and
@@ -18,6 +19,7 @@ set -e
 INPUT=keyboard
 ARM=right
 SIM_ARGS=(--empty --no-table)
+HEADLESS=()
 ARGS=()
 for a in "$@"; do
     case "$a" in
@@ -25,7 +27,8 @@ for a in "$@"; do
         --policy) INPUT=policy; ARGS+=("$a") ;;  # run_teleop.sh points the teleop at the policy
         --table) SIM_ARGS=(--empty) ;;
         --objects) SIM_ARGS=() ;;
-        --cup) SIM_ARGS=(--scene cup --no-viewer) ;;  # cameras render headless; watch in RViz
+        --cup) SIM_ARGS=(--scene cup) ;;
+        --headless) HEADLESS=(--no-viewer) ;;  # cameras render only without a viewer
         --left | --right) ARM="${a#--}"; ARGS+=("$a") ;;
         *) ARGS+=("$a") ;;
     esac
@@ -65,7 +68,7 @@ if wait_for_topic /robot/joint_states 5; then
 fi
 
 echo "Starting the simulated Baxter..."
-start "${SIM_DIR}/launch_sim.sh" --ros "${SIM_ARGS[@]}"
+start "${SIM_DIR}/launch_sim.sh" --ros "${SIM_ARGS[@]}" "${HEADLESS[@]}"
 wait_for_topic /robot/joint_states 60 || { echo 'The sim did not come up (see above).'; exit 1; }
 start "${SCRIPT_DIR}/view_teleop_frames.sh" --live
 ros2 run baxter_tools tuck_arms -u
