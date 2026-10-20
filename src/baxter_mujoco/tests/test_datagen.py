@@ -5,7 +5,7 @@ import pytest
 from scipy.spatial.transform import Rotation
 
 from baxter_mujoco import scenes
-from baxter_mujoco.datagen.cup import GRASP_Z, CupTask
+from baxter_mujoco.datagen.cup import GRASP_Z, WALL, CupTask
 from baxter_mujoco.datagen.motion import min_jerk, move_duration
 
 HOME = (np.array([0.574, 0.225, 0.103]), Rotation.from_quat([-0.054, 0.997, -0.001, 0.011]))
@@ -28,13 +28,13 @@ def test_layouts_reproducible_and_inside_real_ranges():
     assert np.hypot(a[0] - a[2], a[1] - a[3]) >= scenes.MIN_SEPARATION
 
 
-def test_plan_ends_at_home_and_grasps_at_real_height():
+def test_plan_ends_at_home_and_grasps_the_wall():
     layout = CupTask().sample(np.random.default_rng(0))
     plan = CupTask().plan(layout, HOME)
     assert np.allclose(plan[-1].position, HOME[0]) and plan[-1].grip == 0.0
     closing = next(w for w in plan if w.grip == 1.0)
     assert closing.position[2] == pytest.approx(GRASP_Z)
-    assert np.allclose(closing.position[:2], layout[:2])
+    assert np.hypot(*(closing.position[:2] - layout[:2])) == pytest.approx(WALL)
 
 
 def test_success_only_inside_container():

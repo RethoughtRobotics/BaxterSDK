@@ -23,6 +23,7 @@ class Task:
 
     name: str
     scene: str  # baxter_ros --scene
+    parked: dict = {}  # {arm: joints (s0 .. w2)} for the arms the task does not use
 
     def sample(self, rng):
         """A random layout (a flat list of numbers, as /sim/layout takes)."""
