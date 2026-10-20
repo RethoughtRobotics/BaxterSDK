@@ -35,8 +35,7 @@ for ik in "${SOLVERS[@]}"; do
 done
 
 REPORT="${DATA_DIR}/ik_comparisons/$(date +%Y%m%d_%H%M%S)_ik_comparison"
-"$PY" -m baxter_teleop.diagnostics.ik_comparison "$REPORT" "${bags[@]}" \
-    2> >(grep -v -e jax -e GPU >&2)
+"$PY" -m baxter_teleop.diagnostics.ik_comparison "$REPORT" "${bags[@]}"
 {
     echo -e "\n## Contacts\n"
     echo "Kinematic replay of the recorded joint angles in the MuJoCo scene (baxter_mujoco.contacts):"

@@ -1,6 +1,6 @@
 """Teleop of one Baxter arm: servo its TCP toward a target pose, through differential IK.
 
-Each control cycle (~75 Hz on the sim, 2026-10-19; ~69 with frax) a target (inputs/: keyboard, VR, a policy through VRTarget) gives a
+Each control cycle a target (inputs/: keyboard, VR, a policy through VRTarget) gives a
 base-frame TCP twist toward its goal, the IK (differential_ik.py) turns it into joint velocities,
 and an output stage (outputs/) sends them to the arm. `python -m baxter_teleop` runs it (cli.py).
 """

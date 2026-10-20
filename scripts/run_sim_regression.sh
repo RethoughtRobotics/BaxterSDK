@@ -5,4 +5,4 @@
 # Exit status 1 if any metric is out of tolerance. Runs on ROS_DOMAIN_ID 43 unless --domain says otherwise.
 set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
-exec "$PY" -m baxter_teleop.diagnostics.sim_regression "$@" 2> >(grep -v -e jax -e GPU >&2)
+exec "$PY" -m baxter_teleop.diagnostics.sim_regression "$@"
