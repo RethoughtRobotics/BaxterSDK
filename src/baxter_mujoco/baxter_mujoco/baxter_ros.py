@@ -12,6 +12,8 @@ drive and show this simulated Baxter exactly as they do the real one, over the s
   subscribes  /robot/limb/{arm}/joint_command (position, velocity, torque, raw position modes),
               /robot/limb/{arm}/joint_command_timeout, /robot/limb/{arm}/set_speed_ratio,
               /robot/set_super_enable, /robot/head/command_head_pan,
+              /robot/limb/{arm}/inverse_dynamics_command (the raw setpoint's velocity and
+              acceleration, joined to the joint servo as on the robot),
               /robot/end_effector/{arm}_gripper/command (electric gripper: calibrate, go, ...);
               with --scene cup also /sim/layout ([cup x, y, container x, y, container yaw] in
               the base frame: places both on the table, at rest) and /sim/lighting (the lab's
@@ -47,6 +49,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, Float64, Float64MultiArray, String
+from trajectory_msgs.msg import JointTrajectoryPoint
 from visualization_msgs.msg import Marker, MarkerArray
 
 from baxter_mujoco import scenes
@@ -230,6 +233,7 @@ class Arm:
         self.timeout = 0.2
         self.speed_ratio = 0.3
         self.tau = np.zeros(7)
+        self.feedforward = (-np.inf, np.zeros(7), np.zeros(7))  # (stamp, qd, qdd) of the inverse dynamics command
 
     def hold(self, q):
         self.mode, self.command, self.q_ref, self.qd_ref = JointCommand.POSITION_MODE, q.copy(), q.copy(), np.zeros(7)
@@ -251,14 +255,24 @@ class Arm:
                 self.qd_ref = self.command
                 self.q_ref = np.clip(self.q_ref + self.command * dt, q - 0.1, q + 0.1)  # no wind-up when blocked
             else:  # RAW_POSITION_MODE
-                self.q_ref, self.qd_ref = self.command, np.zeros(7)
+                # With a fresh inverse dynamics command the setpoint's velocity and acceleration join the
+                # servo, as Baxter adds the model torque for the motion (raw + ID: 0 to 45 ms joint lag on
+                # the robot); without it the servo trails a moving setpoint by 2 / OMEGA.
+                stamp, qd_ff, qdd_ff = self.feedforward
+                fresh = now - stamp < self.timeout
+                self.q_ref, self.qd_ref = self.command, qd_ff if fresh else np.zeros(7)
+                tau = (
+                    M @ (OMEGA**2 * (self.q_ref - q) + 2 * OMEGA * (self.qd_ref - qd) + (qdd_ff if fresh else 0)) + bias
+                )
+                self.tau = np.clip(tau, -self.tau_max, self.tau_max)
+                return self.tau
             tau = M @ (OMEGA**2 * (self.q_ref - q) + 2 * OMEGA * (self.qd_ref - qd)) + bias
         self.tau = np.clip(tau, -self.tau_max, self.tau_max)
         return self.tau
 
 
 class SimBaxter:
-    def __init__(self, node, render, empty=False, table=True, scene='lift'):
+    def __init__(self, node, render, empty=False, table=True, scene='lift', inverse_dynamics=True):
         self.node, self.render, self.scene = node, render, scene
         self.env = make_env(render=render)
         self.env.reset()
@@ -293,6 +307,17 @@ class SimBaxter:
             node.create_subscription(
                 JointCommand, ns + 'joint_command', lambda msg, a=arm: self.on_command(a, msg), command_qos
             )
+            if inverse_dynamics:  # the limb's joint order, as baxter_interface sends it
+                node.create_subscription(
+                    JointTrajectoryPoint,
+                    ns + 'inverse_dynamics_command',
+                    lambda msg, a=arm: setattr(
+                        a,
+                        'feedforward',
+                        (time.monotonic(), np.array(msg.velocities), np.array(msg.accelerations)),
+                    ),
+                    command_qos,
+                )
             node.create_subscription(
                 Float64, ns + 'joint_command_timeout', lambda msg, a=arm: setattr(a, 'timeout', msg.data), latched
             )
@@ -486,6 +511,11 @@ def main():
     parser.add_argument(
         '--scene', choices=('lift', 'cup'), default='lift', help='cup: BlueCupRedContainer in the lab of lab.toml'
     )
+    parser.add_argument(
+        '--no-inverse-dynamics',
+        action='store_true',
+        help='ignore /robot/limb/{arm}/inverse_dynamics_command (raw mode then trails a moving setpoint by 2/OMEGA)',
+    )
     args, ros_args = parser.parse_known_args()
 
     rclpy.init(args=['baxter_sim', *ros_args])
@@ -496,7 +526,14 @@ def main():
     if node.count_publishers('/robot/joint_states'):
         raise SystemExit('/robot/joint_states already has a publisher (a real robot or another sim); not starting.')
 
-    sim = SimBaxter(node, render=not args.no_viewer, empty=args.empty, table=not args.no_table, scene=args.scene)
+    sim = SimBaxter(
+        node,
+        render=not args.no_viewer,
+        empty=args.empty,
+        table=not args.no_table,
+        scene=args.scene,
+        inverse_dynamics=not args.no_inverse_dynamics,
+    )
 
     def spin():
         try:
