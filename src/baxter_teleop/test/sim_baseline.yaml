@@ -27,7 +27,10 @@ keys:
 vr:
   goals_during_stroke:
     tolerance: 17.4
-    value: 174.0
+    value: 191.0
+  gripper_opening_pct:
+    tolerance: 2.0
+    value: 70.0
   hold_drift_mm:
     tolerance: 2.0
     value: 1.99
