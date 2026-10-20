@@ -1,5 +1,6 @@
 #!/bin/bash
-# Teleop Baxter's arms (VR by default) in a Terminator window (tmux without a display).
+# Teleop Baxter's arms (VR by default) in a Terminator window (tmux without a display; left detached
+# when not run from a terminal, e.g. in a cluster job).
 # Usage: scripts/run_teleop.sh [--left|--right|--both] [options] [teleop options]
 #   --left, --right, --both  arms (default: both)
 #   --session NAME           record episodes to rethought_ai/recorder/data/NAME (implies --record)
@@ -224,5 +225,5 @@ else
         if [[ -n "${TMUX:-}" ]]; then tmux new-window -n record "$cmd"
         else tmux new-window -t baxter-teleop -n record "$cmd"; fi
     fi
-    [[ -n "${TMUX:-}" ]] || tmux attach -t baxter-teleop
+    [[ -n "${TMUX:-}" || ! -t 0 ]] || tmux attach -t baxter-teleop
 fi

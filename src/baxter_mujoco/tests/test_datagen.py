@@ -25,6 +25,7 @@ def test_layouts_reproducible_and_inside_reach():
     assert a == b
     (x0, x1), (y0, y1) = scenes.CUP_RANGE
     assert x0 <= a[0] <= x1 and y0 <= a[1] <= y1
+    assert a[2] <= scenes.REACH_X
     assert np.hypot(a[0] - a[2], a[1] - a[3]) >= scenes.MIN_SEPARATION
 
 

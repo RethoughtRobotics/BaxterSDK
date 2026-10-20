@@ -268,7 +268,8 @@ def place(env, cup_xy, container_xy, cup_yaw=0.0, container_yaw=0.0):
 
 
 def sample_layout(rng):
-    """Cup and container positions (base frame) inside the real demonstrations' ranges, apart."""
+    """Cup and container positions (base frame) inside the real demonstrations' ranges, within the sim
+    arm's reach (REACH_X), apart."""
     while True:
         cup = [rng.uniform(*CUP_RANGE[0]), rng.uniform(*CUP_RANGE[1])]
         box = [rng.uniform(*CONTAINER_RANGE[0]), rng.uniform(*CONTAINER_RANGE[1])]
