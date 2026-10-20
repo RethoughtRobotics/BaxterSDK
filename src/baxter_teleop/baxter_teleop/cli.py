@@ -161,7 +161,7 @@ def main(argv=None):
         max_delta_jump=args.max_delta_jump,
         gripper_step=args.gripper_step,
     )
-    teleop.gripper.enabled = not args.no_gripper
+    teleop.drive_gripper = not args.no_gripper
     config = {'args': vars(args), 'tcp_offset': teleop.tcp_offset.tolist(), 'ik': type(teleop.ik).__name__}
     # The controller (libsurvive_ros2 /vive/{hand}/...) driving this arm; swap_hands crosses them.
     hand = args.arm

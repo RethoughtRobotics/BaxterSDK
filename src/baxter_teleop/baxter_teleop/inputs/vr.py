@@ -157,13 +157,47 @@ class VRTarget:
 
 
 class VRController:
-    """The controller's analog trigger and B button (libsurvive_ros2 /vive/{hand}/trigger, b_button)."""
+    """The controller's analog trigger and B button (libsurvive_ros2 /vive/{hand}/trigger, b_button).
 
-    def __init__(self, node, trigger_topic, b_button_topic):
+    The trigger sets the gripper opening (released open, pulled closed): gripper_opening() gives it
+    first-order filtered (smoothing, s), when it changed by min_step (%) at most every min_period
+    (s), and nothing while the trigger is stale.
+    """
+
+    def __init__(self, node, trigger_topic, b_button_topic, smoothing=0.05, min_step=0.5, min_period=0.02, stale=0.5):
         self.trigger = None  # (value 0 released .. 1 pulled, receive time)
+        self.smoothing, self.min_step, self.min_period, self.stale = smoothing, min_step, min_period, stale
+        self._filtered = self._filtered_at = self._sent = None  # opening filter state
         self._b_pressed = False
         node.create_subscription(Float32, trigger_topic, self._on_trigger, 10)
         node.create_subscription(Empty, b_button_topic, self._on_b_button, 10)
+
+    def gripper_opening(self):
+        """The opening to command now (%: 0 closed, 100 open), or None."""
+        if self.trigger is None:
+            return None
+        value, received = self.trigger
+        now = time.monotonic()
+        if now - received > self.stale:
+            return None
+        goal = 100.0 * (1.0 - float(np.clip(value, 0.0, 1.0)))
+        if self._filtered is None:
+            self._filtered, self._sent, self._filtered_at = goal, None, now
+        else:
+            self._filtered += (1.0 - np.exp(-(now - self._filtered_at) / self.smoothing)) * (goal - self._filtered)
+            self._filtered_at = now
+        due = self._sent is None or (
+            abs(self._filtered - self._sent[0]) >= self.min_step and now - self._sent[1] >= self.min_period
+        )
+        if not due:
+            return None
+        self._sent = (self._filtered, now)
+        return self._filtered
+
+    def restart_opening(self, opening):
+        """The gripper was commanded elsewhere (opened on the way home): filter on from there."""
+        if self._filtered is not None:
+            self._filtered, self._sent = opening, None
 
     def take_b_press(self):
         """True once for each B press since the last call."""

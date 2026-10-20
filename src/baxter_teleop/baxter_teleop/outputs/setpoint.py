@@ -1,6 +1,6 @@
 """Jerk-limited joint setpoint that follows a commanded joint velocity.
 
-The teleop's IK produces a joint velocity every control cycle (~76 Hz, jittery). Baxter's
+The teleop's IK produces a joint velocity every control cycle (~75 Hz, jittery). Baxter's
 RAW_POSITION_MODE wants positions, and its inverse dynamics feedforward wants (q, qdot, qddot)
 that agree with each other. Integrating the IK velocity per cycle gives a staircase setpoint
 and a noisy finite-difference qddot, which roughly doubled 2.5-50 Hz wrist vibration on the
