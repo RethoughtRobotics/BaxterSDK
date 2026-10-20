@@ -7,9 +7,8 @@ drive and show this simulated Baxter exactly as they do the real one, over the s
               /robot/head/head_state, /robot/end_effector/{arm}_gripper/{state,properties},
               /sim/config (scene, latched), /sim/scene (RViz markers of
               everything else the arms can hit: the table, objects);
-              with --no-viewer /cameras/{arm}_hand_camera/image (640 x 400 bgra8, as the robot)
-              at 25 Hz while subscribed; with --scene cup also /sim/objects (cup and container
-              poses) and, with --no-viewer, the lab's third_eye (lab.toml)
+              /sim/state (MuJoCo qpos at 25 Hz, which cameras.py renders the cameras from); with
+              --scene cup also /sim/objects (cup and container poses)
   subscribes  /robot/limb/{arm}/joint_command (position, velocity, torque, raw position modes),
               /robot/limb/{arm}/joint_command_timeout, /robot/limb/{arm}/set_speed_ratio,
               /robot/set_super_enable, /robot/head/command_head_pan,
@@ -26,7 +25,6 @@ where the real robot reports it with its electric gripper, in the robot base fra
 """
 
 import json
-import os
 import threading
 import time
 
@@ -47,7 +45,7 @@ from geometry_msgs.msg import Pose, PoseArray
 from rclpy.executors import ExternalShutdownException
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from scipy.spatial.transform import Rotation
-from sensor_msgs.msg import Image, JointState
+from sensor_msgs.msg import JointState
 from std_msgs.msg import Bool, Float64, Float64MultiArray, String
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -70,14 +68,7 @@ SCENE_SHAPES = {
 }
 SCENE_COLORS = {'static': (0.62, 0.60, 0.55, 0.85), 'free': (0.80, 0.42, 0.22, 0.9)}  # table / movable objects
 DT_PUBLISH = 0.01  # s, state publishing period (100 Hz)
-CAMERA_EVERY = 4  # publishing periods per camera frame: 25 Hz, the datasets' rate
-# The hand cameras as mounted on the robot (baxter.urdf {arm}_hand_camera, in {arm}_hand): looking out
-# along the fingers, which are at the image top; field of view from their camera_info (fy 403.9 px of
-# 800 rows). Published as the robot does, 640 x 400 bgra8.
-HAND_CAMERA_POS = (0.03825, 0.012, 0.015355)  # m
-HAND_CAMERA_AXES = np.array([[0, -1, 0], [-1, 0, 0], [0, 0, -1]]).T  # columns: image right, up, back
-HAND_CAMERA_FOVY = 89.4  # deg
-HAND_CAMERA_SIZE = (640, 400)  # px
+STATE_EVERY = 4  # publishing periods per /sim/state, which the cameras render from: 25 Hz, the datasets' rate
 FINGER_JOINTS = (
     'l_gripper_l_finger_joint',
     'l_gripper_r_finger_joint',
@@ -267,8 +258,8 @@ class Arm:
 
 
 class SimBaxter:
-    def __init__(self, node, render, empty=False, table=True, scene='lift', cameras=False):
-        self.node, self.render, self.scene, self.renderers = node, render, scene, {}
+    def __init__(self, node, render, empty=False, table=True, scene='lift'):
+        self.node, self.render, self.scene = node, render, scene
         self.env = make_env(render=render)
         self.env.reset()
         if scene == 'cup':
@@ -327,7 +318,7 @@ class SimBaxter:
         scene_name = 'BlueCupRedContainer' if scene == 'cup' else 'TwoArmLift'
         self.config_pub.publish(String(data=json.dumps({'scene': scene_name, 'empty': empty, 'table': table})))
         self.pending_layout = self.pending_lighting = None
-        self.cameras = self.make_cameras(node, scene) if cameras else []
+        self.sim_state_pub = node.create_publisher(JointState, '/sim/state', 1)  # for the cameras (cameras.py)
         if scene == 'cup':
             self.objects_pub = node.create_publisher(PoseArray, '/sim/objects', 10)
             node.create_subscription(Float64MultiArray, '/sim/layout', self.on_layout, 10)
@@ -361,46 +352,11 @@ class SimBaxter:
         if lighting is not None:
             scenes.apply_lighting(self.env, lighting)
 
-    def make_cameras(self, node, scene):
-        """The robot's hand cameras and, in the cup scene, the lab's third_eye: (MuJoCo camera, publisher,
-        height, width, encoding, geoms hidden from it)."""
-        m, cameras = self.m, []
-        for side in ARMS:
-            cam = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_CAMERA, f'robot0_{side}_eye_in_hand')
-            m.cam_pos[cam] = HAND_CAMERA_POS
-            m.cam_quat[cam] = Rotation.from_matrix(HAND_CAMERA_AXES).as_quat(scalar_first=True)
-            m.cam_fovy[cam] = HAND_CAMERA_FOVY
-            # robosuite's gripper housing is wider than the real one, which the camera sees past
-            housing = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, f'gripper0_{side}_gripper_base')
-            w, h = HAND_CAMERA_SIZE
-            pub = node.create_publisher(Image, f'/cameras/{side}_hand_camera/image', 5)
-            cameras.append((f'robot0_{side}_eye_in_hand', pub, h, w, 'bgra8', np.flatnonzero(m.geom_bodyid == housing)))
-        if scene == 'cup':
-            eye = scenes.LAB['third_eye']
-            pub = node.create_publisher(Image, eye['topic'], 5)
-            cameras.append(('third_eye', pub, eye['size'][1], eye['size'][0], eye['encoding'], []))
-        return cameras
-
-    def publish_cameras(self):
-        """Render and publish the cameras someone subscribes to (renderers made on first use, here)."""
-        stamp = self.node.get_clock().now().to_msg()
-        visual = mujoco.MjvOption()
-        visual.geomgroup[0] = 0  # robosuite's collision geoms, which its viewer hides too
-        for cam, pub, h, w, encoding, hidden in self.cameras:
-            if not pub.get_subscription_count():
-                continue
-            if cam not in self.renderers:
-                self.renderers[cam] = mujoco.Renderer(self.m, h, w)
-            r = self.renderers[cam]
-            alpha = self.m.geom_rgba[hidden, 3].copy()
-            self.m.geom_rgba[hidden, 3] = 0.0
-            r.update_scene(self.d, camera=cam, scene_option=visual)
-            self.m.geom_rgba[hidden, 3] = alpha
-            rgb = r.render()
-            data = np.dstack([rgb[..., ::-1], np.full((h, w), 255, np.uint8)]) if encoding == 'bgra8' else rgb
-            msg = Image(height=h, width=w, encoding=encoding, step=w * data.shape[2], data=data.tobytes())
-            msg.header.stamp, msg.header.frame_id = stamp, cam
-            pub.publish(msg)
+    def publish_state(self):
+        """The full MuJoCo state, stamped, for the camera process to render from."""
+        msg = JointState(position=self.d.qpos.tolist())
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        self.sim_state_pub.publish(msg)
 
     def publish_objects(self):
         msg = PoseArray()
@@ -511,8 +467,8 @@ class SimBaxter:
                 self.publish_scene()
                 if self.scene == 'cup':
                     self.publish_objects()
-            if self.cameras and frame % CAMERA_EVERY == 0:
-                self.publish_cameras()
+            if frame % STATE_EVERY == 0:
+                self.publish_state()
             if self.render and frame % 3 == 0:
                 # robosuite's render() is a no-op for its mjviewer; update() opens the window, then syncs it
                 self.env.viewer.update()
@@ -532,12 +488,6 @@ def main():
     )
     args, ros_args = parser.parse_known_args()
 
-    # Cameras render offscreen through EGL, so only without the viewer: GLX offscreen contexts beside a
-    # viewer segfault Xorg on the NVIDIA 535 driver.
-    cameras = args.no_viewer and os.environ.get('MUJOCO_GL') == 'egl'
-    if args.no_viewer and not cameras:
-        print('No cameras: set MUJOCO_GL=egl to render them (launch_sim.sh does).', flush=True)
-
     rclpy.init(args=['baxter_sim', *ros_args])
     node = rclpy.create_node('baxter_sim')
     deadline = time.monotonic() + 2.0  # let discovery find a real robot, if one is up
@@ -546,9 +496,7 @@ def main():
     if node.count_publishers('/robot/joint_states'):
         raise SystemExit('/robot/joint_states already has a publisher (a real robot or another sim); not starting.')
 
-    sim = SimBaxter(
-        node, render=not args.no_viewer, empty=args.empty, table=not args.no_table, scene=args.scene, cameras=cameras
-    )
+    sim = SimBaxter(node, render=not args.no_viewer, empty=args.empty, table=not args.no_table, scene=args.scene)
 
     def spin():
         try:

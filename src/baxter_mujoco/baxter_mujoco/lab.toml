@@ -24,6 +24,7 @@ size = [640, 480]  # px
 focal = [605.2, 605.3]  # px, fx fy
 principal = [324.6, 252.9]  # px, cx cy from the top-left corner
 topic = '/cameras/third_eye/color/image_raw'
+frame_id = 'third_eye_color_optical_frame'
 encoding = 'rgb8'
 
 [floor]

@@ -2,8 +2,8 @@
 
 Needs the sim with the task's scene, the teleop in policy mode and the recorder, on one ROS domain:
 
-    scripts/run_sim_teleop.sh --cup --headless --left --policy   # sim with cameras, RViz, teleop
-    uv run recorder record --config baxter_sim.yaml --session NAME   # RethoughtAI
+    scripts/run_sim_teleop.sh --cup --cameras --left --policy     # sim, cameras, RViz, teleop
+    record record baxter.yaml --session NAME --no-viz   # RethoughtAI, as on the robot (both arms)
     uv run --group ros python -m baxter_mujoco.datagen.generate --task cup --episodes 55 --seed 0
 
 Every episode starts and ends at home, under its own random lighting (scenes.sample_lighting: lights
