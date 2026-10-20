@@ -8,11 +8,13 @@ Both arms first move slowly to the demo's first pose, then follow the demo at it
   pose   the demo's joint angles as RAW_POSITION_MODE setpoints at 200 Hz, with their velocities and
          accelerations as Baxter's inverse dynamics feedforward (as raw_id teleop and the SDK's
          position_w_id trajectory playback). Baxter's stiff joint servo tracks the angles.
-  force  TORQUE_MODE at 200 Hz: the torques the demo's motion needs, from the arm model (inverse
-         dynamics, Pinocchio), plus a computed-torque correction toward the demo angles of bandwidth
-         --omega (tau = ID(demo) + M(q) (omega^2 e + 2 omega e_dot)). Baxter adds gravity
-         compensation. Lower --omega is more compliant: contact forces come from the scene, not from
-         a stiff servo.
+  force  TORQUE_MODE at 200 Hz, computed torque: the torques the demo's motion needs, from the arm
+         model (inverse dynamics, Pinocchio), plus a critically damped correction toward the demo
+         angles of bandwidth --omega, tau = ID(demo) + (M(q) + ROTOR_INERTIA) (omega^2 e + 2 omega
+         e_dot). Scaling by the full inertia matrix decouples the joints: per-joint gains excite the
+         arm's light coupled motions, which oscillate at the 50 Hz Nyquist rate of the 100 Hz joint
+         states. Baxter adds gravity compensation. Lower --omega is more compliant: contact forces
+         come from the scene, not from a stiff servo.
 
 Each run logs the measured joints, torques and endpoint wrench; --out writes the comparison with
 the demo (diagnostics/replay_comparison.py). Raw position and torque modes bypass Baxter's
@@ -40,6 +42,10 @@ from .settings import joint_names
 RATE = 200.0  # Hz, setpoints per second
 DEMO_RATE = 100.0  # Hz, Baxter's /robot/joint_states
 TORQUE_LIMITS = np.array([50.0, 50.0, 50.0, 50.0, 15.0, 15.0, 15.0])  # N m, Baxter's joint torque limits
+# kg m^2 added to each joint's URDF inertia: the URDF has the links, not the gear motors (the wrist roll's
+# link is 0.0006 kg m^2, too little to overcome its friction at any usable bandwidth); MuJoCo's Baxter
+# model uses 0.01 for every joint.
+ROTOR_INERTIA = 0.01
 START_TOLERANCE = 0.01  # rad, every joint, before the replay starts
 
 
@@ -143,7 +149,7 @@ class Log:
 class Replayer:
     """Plays a demo on the arms by pose or by force (module docstring)."""
 
-    def __init__(self, node, demo, gripper, arms, omega=10.0, speed=1.0, lead=0.0, drive_gripper=True, until=None):
+    def __init__(self, node, demo, gripper, arms, omega=20.0, speed=1.0, lead=0.0, drive_gripper=True, until=None):
         self.node, self.arms, self.omega, self.speed, self.lead = node, arms, float(omega), float(speed), float(lead)
         self.executor = rclpy.get_global_executor()
         self.executor.add_node(node)
@@ -213,7 +219,8 @@ class Replayer:
         q, qd = self._angles(arm), self._velocities(arm)
         k = self.kinematics[arm]
         e, e_dot = q_d - q, qd_d - qd
-        tau = k.inverse_dynamics(q_d, qd_d, qdd_d) + k.mass_matrix(q) @ (self.omega**2 * e + 2.0 * self.omega * e_dot)
+        inertia = k.mass_matrix(q) + ROTOR_INERTIA * np.eye(7)
+        tau = k.inverse_dynamics(q_d, qd_d, qdd_d) + inertia @ (self.omega**2 * e + 2.0 * self.omega * e_dot)
         tau = np.clip(tau, -TORQUE_LIMITS, TORQUE_LIMITS)
         self.limbs[arm].set_joint_torques(dict(zip(self.names[arm], tau.tolist())))
 
@@ -264,7 +271,7 @@ def main(argv=None):
         '--mode', choices=['pose', 'force', 'both'], default='both', help='how to replay (default: both)'
     )
     parser.add_argument('--arms', default=None, help='left, right or left,right (default: every arm the demo moved)')
-    parser.add_argument('--omega', type=float, default=10.0, help='force mode tracking bandwidth, rad/s (default: 10)')
+    parser.add_argument('--omega', type=float, default=20.0, help='force mode bandwidth, rad/s (default: 20)')
     parser.add_argument('--speed', type=float, default=1.0, help='playback speed factor (default: 1, the demo timing)')
     parser.add_argument(
         '--lead', type=float, default=0.0, help='setpoints ahead of the demo by this many s (default: 0)'
