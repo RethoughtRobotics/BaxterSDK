@@ -86,22 +86,23 @@ session_yaml() {
         [[ -f "${MODEL}/training_step.pt" ]] && echo "  checkpoint: $(basename "$MODEL")"
         echo "  shadow_episode: ${EPISODE:-null}  # null: the robot's own cameras"
     fi
-    echo "git:"
-    for repo in "$SCRIPT_DIR/../src" "$SCRIPT_DIR/../../libsurvive_ros2" "$SCRIPT_DIR/../../rethought_ai/src"; do
-        [[ -d "$repo" ]] && echo "  $(basename "$(realpath "$repo/..")")/$(basename "$repo"): $(git -C "$repo" describe --always --dirty 2>/dev/null)"
-    done
+    echo "provenance: provenance.yaml  # commits, patches, process command lines, teleop.yaml, containers"
     return 0
 }
 # written as soon as the recorder creates the bag, so any way of stopping it keeps the file
 # Gives up after 60 s, so a recorder that dies before creating the bag cannot leave this loop running.
-( for _ in $(seq 300); do [[ -d "$BAG" ]] && { session_yaml > "${BAG}/session.yaml"; exit; }; sleep 0.2; done ) &
+( for _ in $(seq 300); do
+    [[ -d "$BAG" ]] && { session_yaml > "${BAG}/session.yaml"; python3 "${SCRIPT_DIR}/provenance.py" write "$BAG"; exit; }
+    sleep 0.2
+done ) &
 echo "Recording ${ROBOT} robot to ${BAG}. Ctrl+C to stop."
 trap ':' INT  # let Ctrl+C stop the recorder, then finish below (an ignored INT would be inherited)
 SELECT=(--regex "$TOPICS")
+read -ra CUSTOM <<< "$(python3 "${SCRIPT_DIR}/provenance.py" custom-data)"  # short form, in metadata.yaml
 # --all also takes the head screen and other image transports' duplicates; never the raw cameras being compressed
 [[ -n "$ALL_TOPICS" ]] && SELECT=(--all ${UNKNOWN:+--exclude-topics $UNKNOWN}
     --exclude-regex "^/robot/xdisplay\$|/theora\$${RAW_CAMERAS:+|$RAW_CAMERAS}")
-ros2 bag record -s mcap --storage-preset-profile zstd_fast "${SELECT[@]}" -o "$BAG" || true
+ros2 bag record -s mcap --storage-preset-profile zstd_fast "${SELECT[@]}" ${CUSTOM[0]:+--custom-data "${CUSTOM[@]}"} -o "$BAG" || true
 trap - INT
 [[ -n "${COMPRESS:-}" ]] && { kill -INT "$COMPRESS" 2>/dev/null || true; wait "$COMPRESS" 2>/dev/null || true; }
 
