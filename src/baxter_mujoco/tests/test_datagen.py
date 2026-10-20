@@ -24,7 +24,8 @@ def test_layouts_reproducible_and_inside_real_ranges():
     a, b = CupTask().sample(np.random.default_rng(3)), CupTask().sample(np.random.default_rng(3))
     assert a == b
     (x0, x1), (y0, y1) = scenes.CUP_RANGE
-    assert x0 <= a[0] <= x1 and y0 <= a[1] <= y1
+    assert x0 <= a[0] <= min(x1, scenes.SIM_REACH_X) and y0 <= a[1] <= y1
+    assert a[2] <= scenes.SIM_REACH_X
     assert np.hypot(a[0] - a[2], a[1] - a[3]) >= scenes.MIN_SEPARATION
 
 

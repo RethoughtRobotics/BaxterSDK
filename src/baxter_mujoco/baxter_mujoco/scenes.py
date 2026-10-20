@@ -23,6 +23,9 @@ CONTAINER_HALF, CONTAINER_HEIGHT, CONTAINER_WALL = 0.06, 0.05, 0.005  # m: 12 cm
 CUP_RANGE = ((0.46, 0.95), (-0.20, 0.44))  # m, base frame: where real cups were grasped
 CONTAINER_RANGE = ((0.42, 0.94), (-0.28, 0.36))  # m, base frame: where real cups were released
 MIN_SEPARATION = 0.18  # m between cup and container centres
+# Farthest x sampled for either object: past it the sim arm cannot reach grasp height (its fingers are
+# 4.5 cm shorter than the real ones); every failed attempt in 40 had the cup or container beyond it
+SIM_REACH_X = 0.87  # m, base frame
 DEFAULT_CUP, DEFAULT_CONTAINER = (0.85, 0.17), (0.69, -0.12)  # m, base frame: the real medians
 BLUE, RED = '0.12 0.32 0.85 1', '0.85 0.12 0.10 1'
 # Lighting randomisation for data generation, around the lab's (lab.toml): per light a position offset
@@ -263,10 +266,11 @@ def place(env, cup_xy, container_xy, cup_yaw=0.0, container_yaw=0.0):
 
 
 def sample_layout(rng):
-    """Cup and container positions (base frame) inside the real demonstrations' ranges, apart."""
+    """Cup and container positions (base frame) inside the real demonstrations' ranges, within the sim
+    arm's reach (SIM_REACH_X), apart."""
     while True:
-        cup = [rng.uniform(*CUP_RANGE[0]), rng.uniform(*CUP_RANGE[1])]
-        box = [rng.uniform(*CONTAINER_RANGE[0]), rng.uniform(*CONTAINER_RANGE[1])]
+        cup = [rng.uniform(CUP_RANGE[0][0], SIM_REACH_X), rng.uniform(*CUP_RANGE[1])]
+        box = [rng.uniform(CONTAINER_RANGE[0][0], SIM_REACH_X), rng.uniform(*CONTAINER_RANGE[1])]
         if np.hypot(cup[0] - box[0], cup[1] - box[1]) >= MIN_SEPARATION:
             return np.array(cup), np.array(box), rng.uniform(-np.pi, np.pi)
 

@@ -1,0 +1,42 @@
+# The simulated Baxter's data generation stack without a display, for a GPU cluster: ROS 2 Kilted,
+# rmw_zenoh, apt Pinocchio, the workspace's rosdep keys, uv, ffmpeg and tmux. The workspace, its venvs
+# and RethoughtAI stay outside the image (bind-mounted), built once inside it by container/setup.sh,
+# so code changes need no rebuild.
+#
+#   apptainer build --fakeroot baxter_sim.sif container/baxter_sim.def   # from the workspace root
+#   apptainer exec --nv --bind <dir with baxter_sdk and rethought_ai> baxter_sim.sif container/setup.sh
+#
+# --nv gives MuJoCo the host's NVIDIA EGL (baxter_mujoco/cameras.py renders through MUJOCO_GL=egl).
+
+Bootstrap: docker
+From: osrf/ros:kilted-desktop
+
+%files
+    src /opt/baxter_src
+
+%post
+    set -e
+    export DEBIAN_FRONTEND=noninteractive
+    # --fakeroot without subuids maps only root: apt cannot drop to its _apt user
+    echo 'APT::Sandbox::User "root";' > /etc/apt/apt.conf.d/99sandbox
+    export TAR_OPTIONS=--no-same-owner  # nor can tar set an archive's owners (the uv installer)
+    apt-get update
+    apt-get install -y --no-install-recommends \
+        ros-kilted-rmw-zenoh-cpp ros-kilted-pinocchio \
+        python3-venv python3-pip python3-colcon-common-extensions \
+        ffmpeg git curl ca-certificates libegl1 libgl1 libglvnd0 libopengl0
+    # The workspace's own keys; MoveIt and Gazebo are for packages a headless sim does not build
+    rosdep update --rosdistro kilted
+    rosdep install --rosdistro kilted --from-paths /opt/baxter_src --ignore-src -y \
+        --skip-keys "ament_python gazebo_ros_control warehouse_ros_mongo moveit_setup_assistant"
+    # tmux needs libutempter0, whose helper is group utmp: unpacked without its owner, which the
+    # namespace cannot set, and tmux installed on it
+    cd /tmp && apt-get download libutempter0 tmux
+    dpkg-deb --fsys-tarfile libutempter0_*.deb | tar -x --no-same-owner -C /
+    dpkg --force-depends -i tmux_*.deb && rm -f /tmp/*.deb
+    rm -rf /opt/baxter_src /var/lib/apt/lists/*
+    curl -LsSf https://astral.sh/uv/0.8.22/install.sh | env UV_INSTALL_DIR=/usr/local/bin UV_NO_MODIFY_PATH=1 sh
+
+%environment
+    export RMW_IMPLEMENTATION=rmw_zenoh_cpp
+    export LC_ALL=C.UTF-8 LANG=C.UTF-8
