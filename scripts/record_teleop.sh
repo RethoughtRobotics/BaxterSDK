@@ -92,13 +92,13 @@ session_yaml() {
 # written as soon as the recorder creates the bag, so any way of stopping it keeps the file
 # Gives up after 60 s, so a recorder that dies before creating the bag cannot leave this loop running.
 ( for _ in $(seq 300); do
-    [[ -d "$BAG" ]] && { session_yaml > "${BAG}/session.yaml"; python3 "${SCRIPT_DIR}/provenance.py" write "$BAG"; exit; }
+    [[ -d "$BAG" ]] && { session_yaml > "${BAG}/session.yaml"; python3 -m baxter_tools.provenance write "$BAG"; exit; }
     sleep 0.2
 done ) &
 echo "Recording ${ROBOT} robot to ${BAG}. Ctrl+C to stop."
 trap ':' INT  # let Ctrl+C stop the recorder, then finish below (an ignored INT would be inherited)
 SELECT=(--regex "$TOPICS")
-read -ra CUSTOM <<< "$(python3 "${SCRIPT_DIR}/provenance.py" custom-data)"  # short form, in metadata.yaml
+read -ra CUSTOM <<< "$(python3 -m baxter_tools.provenance custom-data)"  # short form, in metadata.yaml
 # --all also takes the head screen and other image transports' duplicates; never the raw cameras being compressed
 [[ -n "$ALL_TOPICS" ]] && SELECT=(--all ${UNKNOWN:+--exclude-topics $UNKNOWN}
     --exclude-regex "^/robot/xdisplay\$|/theora\$${RAW_CAMERAS:+|$RAW_CAMERAS}")

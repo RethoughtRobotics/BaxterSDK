@@ -1,8 +1,10 @@
-#!/usr/bin/env python3
 """Record what was running when a recording started, so a replay can reproduce it exactly.
 
-  python3 scripts/provenance.py write BAG_DIR   BAG_DIR/provenance.yaml (+ provenance/<repo>.patch)
-  python3 scripts/provenance.py custom-data     key=value pairs for ros2 bag record --custom-data
+  python3 -m baxter_tools.provenance write BAG_DIR   BAG_DIR/provenance.yaml (+ provenance/<repo>.patch)
+  python3 -m baxter_tools.provenance custom-data     key=value pairs for ros2 bag record --custom-data
+
+Used by BaxterSDK's recorders (scripts/record_teleop.sh, scripts/baxter_data) and RethoughtAI's
+episode recorder.
 
 provenance.yaml holds, at the time of the call: every repository's commit, branch and remote, with
 its uncommitted changes as a patch when dirty; the command line of every process of this stack
@@ -22,9 +24,19 @@ from pathlib import Path
 
 import yaml
 
-HERE = Path(__file__).resolve().parent
-WS = HERE.parent
-REPOS = {
+
+def workspace():
+    """The BaxterSDK checkout: BAXTER_SDK, else found from this file (source tree or install space)."""
+    if os.environ.get('BAXTER_SDK'):
+        return Path(os.environ['BAXTER_SDK'])
+    for parent in Path(__file__).resolve().parents:
+        if (parent / 'src' / 'baxter_tools').is_dir():
+            return parent
+    raise RuntimeError('BaxterSDK workspace not found: set BAXTER_SDK')
+
+
+WS = workspace()
+REPOS = {  # the stack's repositories, side by side as in the README
     'baxter_sdk': WS,
     'rethought_ai': WS.parent / 'rethought_ai',
     'libsurvive_ros2': WS.parent / 'libsurvive_ros2',
@@ -67,7 +79,7 @@ def repo(path):
 
 
 def stack_processes():
-    """Command lines of this stack's processes (scripts/env.sh STACK_PROCESSES), not this one's."""
+    """Command lines of this stack's processes (BaxterSDK scripts/env.sh STACK_PROCESSES), not this one's."""
     pattern = os.environ.get('STACK_PROCESSES')
     if not pattern:
         return []
@@ -138,10 +150,14 @@ def custom_data():
     print(' '.join(f'{k}={str(v).replace(" ", "_")}' for k, v in pairs.items()))
 
 
-if __name__ == '__main__':
+def main():
     if len(sys.argv) == 3 and sys.argv[1] == 'write':
         write(sys.argv[2])
     elif len(sys.argv) == 2 and sys.argv[1] == 'custom-data':
         custom_data()
     else:
         sys.exit(__doc__)
+
+
+if __name__ == '__main__':
+    main()

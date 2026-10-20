@@ -10,7 +10,7 @@ RAI_DIR="${RAI_DIR:-$(realpath -m "${WS_DIR}/../rethought_ai")}"
 DATA_DIR="${DATA_DIR:-$(realpath -m "${WS_DIR}/../data")}"  # FinalProject/data: every recording and result
 PY="${PY:-${WS_DIR}/.venv-ros/bin/python}"  # ROS Kilted's Python 3.12 plus ruckig (src/baxter_teleop/requirements.txt)
 
-# This stack's processes, by command line: teardown.sh stops them, provenance.py records them. Only
+# This stack's processes, by command line: teardown.sh stops them, baxter_tools.provenance records them. Only
 # what this stack starts, never every ROS process on the machine (a micro-ROS agent, Foxglove).
 STACK_PROCESSES='baxter_sdk/(install|build|\.venv)|rethought_ai/(\.venv|launch)|policy\.launch\.py'
 STACK_PROCESSES+='|baxter_mujoco[.](baxter_ros|sim)|baxter_interface|baxter_teleop|baxter_tools|baxter_examples|move_group'

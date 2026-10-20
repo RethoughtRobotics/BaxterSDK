@@ -110,12 +110,12 @@ session_yaml() {
 ( for _ in $(seq 300); do [[ -d "$OUT" ]] && break; sleep 0.2; done
   [[ -d "$OUT" ]] || exit 0
   session_yaml > "${OUT}/session.yaml"
-  python3 "${SCRIPT_DIR}/provenance.py" write "$OUT"
+  python3 -m baxter_tools.provenance write "$OUT"
   for f in cuff.log camera.yaml camera.log; do [[ -f "${OUT}.$f" ]] && mv "${OUT}.$f" "$OUT/$f"; done; true ) &
 
 echo "Recording every topic (except: ${EXCLUDE}) to ${OUT}. Ctrl+C to stop."
 trap ':' INT  # let Ctrl+C stop the recorder, then finish below
-read -ra CUSTOM <<< "$(python3 "${SCRIPT_DIR}/provenance.py" custom-data)"  # short form, in metadata.yaml
+read -ra CUSTOM <<< "$(python3 -m baxter_tools.provenance custom-data)"  # short form, in metadata.yaml
 ros2 bag record -s mcap --storage-preset-profile zstd_fast --all-topics --exclude-regex "$EXCLUDE" \
     ${MISSING:+--exclude-topic-types "${MISSING[@]}"} ${CUSTOM[0]:+--custom-data "${CUSTOM[@]}"} -o "$OUT" || true
 trap - INT
