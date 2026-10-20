@@ -9,9 +9,10 @@
 #   BAG_PATH=DIR     record to exactly DIR
 
 # Records robot state and commands, teleop telemetry (/teleop/{arm}/*), VR input (/vive,
-# /libsurvive), TF and the robot description; not the real robot's cameras and IO. While a
-# RethoughtAI policy runs it records a rollout instead (data/rollouts/): also /policy/* and the
-# policy's cameras as JPEG (compress_images.py), with the checkpoint in session.yaml.
+# /libsurvive), the cuffs (squeeze and gripper buttons), TF and the robot description; not the
+# real robot's cameras or its other IO. While a RethoughtAI policy runs it records a rollout
+# instead (data/rollouts/): also /policy/* and the policy's cameras as JPEG (compress_images.py),
+# with the checkpoint in session.yaml.
 
 if [[ " $* " =~ \ (-h|--help)\  ]]; then sed -n '2,/^$/{/^#/s/^# \{0,1\}//p}' "$0"; exit 0; fi
 set -e
@@ -34,6 +35,7 @@ TOPICS='^/(tf|tf_static|robot_description|rosout)$'
 TOPICS+='|^/robot/(joint_states|state|head/.*|limb/.*|end_effector/[^/]+/(state|command|properties))$'
 TOPICS+='|^/robot/(range|accelerometer)/.*'  # hand IR range (distance to what's in/below the gripper), hand IMU
 TOPICS+='|^/teleop/.*|^/vive/.*|^/libsurvive/.*|^/sim/.*'
+TOPICS+='|^/robot/digital_io/(left|right)_(lower_cuff|upper_button|lower_button)/state$'  # cuff squeeze (zero-g takeover), gripper buttons
 CAMERAS=(/cameras/left_hand_camera/image /cameras/third_eye/color/image_raw)  # the policy's
 if [[ -n "$ALL_TOPICS" ]]; then  # every colour camera up (depth stays as it is)
     mapfile -t CAMERAS < <(ros2 topic list 2>/dev/null | grep -E '^/cameras/.*/(image|image_raw)$' | grep -vi depth || true)
