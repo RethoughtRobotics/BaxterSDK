@@ -6,17 +6,22 @@ drive and show this simulated Baxter exactly as they do the real one, over the s
   publishes   /robot/joint_states, /robot/limb/{arm}/endpoint_state, /robot/state,
               /robot/head/head_state, /robot/end_effector/{arm}_gripper/{state,properties},
               /sim/config (scene, latched), /sim/scene (RViz markers of
-              everything else the arms can hit: the table, objects)
+              everything else the arms can hit: the table, objects);
+              /sim/state (MuJoCo qpos at 25 Hz, which cameras.py renders the cameras from); with
+              --scene cup also /sim/objects (cup and container poses)
   subscribes  /robot/limb/{arm}/joint_command (position, velocity, torque, raw position modes),
               /robot/limb/{arm}/joint_command_timeout, /robot/limb/{arm}/set_speed_ratio,
               /robot/set_super_enable, /robot/head/command_head_pan,
-              /robot/end_effector/{arm}_gripper/command (electric gripper: calibrate, go, ...)
+              /robot/end_effector/{arm}_gripper/command (electric gripper: calibrate, go, ...);
+              with --scene cup also /sim/layout ([cup x, y, container x, y, container yaw] in
+              the base frame: places both on the table, at rest) and /sim/lighting (the lab's
+              lights moved, scaled, tinted, shadows on or off: scenes.apply_lighting)
 
 Baxter's own joint controllers are emulated with computed torque plus gravity compensation
 (critically damped at OMEGA, about 0.1 s of lag like the real arm) inside the actuators' torque
 limits. The head (not in the MuJoCo model) pans kinematically. As on the robot, position targets persist, while velocity and torque commands older than
-the command timeout drop back to holding the current position. The endpoint is the URDF
-{arm}_gripper frame (hand + 2.5 cm), in the robot base frame.
+the command timeout drop back to holding the current position. The endpoint is at the fingertips,
+where the real robot reports it with its electric gripper, in the robot base frame.
 """
 
 import json
@@ -36,13 +41,15 @@ from baxter_core_msgs.msg import (
     HeadState,
     JointCommand,
 )
+from geometry_msgs.msg import Pose, PoseArray
 from rclpy.executors import ExternalShutdownException
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
-from std_msgs.msg import Bool, Float64, String
+from std_msgs.msg import Bool, Float64, Float64MultiArray, String
 from visualization_msgs.msg import Marker, MarkerArray
 
+from baxter_mujoco import scenes
 from baxter_mujoco.sim import make_env
 
 ARMS = ('left', 'right')
@@ -50,7 +57,10 @@ JOINTS = ('s0', 's1', 'e0', 'e1', 'w0', 'w1', 'w2')
 MAX_SPEED = np.array([1.5, 1.5, 1.5, 1.5, 4.0, 4.0, 4.0])  # rad/s, URDF velocity limits
 HEAD_MAX_SPEED = 1.0  # rad/s
 OMEGA = 20.0  # rad/s, joint servo bandwidth (critically damped)
-TCP_IN_HAND = np.array([0.0, 0.0, 0.025])  # URDF {arm}_hand -> {arm}_gripper
+# Endpoint in {arm}_hand: the sim gripper's fingertip ends (robosuite's Rethink gripper,
+# gripper0_{arm}_{l,r}_fingertip_g0). The real robot reports its endpoint at its own fingertips
+# (wrist + 0.281 m in the BlueCupRedContainer_kin demos), so recorded TCP heights carry over.
+TCP_IN_HAND = np.array([0.0, 0.0, 0.123])
 SCENE_SHAPES = {
     int(mujoco.mjtGeom.mjGEOM_BOX): Marker.CUBE,
     int(mujoco.mjtGeom.mjGEOM_CYLINDER): Marker.CYLINDER,
@@ -58,6 +68,7 @@ SCENE_SHAPES = {
 }
 SCENE_COLORS = {'static': (0.62, 0.60, 0.55, 0.85), 'free': (0.80, 0.42, 0.22, 0.9)}  # table / movable objects
 DT_PUBLISH = 0.01  # s, state publishing period (100 Hz)
+STATE_EVERY = 4  # publishing periods per /sim/state, which the cameras render from: 25 Hz, the datasets' rate
 FINGER_JOINTS = (
     'l_gripper_l_finger_joint',
     'l_gripper_r_finger_joint',
@@ -98,7 +109,13 @@ class Gripper:
     acknowledged by echoing its sender and sequence in the state, which baxter_interface waits on.
     """
 
-    FINGER = 0.0115  # m, finger joint travel either side of centre (MuJoCo actuator, sim model)
+    # The real gripper's stroke: each finger travels URDF_STROKE (rethink_electric_gripper.xacro), from
+    # the paddle tips touching to 4.2 cm apart, too narrow to span a cup, so the cup is held by its wall.
+    # robosuite's model closes only to 1.55 cm between the pads and opens to 7.7 cm, so the r finger
+    # joint (the l one mirrors it) is given the real stroke, ending where the pads touch.
+    URDF_STROKE = 0.020833  # m
+    CLOSED = 0.0193  # m, r finger joint with the pads touching
+    OPEN = CLOSED - URDF_STROKE
     FULL_STROKE_S = 0.5
     ID = 65538
 
@@ -107,7 +124,12 @@ class Gripper:
             mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_ACTUATOR, f'gripper0_{side}_gripper_{f}_finger_joint')
             for f in ('r', 'l')
         ]
-        self.joint = m.jnt_qposadr[mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f'gripper0_{side}_r_finger_joint')]
+        joints = [
+            mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_JOINT, f'gripper0_{side}_{f}_finger_joint') for f in ('r', 'l')
+        ]
+        for joint, act, sign in zip(joints, self.acts, (1, -1)):
+            m.jnt_range[joint] = m.actuator_ctrlrange[act] = sorted((sign * self.OPEN, sign * self.CLOSED))
+        self.joint = m.jnt_qposadr[joints[0]]
         self.calibrated, self.target, self.command_pct = False, 100.0, 100.0
         self.velocity, self.dead_zone = 50.0, 5.0
         self.ack = ('', '', 0)
@@ -152,11 +174,20 @@ class Gripper:
         """Finger actuator targets: the commanded opening moves toward the target at the set speed."""
         step = 100.0 * self.velocity / 100.0 / self.FULL_STROKE_S * dt
         self.command_pct += float(np.clip(self.target - self.command_pct, -step, step))
-        r = self.FINGER * (1.0 - 2.0 * self.command_pct / 100.0)  # +FINGER closed, -FINGER open
+        r = self.CLOSED + (self.OPEN - self.CLOSED) * self.command_pct / 100.0
         return [r, -r]
 
+    def position(self, d):
+        """Measured opening, 0 (closed) .. 100 (open)."""
+        return float(np.clip(100.0 * (self.CLOSED - d.qpos[self.joint]) / (self.CLOSED - self.OPEN), 0.0, 100.0))
+
+    def finger_joints(self, d):
+        """The real robot's l and r finger joint positions at the measured opening: l opens positive."""
+        travel = self.URDF_STROKE * self.position(d) / 100.0
+        return [travel, -travel]
+
     def publish(self, d, stamp):
-        position = float(np.clip(100.0 * (self.FINGER - d.qpos[self.joint]) / (2 * self.FINGER), 0.0, 100.0))
+        position = self.position(d)
         moving = abs(self.target - self.command_pct) > 0.5
         blocked = abs(position - self.command_pct) > self.dead_zone  # fingers held apart by an object
         command, sender, sequence = self.ack
@@ -227,10 +258,12 @@ class Arm:
 
 
 class SimBaxter:
-    def __init__(self, node, render, empty=False, table=True):
-        self.node, self.render = node, render
+    def __init__(self, node, render, empty=False, table=True, scene='lift'):
+        self.node, self.render, self.scene = node, render, scene
         self.env = make_env(render=render)
         self.env.reset()
+        if scene == 'cup':
+            self.env = scenes.build_cup_scene(self.env)
         self.m, self.d = self.env.sim.model._model, self.env.sim.data._data
         if empty:  # move free objects (the pot) out of reach; the table stays below the hands
             for j in np.flatnonzero(self.m.jnt_type == mujoco.mjtJoint.mjJNT_FREE):
@@ -282,7 +315,16 @@ class SimBaxter:
             for g in range(self.m.ngeom)  # collision shapes the arms can hit
             if self.m.geom_contype[g] and int(self.m.geom_type[g]) in SCENE_SHAPES and not body(g).startswith(robot)
         ]
-        self.config_pub.publish(String(data=json.dumps({'scene': 'TwoArmLift', 'empty': empty, 'table': table})))
+        scene_name = 'BlueCupRedContainer' if scene == 'cup' else 'TwoArmLift'
+        self.config_pub.publish(String(data=json.dumps({'scene': scene_name, 'empty': empty, 'table': table})))
+        self.pending_layout = self.pending_lighting = None
+        self.sim_state_pub = node.create_publisher(JointState, '/sim/state', 1)  # for the cameras (cameras.py)
+        if scene == 'cup':
+            self.objects_pub = node.create_publisher(PoseArray, '/sim/objects', 10)
+            node.create_subscription(Float64MultiArray, '/sim/layout', self.on_layout, 10)
+            node.create_subscription(
+                Float64MultiArray, '/sim/lighting', lambda msg: setattr(self, 'pending_lighting', list(msg.data)), 10
+            )
 
     def on_command(self, arm, msg):
         index = {name: i for i, name in enumerate(arm.names)}
@@ -296,6 +338,38 @@ class SimBaxter:
                 if name in index:
                     command[index[name]] = value
             arm.mode, arm.command, arm.stamp = msg.mode, command, time.monotonic()
+
+    def on_layout(self, msg):
+        # Applied by the physics loop: only it touches MjData (rendering does not take the lock).
+        self.pending_layout = list(msg.data[:5])
+
+    def apply_pending(self):
+        layout, self.pending_layout = self.pending_layout, None
+        if layout is not None:
+            cup_x, cup_y, box_x, box_y, box_yaw = layout
+            scenes.place(self.env, (cup_x, cup_y), (box_x, box_y), container_yaw=box_yaw)
+        lighting, self.pending_lighting = self.pending_lighting, None
+        if lighting is not None:
+            scenes.apply_lighting(self.env, lighting)
+
+    def publish_state(self):
+        """The full MuJoCo state, stamped, for the camera process to render from."""
+        msg = JointState(position=self.d.qpos.tolist())
+        msg.header.stamp = self.node.get_clock().now().to_msg()
+        self.sim_state_pub.publish(msg)
+
+    def publish_objects(self):
+        msg = PoseArray()
+        msg.header.stamp, msg.header.frame_id = self.node.get_clock().now().to_msg(), 'base'
+        for name in ('cup', 'container'):
+            b = mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, name)
+            pb, Rb = scenes.base_pose(self.env)
+            p = Pose()
+            p.position.x, p.position.y, p.position.z = Rb.T @ (self.d.xpos[b] - pb)
+            q = Rotation.from_matrix(Rb.T @ self.d.xmat[b].reshape(3, 3)).as_quat()
+            p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w = q
+            msg.poses.append(p)
+        self.objects_pub.publish(msg)
 
     def on_head(self, msg):
         self.head_target = float(msg.target)
@@ -320,7 +394,8 @@ class SimBaxter:
         stamp = self.node.get_clock().now().to_msg()
         step = self.head_speed * DT_PUBLISH
         self.head_pan += float(np.clip(self.head_target - self.head_pan, -step, step))
-        name, position = ['head_pan', *FINGER_JOINTS], [self.head_pan] + [0.0] * 4
+        fingers = [q for gripper in self.grippers.values() for q in gripper.finger_joints(d)]
+        name, position = ['head_pan', *FINGER_JOINTS], [self.head_pan, *fingers]
         velocity, effort = [0.0] * 5, [0.0] * 5
         Rb, pb = d.xmat[self.base].reshape(3, 3), d.xpos[self.base]
         for side, arm in self.arms.items():
@@ -382,12 +457,18 @@ class SimBaxter:
         substeps = max(1, round(DT_PUBLISH / self.m.opt.timestep))
         next_tick, frame = time.monotonic(), 0
         while rclpy.ok():
+            with self.lock:
+                self.apply_pending()
             for _ in range(substeps):
                 self.step()
             self.publish()
             frame += 1
             if frame % 10 == 0:
                 self.publish_scene()
+                if self.scene == 'cup':
+                    self.publish_objects()
+            if frame % STATE_EVERY == 0:
+                self.publish_state()
             if self.render and frame % 3 == 0:
                 # robosuite's render() is a no-op for its mjviewer; update() opens the window, then syncs it
                 self.env.viewer.update()
@@ -402,6 +483,9 @@ def main():
     parser.add_argument('--no-viewer', action='store_true', help='run without the MuJoCo viewer')
     parser.add_argument('--empty', action='store_true', help='no objects in reach (for controller tests)')
     parser.add_argument('--no-table', action='store_true', help='no table: the arms can reach down freely')
+    parser.add_argument(
+        '--scene', choices=('lift', 'cup'), default='lift', help='cup: BlueCupRedContainer in the lab of lab.toml'
+    )
     args, ros_args = parser.parse_known_args()
 
     rclpy.init(args=['baxter_sim', *ros_args])
@@ -412,7 +496,7 @@ def main():
     if node.count_publishers('/robot/joint_states'):
         raise SystemExit('/robot/joint_states already has a publisher (a real robot or another sim); not starting.')
 
-    sim = SimBaxter(node, render=not args.no_viewer, empty=args.empty, table=not args.no_table)
+    sim = SimBaxter(node, render=not args.no_viewer, empty=args.empty, table=not args.no_table, scene=args.scene)
 
     def spin():
         try:

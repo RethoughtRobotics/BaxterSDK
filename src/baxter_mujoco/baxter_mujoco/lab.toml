@@ -1,0 +1,47 @@
+# The lab the cup scene reproduces: its table and its third_eye camera, in the robot base frame.
+# Another lab replaces this file with its own measurements; the robot itself (hand cameras, gripper)
+# is modelled in baxter_ros and does not change with the lab.
+
+[table]
+# The 56 BlueCupRedContainer_kin_pose demonstrations close the gripper at TCP (fingertip) z = -0.045 m
+# (median, std 0.01) with the fingertips just above the tabletop in the wrist camera.
+top = -0.06  # m
+# Covers where the real cups were grasped (x 0.46 to 0.95, y -0.20 to 0.44) and released
+# (x 0.42 to 0.94, y -0.28 to 0.36): x 0.25 to 1.15, y -0.54 to 0.70.
+center = [0.70, 0.08]  # m, x y
+half = [0.45, 0.62, 0.025]  # m
+rgba = [0.93, 0.93, 0.93, 1.0]  # white
+
+[third_eye]
+# The Intel RealSense D435i overhead (baxter_interface config/third_eye.yaml). Pose calibrated on the
+# 56 demonstrations: the left arm navigator's blue ring, detected in 841 still frames, bundle-adjusted
+# with its unknown point on left_upper_forearm through the recorded joint states (median reprojection
+# error 5.4 px). MuJoCo camera axes: looks along -z, image up +y. Intrinsics: its camera_info (no
+# distortion).
+pos = [0.3437, 0.0537, 1.1023]  # m
+quat = [-0.6914, -0.0490, 0.0832, 0.7160]  # w x y z
+size = [640, 480]  # px
+focal = [605.2, 605.3]  # px, fx fy
+principal = [324.6, 252.9]  # px, cx cy from the top-left corner
+topic = '/cameras/third_eye/color/image_raw'
+frame_id = 'third_eye_color_optical_frame'
+encoding = 'rgb8'
+
+[floor]
+# Cement: grey with a random speckle (MuJoCo builtin texture)
+rgb1 = [0.52, 0.52, 0.50]
+rgb2 = [0.40, 0.40, 0.39]
+random = 0.35
+
+[lighting]
+# Overhead ceiling lights, spots pointing down, over mostly ambient light: the lab's panel lights cast
+# only faint shadows, and a MuJoCo shadow removes its light's whole share. Fitted so the table renders
+# as in the real third_eye frames, mean 180 of 255.
+headlight_ambient = 0.66
+headlight_diffuse = 0.0
+lights = [
+    { pos = [0.45, 0.45, 2.2], diffuse = 0.04 },
+    { pos = [0.95, -0.25, 2.2], diffuse = 0.04 },
+]
+cutoff = 70  # deg, spot half-angle
+exponent = 2  # spot falloff from its axis

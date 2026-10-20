@@ -551,12 +551,12 @@
   <link name="right_gripper_base">
  <gravity>0</gravity>
     <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.02"/>
+      <origin rpy="-1.5707963267948966 3.141592653589793 0" xyz="0 0 0.025" />
       <geometry>
-        <box size="0.025 0.075 0.035"/>
+        <mesh filename="package://rethink_ee_description/meshes/electric_gripper/electric_gripper_base.STL" />
       </geometry>
-      <material name="darkred">
-        <color rgba=".5 .1 .1 1"/>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
       </material>
     </visual>
     <inertial>
@@ -980,12 +980,12 @@
   <link name="left_gripper_base">
  <gravity>0</gravity>
     <visual>
-      <origin rpy="0 0 0" xyz="0 0 -0.02"/>
+      <origin rpy="-1.5707963267948966 3.141592653589793 0" xyz="0 0 0.025" />
       <geometry>
-        <box size="0.025 0.075 0.035"/>
+        <mesh filename="package://rethink_ee_description/meshes/electric_gripper/electric_gripper_base.STL" />
       </geometry>
-      <material name="darkred">
-        <color rgba=".5 .1 .1 1"/>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
       </material>
     </visual>
     <inertial>
@@ -1555,4 +1555,222 @@
       <update_rate>100.0</update_rate>
     </sensor>
   </gazebo>
+  <!-- Electric grippers (rethink_ee_description, extended_narrow fingers in slot 2, paddle tips, as
+       {side}_end_effector.urdf.xacro), mounted 2.5 cm out from the hand as there. The gripper and
+       endpoint frames above stay where the kinematics expect them; no inertials (the xacro's are
+       placeholders, 0.01 kg m^2 per finger), so inverse dynamics is unchanged. -->
+  <link name="l_gripper_l_finger">
+    <visual>
+      <origin rpy="0 0 -3.141592653589793" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/extended_narrow.STL" />
+      </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 -3.141592653589793" xyz="0 0.01725 0.0615" />
+      <geometry>
+        <box size="0.01 0.0135 0.1127" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="0 0 -3.141592653589793" xyz="-0.005 -0.003 0.0083" />
+      <geometry>
+        <box size="0.01 0.05 0.017" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="l_gripper_l_finger_tip">
+    <visual>
+      <origin rpy="0 0 3.141592653589793" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/paddle_tip.STL" />
+      </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 3.141592653589793" xyz="0 -0.0045 -0.015" />
+      <geometry>
+        <box size="0.042 0.0065 0.037" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="l_gripper_l_finger_tip_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.0 0.01725 0.1127" />
+    <parent link="l_gripper_l_finger" />
+    <child link="l_gripper_l_finger_tip" />
+  </joint>
+  <link name="l_gripper_r_finger">
+    <visual>
+      <origin rpy="0 0 -0.0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/extended_narrow.STL" />
+      </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 -0.0" xyz="0 -0.01725 0.0615" />
+      <geometry>
+        <box size="0.01 0.0135 0.1127" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="0 0 -0.0" xyz="0.005 0.003 0.0083" />
+      <geometry>
+        <box size="0.01 0.05 0.017" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="l_gripper_r_finger_tip">
+    <visual>
+      <origin rpy="0 0 0.0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/paddle_tip.STL" />
+      </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0.0" xyz="0 0.0045 -0.015" />
+      <geometry>
+        <box size="0.042 0.0065 0.037" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="l_gripper_r_finger_tip_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.0 -0.01725 0.1127" />
+    <parent link="l_gripper_r_finger" />
+    <child link="l_gripper_r_finger_tip" />
+  </joint>
+  <joint name="l_gripper_l_finger_joint" type="prismatic">
+    <origin rpy="0 0 0" xyz="0 -0.0015 0.045" />
+    <axis xyz="0 1 0" />
+    <parent link="left_gripper_base" />
+    <child link="l_gripper_l_finger" />
+    <limit effort="20.0" lower="0.0" upper="0.020833" velocity="5.0" />
+    <dynamics damping="0.7" friction="0.0" />
+  </joint>
+  <joint name="l_gripper_r_finger_joint" type="prismatic">
+    <origin rpy="0 0 0" xyz="0 0.0015 0.045" />
+    <axis xyz="0 1 0" />
+    <parent link="left_gripper_base" />
+    <child link="l_gripper_r_finger" />
+    <limit effort="20.0" lower="-0.020833" upper="0.0" velocity="5.0" />
+    <mimic joint="l_gripper_l_finger_joint" multiplier="-1.0" />
+    <dynamics damping="0.7" friction="0.0" />
+  </joint>
+  <link name="r_gripper_l_finger">
+    <visual>
+      <origin rpy="0 0 -3.141592653589793" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/extended_narrow.STL" />
+      </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 -3.141592653589793" xyz="0 0.01725 0.0615" />
+      <geometry>
+        <box size="0.01 0.0135 0.1127" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="0 0 -3.141592653589793" xyz="-0.005 -0.003 0.0083" />
+      <geometry>
+        <box size="0.01 0.05 0.017" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="r_gripper_l_finger_tip">
+    <visual>
+      <origin rpy="0 0 3.141592653589793" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/half_round_tip.STL" />
+      </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 3.141592653589793" xyz="0 -0.0045 -0.015" />
+      <geometry>
+        <cylinder length="0.037" radius="0.008" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="r_gripper_l_finger_tip_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.0 0.01725 0.1127" />
+    <parent link="r_gripper_l_finger" />
+    <child link="r_gripper_l_finger_tip" />
+  </joint>
+  <link name="r_gripper_r_finger">
+    <visual>
+      <origin rpy="0 0 -0.0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/extended_narrow.STL" />
+      </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 -0.0" xyz="0 -0.01725 0.0615" />
+      <geometry>
+        <box size="0.01 0.0135 0.1127" />
+      </geometry>
+    </collision>
+    <collision>
+      <origin rpy="0 0 -0.0" xyz="0.005 0.003 0.0083" />
+      <geometry>
+        <box size="0.01 0.05 0.017" />
+      </geometry>
+    </collision>
+  </link>
+  <link name="r_gripper_r_finger_tip">
+    <visual>
+      <origin rpy="0 0 0.0" xyz="0 0 0" />
+      <geometry>
+        <mesh filename="package://rethink_ee_description/meshes/electric_gripper/fingers/half_round_tip.STL" />
+      </geometry>
+      <material name="gripper_black">
+        <color rgba="0.1 0.1 0.1 1" />
+      </material>
+    </visual>
+    <collision>
+      <origin rpy="0 0 0.0" xyz="0 0.0045 -0.015" />
+      <geometry>
+        <cylinder length="0.037" radius="0.008" />
+      </geometry>
+    </collision>
+  </link>
+  <joint name="r_gripper_r_finger_tip_joint" type="fixed">
+    <origin rpy="0 0 0" xyz="0.0 -0.01725 0.1127" />
+    <parent link="r_gripper_r_finger" />
+    <child link="r_gripper_r_finger_tip" />
+  </joint>
+  <joint name="r_gripper_l_finger_joint" type="prismatic">
+    <origin rpy="0 0 0" xyz="0 -0.0015 0.045" />
+    <axis xyz="0 1 0" />
+    <parent link="right_gripper_base" />
+    <child link="r_gripper_l_finger" />
+    <limit effort="20.0" lower="0.0" upper="0.020833" velocity="5.0" />
+    <dynamics damping="0.7" friction="0.0" />
+  </joint>
+  <joint name="r_gripper_r_finger_joint" type="prismatic">
+    <origin rpy="0 0 0" xyz="0 0.0015 0.045" />
+    <axis xyz="0 1 0" />
+    <parent link="right_gripper_base" />
+    <child link="r_gripper_r_finger" />
+    <limit effort="20.0" lower="-0.020833" upper="0.0" velocity="5.0" />
+    <mimic joint="r_gripper_l_finger_joint" multiplier="-1.0" />
+    <dynamics damping="0.7" friction="0.0" />
+  </joint>
 </robot>
