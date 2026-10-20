@@ -43,3 +43,14 @@ def test_success_only_inside_container():
     task = CupTask()
     assert task.success(layout, {'cup': [0.7, -0.1, -0.055], 'container': [0.7, -0.1, -0.06]})
     assert not task.success(layout, {'cup': [0.8, 0.2, -0.06], 'container': [0.7, -0.1, -0.06]})
+
+
+def test_a_seeds_first_conditions_are_its_first_episode():
+    from baxter_mujoco.datagen.generate import conditions
+
+    layout, lighting = next(conditions(CupTask(), 1000))
+    assert layout == CupTask().sample(np.random.default_rng(1000))
+    assert lighting == scenes.sample_lighting(np.random.default_rng([1000, 1]))
+    later = conditions(CupTask(), 1000)
+    next(later)
+    assert next(later)[0] != layout

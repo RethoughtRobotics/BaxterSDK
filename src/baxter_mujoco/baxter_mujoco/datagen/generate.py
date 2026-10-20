@@ -58,16 +58,26 @@ def park(node, arm, q, timeout=20.0):
         node.destroy_publisher(pub)
 
 
-class Generator:
-    def __init__(self, node, task, arm='left'):
-        self.node, self.task, self.arm, self.navigator = node, task, PolicyArm(node, arm), Navigator(node)
+def conditions(task, seed, randomize_lighting=True):
+    """The (layout, lighting) of a seed's attempts, in order: the seed fixes each attempt's conditions."""
+    rng = np.random.default_rng(seed)
+    light_rng = np.random.default_rng([seed, 1])  # its own stream: a seed's layouts do not depend on it
+    while True:
+        layout = task.sample(rng)
+        yield layout, scenes.sample_lighting(light_rng) if randomize_lighting else scenes.lab_lighting()
+
+
+class Scene:
+    """The sim scene's topics: the layout and lighting it is given, the objects' poses it reports."""
+
+    def __init__(self, node):
         self._layout = node.create_publisher(Float64MultiArray, '/sim/layout', 10)
         self._lighting = node.create_publisher(Float64MultiArray, '/sim/lighting', 10)
         self._objects = None
         node.create_subscription(PoseArray, '/sim/objects', lambda m: setattr(self, '_objects', m), 10)
 
-    def require_sim(self, timeout=10.0):
-        """Refuse to run without the sim: this drives /policy/*/target, which a real robot follows."""
+    def require(self, timeout=10.0):
+        """Refuse to run without the sim: the caller drives /policy/*/target, which a real robot follows."""
         end = time.monotonic() + timeout
         while self._objects is None:
             if time.monotonic() > end:
@@ -75,36 +85,54 @@ class Generator:
                 raise SystemExit(f'no /sim/objects on ROS_DOMAIN_ID={domain} in {timeout} s: start the sim scene there')
             time.sleep(0.05)
 
-    def objects(self):
-        return {name: [p.position.x, p.position.y, p.position.z] for name, p in zip(OBJECTS, self._objects.poses)}
+    def poses(self):
+        """{name: (position, quaternion [x y z w])}, base frame."""
+        return {
+            name: (
+                np.array([p.position.x, p.position.y, p.position.z]),
+                np.array([p.orientation.x, p.orientation.y, p.orientation.z, p.orientation.w]),
+            )
+            for name, p in zip(OBJECTS, self._objects.poses)
+        }
 
-    def episode(self, layout, lighting):
-        """One recorded demonstration from home to home; returns whether it succeeded."""
-        self.arm.go_home()
+    def objects(self):
+        return {name: position.tolist() for name, (position, _) in self.poses().items()}
+
+    def set(self, layout, lighting):
+        """Place the layout under the lighting and let it settle."""
         for pub, values in ((self._layout, layout), (self._lighting, lighting)):
             wait_for_subscriber(pub)
             pub.publish(Float64MultiArray(data=[float(v) for v in values]))
         time.sleep(SETTLE)
+
+
+class Generator:
+    def __init__(self, node, task, arm='left'):
+        self.node, self.task, self.arm, self.navigator = node, task, PolicyArm(node, arm), Navigator(node)
+        self.scene = Scene(node)
+
+    def episode(self, layout, lighting):
+        """One recorded demonstration from home to home; returns whether it succeeded."""
+        self.arm.go_home()
+        self.scene.set(layout, lighting)
         home = self.arm.tcp()
         self.navigator.press('record')
         self.arm.hold(home, 0.5)  # engage on the current pose: the target maps 1:1 onto the TCP
         self.arm.follow(self.task.plan(layout, home), home)
         self.navigator.press('record')
         time.sleep(0.5)
-        ok = self.task.success(layout, self.objects())
+        ok = self.task.success(layout, self.scene.objects())
         self.navigator.press('save' if ok else 'discard')
         return ok
 
     def run(self, episodes, seed, randomize_lighting=True):
-        self.require_sim()
+        self.scene.require()
         for arm, q in self.task.parked.items():
             park(self.node, arm, q)
-        rng = np.random.default_rng(seed)
-        light_rng = np.random.default_rng([seed, 1])  # its own stream: a seed's layouts do not depend on it
+        draws = conditions(self.task, seed, randomize_lighting)
         saved = attempts = 0
         while saved < episodes:
-            layout = self.task.sample(rng)
-            lighting = scenes.sample_lighting(light_rng) if randomize_lighting else scenes.lab_lighting()
+            layout, lighting = next(draws)
             attempts += 1
             ok = self.episode(layout, lighting)
             saved += ok
