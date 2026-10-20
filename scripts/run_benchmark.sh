@@ -1,16 +1,16 @@
 #!/bin/bash
-# Control benchmark on the robot: one-factor sweeps of the teleop's control parameters, each run the
-# ISO 9283-style protocol (pose, linear, circle) recorded to its own bag, then the report.
-#
-# Usage: ./run_benchmark.sh [experiment_dir] [benchmark options]
-#   default dir: experiments/control_benchmark_<date>   (rerun with the same dir to resume)
-#   e.g. ./run_benchmark.sh --dry-run                      plan and duration only
-#        ./run_benchmark.sh experiments/cb --sweeps gain    one sweep
-#        ./run_benchmark.sh experiments/cb --repeats 1      quick pass
-# Runs on ROS_DOMAIN_ID as exported (unset = 0, the real robot). Ctrl+C stops after holding the arm;
-# rerunning resumes. Raw outputs bypass collision avoidance: keep the 30 cm area to the arm's right clear.
-# Each run aborts itself (and holds) on tracking error or contact force (scripted_trajectory --safety).
+# Control benchmark on the robot: one-factor sweeps of the teleop's control parameters.
+# Usage: scripts/run_benchmark.sh [DIR] [benchmark options]
+#   DIR        results folder (default: data/benchmarks/control_benchmark_<date>; reuse to resume)
+#   --dry-run  plan and duration only
+#   --sweeps   e.g. gain; --repeats N   (all: python -m baxter_teleop.diagnostics.benchmark -h)
 
+# Each run plays the ISO 9283-style protocol (pose, linear, circle), recorded to its own bag, then
+# the report. Runs on ROS_DOMAIN_ID as exported (unset = 0, the robot). Ctrl+C stops after holding
+# the arm; rerunning resumes. Raw outputs bypass collision avoidance: keep the 30 cm to the arm's
+# right clear. Each run aborts itself (and holds) on tracking error or contact force.
+
+if [[ " $* " =~ \ (-h|--help)\  ]]; then sed -n '2,/^$/{/^#/s/^# \{0,1\}//p}' "$0"; exit 0; fi
 set -e
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 ROOT="${DATA_DIR}/benchmarks/control_benchmark_$(date +%Y%m%d)"

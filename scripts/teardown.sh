@@ -1,12 +1,13 @@
 #!/bin/bash
-# Stop this stack's processes, real or sim, and reset to a clean state: the sim robot (baxter_mujoco),
-#   teleop, tuck_arms, the policy (RethoughtAI), recorders, the third_eye camera, RViz, robot/joint
-#   state publishers, MoveIt, the libsurvive VR container, Zenoh routers and ROS 2 daemons; then
-#   removes stale ROS middleware shared memory from /dev/shm. The bridge container (the robot link)
-#   keeps running: stop it from its own terminal.
-# The robot itself is not powered down: with the bridge and teleop gone it holds position.
-# Usage: ./teardown.sh [--dry-run]   (--dry-run lists what would be stopped)
+# Stop everything this stack started (sim, teleop, policy, recorders, camera, RViz, VR, routers).
+# Usage: scripts/teardown.sh [--dry-run]
+#   --dry-run  list what would be stopped
 
+# Also removes stale ROS middleware shared memory from /dev/shm. The bridge container (the robot
+# link) keeps running: stop it from its own terminal. The robot is not powered down: with the
+# bridge and teleop gone it holds position.
+
+if [[ " $* " =~ \ (-h|--help)\  ]]; then sed -n '2,/^$/{/^#/s/^# \{0,1\}//p}' "$0"; exit 0; fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIBSURVIVE_DIR="${LIBSURVIVE_DIR:-$(realpath "${SCRIPT_DIR}/../../libsurvive_ros2")}"
 DRY=false

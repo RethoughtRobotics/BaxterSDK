@@ -1,15 +1,19 @@
 #!/bin/bash
-# Record a teleop session, sim or real, for offline analysis: robot state and commands, teleop
-# telemetry (/teleop/{arm}/ twist, IK, VR goal, keys, config), VR input (/vive, /libsurvive),
-# TF and the robot description. Skips the real robot's cameras and IO. Ctrl+C stops recording.
-# While a RethoughtAI policy runs (scripts/run_inference), it records a rollout instead: also /policy/*
-# and the policy's cameras as JPEG (compress_images.py), into rollouts/, checkpoint in session.yaml.
-# Usage: ./record_teleop.sh [label]   ->  data/bags|rollouts/<time>_<sim|real>_<label>/ (+ session.yaml)
-# Environment: ALL_TOPICS=1 records every topic (IO, cuffs, every camera as JPEG: ~1 MB/s each);
-#              RAW_IMAGES=1 with it keeps the raw colour images instead (~1.5 GB/min per camera);
-#              SESSION=<name> files the bag under data/sessions/<name>/ instead (see ./bag_all);
-#              BAG_PATH=<dir> records to exactly that directory.
+# Record a teleop session (sim or real) to a bag for offline analysis. Ctrl+C stops.
+# Usage: scripts/record_teleop.sh [LABEL]
+#   LABEL  name in data/bags/<time>_<sim|real>_<LABEL>/ (default: session)
+# Environment:
+#   ALL_TOPICS=1     every topic (IO, cuffs, every camera as JPEG)
+#   RAW_IMAGES=1     with ALL_TOPICS, raw colour images (~1.5 GB/min per camera)
+#   SESSION=NAME     file the bag under data/sessions/NAME/
+#   BAG_PATH=DIR     record to exactly DIR
 
+# Records robot state and commands, teleop telemetry (/teleop/{arm}/*), VR input (/vive,
+# /libsurvive), TF and the robot description; not the real robot's cameras and IO. While a
+# RethoughtAI policy runs it records a rollout instead (data/rollouts/): also /policy/* and the
+# policy's cameras as JPEG (compress_images.py), with the checkpoint in session.yaml.
+
+if [[ " $* " =~ \ (-h|--help)\  ]]; then sed -n '2,/^$/{/^#/s/^# \{0,1\}//p}' "$0"; exit 0; fi
 set -e
 LABEL="${1:-session}"
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
