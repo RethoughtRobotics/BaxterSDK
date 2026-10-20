@@ -5,8 +5,7 @@ forward kinematics of the arm to its {arm}_wrist frame (the w2 joint), plus a fi
 frame, measured from the robot's own endpoint, so it includes the fitted gripper and fingers. Its
 orientation is the wrist's (the hand and gripper frames below it are only translated along z).
 Published live as /teleop/{arm}/tcp; the recorded tcp_offset (in /teleop/{arm}/config) is in the
-wrist frame. (frax, used until 2026-10-19, ended the chain at the last moving joint, i.e. the same
-wrist frame, so recordings from before agree.)
+wrist frame.
 
   Carpentier et al., "The Pinocchio C++ library", IEEE/SICE SII 2019. ROS package: pinocchio.
 """

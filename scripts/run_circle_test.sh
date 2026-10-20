@@ -52,6 +52,6 @@ sleep 3  # let the recorder subscribe to every topic before the motion starts
 echo "== Circles"
 "$PY" -m baxter_teleop.diagnostics.scripted_trajectory \
     --arm right --protocol circle --output "$OUTPUT" --gain 3 --no-feedforward "${ARGS[@]}" \
-    2> >(grep -v -e jax -e GPU -e '^\[INFO\]' >&2)
+    2> >(grep -v '^\[INFO\]' >&2)
 sleep 1  # the hold after the last circle
 echo "== Done; saving the bag"

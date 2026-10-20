@@ -4,7 +4,7 @@
 # defaults: every entry point starts from these (the teleop, `python -m baxter_teleop`, which
 # scripts/run_teleop.sh runs, the Teleop class, and the scripted trajectory the benchmark and
 # compare_ik.sh drive). The command-line option of the same name, dashes for underscores
-# (--servo-feedback), overrides each one. Tuned on the robot, 2026-10-16.
+# (--servo-feedback), overrides each one. Tuned on the robot.
 #
 # Edit here, then `colcon build --packages-select baxter_teleop` to install the change.
 
