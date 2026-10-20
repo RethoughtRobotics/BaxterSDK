@@ -1,9 +1,12 @@
 #!/bin/bash
-# Run scripted_trajectory once per IK solver on the simulated Baxter (no objects in reach), record each
-# run, and write a report (figures, tables) comparing them.
-# Usage: ./compare_ik.sh [solver ...]   (default: dls bounded)  ->  data/ik_comparisons/<time>_ik_comparison/
-# Stops any running ROS processes first (teardown.sh) and again at the end.
+# Compare IK solvers on the sim: one scripted trajectory each, then a report with figures.
+# Usage: scripts/compare_ik.sh [SOLVER ...]
+#   SOLVER  dls or bounded (default: both); report in data/ik_comparisons/<time>_ik_comparison/
 
+# Stops any running ROS processes first (teardown.sh) and again at the end. It runs on domain 0
+# with no guard: never run it while the bridge or the robot is up.
+
+if [[ " $* " =~ \ (-h|--help)\  ]]; then sed -n '2,/^$/{/^#/s/^# \{0,1\}//p}' "$0"; exit 0; fi
 set -e
 SOLVERS=("${@:-dls}")
 [[ $# -eq 0 ]] && SOLVERS=(dls bounded)

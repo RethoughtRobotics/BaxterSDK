@@ -1,37 +1,37 @@
 #!/bin/bash
-# Launch Baxter teleop (python -m baxter_teleop) in its own window that reads key input.
-# Usage: ./run_teleop.sh [--left|--right|--both] [--input keyboard] [--linear-speed 0.2] ...
-# Defaults: both arms, VR input, and the teleop's tuned control from
-# src/baxter_teleop/config/teleop.yaml (output, servo feedback, gains, VR axis map); any option given
-# here overrides them. Raw output bypasses Baxter's collision avoidance. --policy uses the same servo
-# with vr_axes_policy.yaml (1:1, no deadband or smoothing); leads tuned for the old ~0.6 s servo lag
-# over-lead with it.
-# --swap: swap_hands false for this run (you on Baxter's side: x/y of the axis maps negated, each arm
-# driven by its own hand's controller); default true (facing Baxter).
-# The null-space untuck pull defaults to 0.5/s; --null sets 1.4/s, --posture-gain VALUE any (0 = off).
-# --both runs one teleop per arm side by side (same options; each reads its own keys and
-# /vive/{arm}/ VR input).
-# VR translation maps onto the robot base frame (config/vr_axes_base.yaml); pass
-# --vr-config vr_axes.yaml for the previous tool-frame mapping.
-# --record runs the RethoughtAI episode recorder (../../rethought_ai, configs/baxter.yaml) below the
-# teleop instead of the record_teleop.sh prompt: Baxter's buttons and both VR thumbsticks pushed
-# the same way for 2 s (north start, south stop, east save, west discard) drive it.
-# --session NAME saves the recorder's episodes under rethought_ai/recorder/data/NAME/ (continuing
-# its numbering if it exists) and shows NAME on Baxter's screen; it implies --record. With one arm
-# (--left, --right or --arm X) the recorder skips the other arm's topics (--exclude).
-# --policy points the teleop at RethoughtAI's policy runtime (`inference run`) instead of the VR
-# controller: each arm's /policy/{arm}/target and trigger, mapped by config/vr_axes_policy.yaml.
-# --no-viz runs the recorder without its Rerun viewer.
-# Recording demos, VR or kinesthetic, is the same command: ./run_teleop.sh --session NAME. Drive
-# with the controllers, or squeeze a cuff and guide the arm by hand, its dash/circle buttons closing/
-# opening the gripper (no gripper_cuff_control needed). Episodes: Show starts/stops, OK saves, Back
-# discards (left arm navigator), or both thumbsticks. The right navigator's OK sends both arms home
-# (as B), opening the grippers. --no-gripper leaves the grippers to the cuff buttons only: the VR
-# trigger does not drive them and going home does not open them. Everything recorded is the ground truth.
-# The third_eye RealSense (config/third_eye.yaml) starts in the background if it is not already
-# running; it keeps running after the teleop, teardown.sh stops it. Without one on USB it warns
-# and goes on without it. --no-camera skips it.
-# Opens a Terminator window if a display is available, otherwise a tmux window.
+# Teleop Baxter's arms (VR by default) in a Terminator window (tmux without a display).
+# Usage: scripts/run_teleop.sh [--left|--right|--both] [options] [teleop options]
+#   --left, --right, --both  arms (default: both)
+#   --session NAME           record episodes to rethought_ai/recorder/data/NAME (implies --record)
+#   --record                 run the RethoughtAI recorder below the teleop
+#   --policy                 follow the policy (rethought_ai scripts/run_inference) instead of VR
+#   --swap                   you stand beside Baxter, not facing it
+#   --no-gripper             the VR trigger and going home leave the gripper alone
+#   --no-camera              do not start the third_eye RealSense
+#   --no-viz                 recorder without its Rerun viewer
+#   teleop options           any option of python -m baxter_teleop, listed below
+
+# Defaults come from src/baxter_teleop/config/teleop.yaml; options given here override them. Raw
+# output bypasses Baxter's collision avoidance. --policy maps the policy's targets 1:1
+# (config/vr_axes_policy.yaml: no deadband or smoothing).
+# --swap sets swap_hands false: x/y of the axis maps negated, each arm driven by its own hand's
+# controller (default: facing Baxter, hands crossed).
+# --both runs one teleop per arm side by side, each reading its own keys and /vive/{hand}/ input.
+# Recording, VR or kinesthetic, is the same command (--session NAME): drive with the controllers, or
+# squeeze a cuff and guide the arm by hand, its dash/circle buttons closing/opening the gripper.
+# Episodes: Show starts/stops, OK saves, Back discards (left navigator), or both thumbsticks pushed
+# the same way for 2 s (north start, south stop, east save, west discard). The right navigator's
+# OK sends both arms home (as B). With one arm the recorder skips the other arm's topics.
+# The third_eye RealSense (config/third_eye.yaml) starts in the background unless running; it keeps
+# running after the teleop (teardown.sh stops it). Without one on USB it warns and goes on.
+
+if [[ " $* " =~ \ (-h|--help)\  ]]; then
+    sed -n '2,/^$/{/^#/s/^# \{0,1\}//p}' "$0"
+    source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
+    echo; echo 'Teleop options:'
+    "$PY" -m baxter_teleop --help | sed -n '/^options:/,$p' | tail -n +2
+    exit 0
+fi
 
 set -euo pipefail
 

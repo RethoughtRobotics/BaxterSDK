@@ -1,16 +1,17 @@
 #!/bin/bash
-# Teleop the simulated Baxter (baxter_mujoco on the real robot's ROS 2 interface), no hardware:
-# starts the sim and live RViz, untucks the arms with tuck_arms -u, then opens run_teleop.sh.
-# Usage: ./run_sim_teleop.sh [--vr] [--table|--objects] [--left|--right] [other run_teleop.sh options]
-#   --vr        control with live VR (requires libsurvive_ros2 to be started separately)
-#   --table     keep the table (it stops the hands about 12 cm below the base frame)
-#   --objects   keep the table and the scene's objects (the pot); by default neither is there
-# RViz shows the sim's table and objects (/sim/scene).
-# Runs on $ROS_DOMAIN_ID if exported (e.g. export ROS_DOMAIN_ID=55 to keep the sim apart from a
-# real robot on the default domain). Ctrl+C here stops everything this script started. Refuses to
-# run while a real robot is up on that domain; a sim left over from an earlier run (e.g. after
-# kill -9) is stopped and replaced.
+# Teleop the simulated Baxter: starts the sim and RViz, untucks, then opens run_teleop.sh.
+# Usage: scripts/run_sim_teleop.sh [--vr] [--table|--objects] [run_teleop.sh options]
+#   --vr       live VR (start libsurvive_ros2 first); default keyboard
+#   --table    keep the table
+#   --objects  keep the table and its objects
+#   run_teleop.sh options, e.g. --left, --policy (scripts/run_teleop.sh -h)
 
+# The sim is baxter_mujoco on the real robot's ROS 2 interface. RViz shows the sim's table and
+# objects (/sim/scene). Runs on $ROS_DOMAIN_ID if exported (e.g. 55 to keep apart from a robot on
+# 0). Ctrl+C here stops everything this script started. Refuses to run while a real robot is up on
+# that domain; a sim left from an earlier run is stopped and replaced.
+
+if [[ " $* " =~ \ (-h|--help)\  ]]; then sed -n '2,/^$/{/^#/s/^# \{0,1\}//p}' "$0"; exit 0; fi
 set -e
 
 INPUT=keyboard
@@ -20,6 +21,7 @@ ARGS=()
 for a in "$@"; do
     case "$a" in
         --vr) INPUT=vr ;;
+        --policy) INPUT=policy; ARGS+=("$a") ;;  # run_teleop.sh points the teleop at the policy
         --table) SIM_ARGS=(--empty) ;;
         --objects) SIM_ARGS=() ;;
         --left | --right) ARM="${a#--}"; ARGS+=("$a") ;;
@@ -74,6 +76,10 @@ if [[ "$INPUT" == vr ]]; then
                   | sed -n 's/^ROS_DOMAIN_ID=//p' | grep . || echo 0)), then press A."; exit 1; }
 fi
 
-"${SCRIPT_DIR}/run_teleop.sh" --input "$INPUT" "${ARGS[@]}"
+if [[ "$INPUT" == policy ]]; then
+    "${SCRIPT_DIR}/run_teleop.sh" "${ARGS[@]}"
+else
+    "${SCRIPT_DIR}/run_teleop.sh" --input "$INPUT" "${ARGS[@]}"
+fi
 echo "Sim and RViz are running. Ctrl+C here to stop them."
 wait "${groups[@]}"

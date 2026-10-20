@@ -1,16 +1,18 @@
 #!/bin/bash
-# Record everything on ROS that a learned policy could ever use, for exploring the data: joints
-# (measured, reference, commanded), SEA torques and gravity model, endpoint pose/twist/wrench
-# (measured and commanded), hand IMUs, hand IR range, cuff/buttons/navigators/all IO, grippers,
-# collision states, head and sonar, every camera, TF and the robot description, diagnostics, plus
-# teleop, VR and policy topics if they run. Topics that appear later (a camera, a teleop) are picked up.
-# Starts the third-eye RealSense with colour, depth aligned to colour and its IMU, unless it already runs.
-#
-# Usage: ./baxter_data [label] [--cuff left|right|both] [--raw] [--no-camera]
-#   --cuff       run the SDK's gripper cuff control: the cuff buttons open/close the gripper
-#   --raw        keep raw colour images (~30 MB/s each) instead of JPEG (~1 MB/s each)
-#   --no-camera  don't start the RealSense
-# Squeeze the cuff to move the arm in zero-g. Ctrl+C stops -> data/<time>_<sim|real>_<label>/
+# Record everything on ROS a learned policy could use (joints, torques, IO, cameras, TF, ...).
+# Usage: scripts/baxter_data [LABEL] [--cuff left|right|both] [--raw] [--no-camera]
+#   LABEL        name in data/baxter_data/<time>_<sim|real>_<LABEL>/ (default: explore)
+#   --cuff       cuff buttons open/close the gripper (the SDK's gripper cuff control)
+#   --raw        raw colour images (~30 MB/s each) instead of JPEG (~1 MB/s each)
+#   --no-camera  do not start the third-eye RealSense
+
+# Joints (measured, reference, commanded), SEA torques and gravity model, endpoint pose/twist/wrench,
+# hand IMUs and IR range, all IO, grippers, collision states, head and sonar, every camera, TF and
+# the robot description, diagnostics, plus teleop, VR and policy topics if they run; topics that
+# appear later are picked up. Starts the RealSense with aligned depth and IMU unless it runs.
+# Squeeze the cuff to move the arm in zero-g. Ctrl+C stops.
+
+if [[ " $* " =~ \ (-h|--help)\  ]]; then sed -n '2,/^$/{/^#/s/^# \{0,1\}//p}' "$0"; exit 0; fi
 set -e
 LABEL=explore CUFF="" RAW="" NO_CAMERA=""
 while (( $# )); do
@@ -18,7 +20,6 @@ while (( $# )); do
         --cuff) CUFF="${2:?--cuff needs left, right or both}"; shift ;;
         --raw) RAW=1 ;;
         --no-camera) NO_CAMERA=1 ;;
-        -h|--help) sed -n '2,15p' "$0"; exit 0 ;;
         -*) echo "Unknown option $1" >&2; exit 2 ;;
         *) LABEL="$1" ;;
     esac

@@ -1,16 +1,15 @@
 #!/bin/bash
-# Repeatable right-arm control test: untuck (home), start recording, drive planar circles through the
-# teleop's own servo, IK and joint output stage (scripted_trajectory --protocol circle), stop recording.
-#
-# Usage: ./run_circle_test.sh [--output velocity|raw|raw_id] [scripted_trajectory options]
-#   default: --output raw_id, servo gain 3/s P-only (as VR teleop with --vr-gain 2 and linear_scale
-#   1.5), 3 circles of 15 cm radius at 0.15 m/s in x-y, toward the arm's outer side (right), ~21 s.
-#   e.g. ./run_circle_test.sh --output velocity      (the baseline, same stimulus)
-#        ./run_circle_test.sh --circle-speed 0.25 --loops 2
-# Bag: data/bags/<time>_<real|sim>_circle_<output>/  (record_teleop.sh's topics)
-# Runs on the real robot (ROS_DOMAIN_ID as exported; unset = 0). Ctrl+C stops the arm (position hold)
-# and still saves the bag. raw/raw_id bypass Baxter's collision avoidance: keep the circle clear.
+# Right-arm control test: untuck, record, drive 15 cm circles through the teleop, stop recording.
+# Usage: scripts/run_circle_test.sh [--output velocity|raw|raw_id] [scripted_trajectory options]
+#   --output  joint output stage (default: raw_id)
+#   e.g. --circle-speed 0.25 --loops 2   (all: python -m baxter_teleop.diagnostics.scripted_trajectory -h)
 
+# Default: servo gain 3/s P-only, 3 circles of 15 cm radius at 0.15 m/s in x-y toward the arm's
+# outer side, ~21 s. Bag: data/bags/<time>_<real|sim>_circle_<output>/. Runs on ROS_DOMAIN_ID as
+# exported (unset = 0, the robot). Ctrl+C holds the arm and still saves the bag. raw/raw_id bypass
+# Baxter's collision avoidance: keep the circle clear.
+
+if [[ " $* " =~ \ (-h|--help)\  ]]; then sed -n '2,/^$/{/^#/s/^# \{0,1\}//p}' "$0"; exit 0; fi
 set -e
 OUTPUT=raw_id
 ARGS=()

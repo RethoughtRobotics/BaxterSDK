@@ -1,14 +1,15 @@
 #!/bin/bash
-# RViz: Baxter (untuck pose or live), highlighting the current TCP frames ({arm}_gripper)
-# and the robot base frame. Without --live it runs on its own ROS domain, so it never touches a live robot.
-#   ./view_teleop_frames.sh          fixed untuck pose
-#   ./view_teleop_frames.sh --live   the robot's /robot/joint_states (real or baxter_mujoco sim), on the
-#                                    teleop's domain, plus the VR tracking tree (libsurvive_ros2)
-#   ./view_teleop_frames.sh --vive   live, the VR tracking tree only (no robot model)
-# libsurvive_ros2 keeps its TF on /libsurvive/tf* (off /tf, which the ROS1 bridge forwards to the
-# robot), with libsurvive_world parented to base. Live, the robot tree is published there too and
-# RViz reads only those topics, so both trees show as one, and nothing here adds to the robot's /tf.
+# RViz of Baxter with the TCP frames ({arm}_gripper) and the base frame.
+# Usage: scripts/view_teleop_frames.sh [--live|--vive]
+#   (none)   fixed untuck pose, on its own ROS domain (never touches a robot)
+#   --live   the robot's or sim's joint states, plus the VR tracking tree
+#   --vive   the VR tracking tree only
 
+# libsurvive_ros2 keeps its TF on /libsurvive/tf* (off /tf, which the bridge forwards to the robot),
+# with libsurvive_world parented to base. Live, the robot tree is published there too and RViz
+# reads only those topics, so both trees show as one and nothing here adds to the robot's /tf.
+
+if [[ " $* " =~ \ (-h|--help)\  ]]; then sed -n '2,/^$/{/^#/s/^# \{0,1\}//p}' "$0"; exit 0; fi
 set -e
 source "$(dirname "${BASH_SOURCE[0]}")/env.sh"
 CALLER_ROS_DOMAIN_ID="${ROS_DOMAIN_ID:-}"
