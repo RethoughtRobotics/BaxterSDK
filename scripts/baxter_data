@@ -103,22 +103,21 @@ session_yaml() {
     echo "third_eye: ${CAMERA}"
     echo "topics_at_start: $(wc -l <<< "$TOPICS")"
     echo "skipped_types: [${MISSING[*]}]  # not installed in this workspace"
-    echo "git:"
-    for repo in "$SCRIPT_DIR/../src" "$SCRIPT_DIR/../../rethought_ai"; do
-        [[ -d "$repo" ]] && echo "  $(basename "$repo"): $(git -C "$repo" describe --always --dirty 2>/dev/null)"
-    done
+    echo "provenance: provenance.yaml  # commits, patches, process command lines, teleop.yaml, containers"
     return 0
 }
 # Gives up after 60 s, so a recorder that dies before creating the bag cannot leave this loop running.
 ( for _ in $(seq 300); do [[ -d "$OUT" ]] && break; sleep 0.2; done
   [[ -d "$OUT" ]] || exit 0
   session_yaml > "${OUT}/session.yaml"
+  python3 "${SCRIPT_DIR}/provenance.py" write "$OUT"
   for f in cuff.log camera.yaml camera.log; do [[ -f "${OUT}.$f" ]] && mv "${OUT}.$f" "$OUT/$f"; done; true ) &
 
 echo "Recording every topic (except: ${EXCLUDE}) to ${OUT}. Ctrl+C to stop."
 trap ':' INT  # let Ctrl+C stop the recorder, then finish below
+read -ra CUSTOM <<< "$(python3 "${SCRIPT_DIR}/provenance.py" custom-data)"  # short form, in metadata.yaml
 ros2 bag record -s mcap --storage-preset-profile zstd_fast --all-topics --exclude-regex "$EXCLUDE" \
-    ${MISSING:+--exclude-topic-types "${MISSING[@]}"} -o "$OUT" || true
+    ${MISSING:+--exclude-topic-types "${MISSING[@]}"} ${CUSTOM[0]:+--custom-data "${CUSTOM[@]}"} -o "$OUT" || true
 trap - INT
 for p in "${PIDS[@]}"; do kill -INT "$p" 2>/dev/null || true; wait "$p" 2>/dev/null || true; done  # Ctrl+C may have stopped them
 if [[ -n "$CAMERA_PID" ]]; then  # stop the camera only if it was started here (its own session: Ctrl+C missed it)
