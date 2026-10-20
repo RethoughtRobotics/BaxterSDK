@@ -33,14 +33,14 @@ rgb2 = [0.40, 0.40, 0.39]
 random = 0.35
 
 [lighting]
-# Overhead ceiling lights, spots pointing down, casting soft shadows over mostly diffuse light. Fitted
-# so the table renders as in the real third_eye frames: mean 180 of 255, 166 to 193 across it (sim:
-# 182, 162 to 198).
-headlight_ambient = 0.6
+# Overhead ceiling lights, spots pointing down, over mostly ambient light: the lab's panel lights cast
+# only faint shadows, and a MuJoCo shadow removes its light's whole share. Fitted so the table renders
+# as in the real third_eye frames, mean 180 of 255.
+headlight_ambient = 0.66
 headlight_diffuse = 0.0
 lights = [
-    { pos = [0.45, 0.45, 2.2], diffuse = 0.1 },
-    { pos = [0.95, -0.25, 2.2], diffuse = 0.1 },
+    { pos = [0.45, 0.45, 2.2], diffuse = 0.04 },
+    { pos = [0.95, -0.25, 2.2], diffuse = 0.04 },
 ]
 cutoff = 70  # deg, spot half-angle
 exponent = 2  # spot falloff from its axis

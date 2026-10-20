@@ -28,11 +28,11 @@ BLUE, RED = '0.12 0.32 0.85 1', '0.85 0.12 0.10 1'
 # Lighting randomisation for data generation, around the lab's (lab.toml): per light a position offset
 # (which moves its shadows), an intensity scale, a colour tint and whether it casts shadows; and the
 # ambient level. /sim/lighting carries [ambient scale, then per light dx dy dz scale r g b shadow].
-LIGHT_OFFSET = (0.6, 0.6, 0.4)  # m, +- in base x y z
-LIGHT_SCALE = (0.5, 4.0)  # the lab's spots are weak (mostly ambient): up to hard shadows
+LIGHT_OFFSET = (0.3, 0.3, 0.2)  # m, +- in base x y z
+LIGHT_SCALE = (0.6, 1.6)  # shadows from faint to clear, never darker than the lit table
 LIGHT_TINT = (0.85, 1.15)  # per colour channel
-LIGHT_SHADOW_P = 0.8  # probability a light casts shadows
-AMBIENT_SCALE = (0.5, 1.1)
+LIGHT_SHADOW_P = 0.5  # probability a light casts shadows
+AMBIENT_SCALE = (0.85, 1.1)
 
 
 def _f(values):
