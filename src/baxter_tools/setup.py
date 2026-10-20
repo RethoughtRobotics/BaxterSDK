@@ -29,6 +29,7 @@ setup(
             'calibrate_arm  = baxter_tools.calibrate_arm:main',
             'calibrate_gripper = baxter_tools.calibrate_gripper:main',
             'tuck_arms = baxter_tools.tuck_arms:main',
+            'provenance = baxter_tools.provenance:main',
         ],
     },
 )
