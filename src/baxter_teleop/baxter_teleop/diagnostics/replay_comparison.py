@@ -5,7 +5,10 @@ write_report(out, demo, runs, arms, settings) writes into `out`:
                  the replay with the demo, and the measured joint torque difference
   summary.yaml   the same numbers, and the replay settings
   <arm>_joints.png, <arm>_tcp_error.png, <arm>_torque.png
-  replay_<mode>.npz  each run's log: per arm t, q, qd, effort, wrench_t, wrench
+  replay_<run>.npz  each run's log: per arm t, q, qd, effort, wrench_t, wrench
+Runs are labelled by mode ('pose', 'force'), with '#k' for repeats of one command (the run-to-run
+table: how far the repeats are from the first, the floor any replay can reach) and 'ilcK' for
+learning iterations (the convergence figure).
 Errors compare the replay at each demo instant (replay time x speed = demo time). The TCP is the
 URDF gripper frame for both, from the same kinematics, so it measures the motion, not the TCP offset.
 """
@@ -51,6 +54,26 @@ def compare(demo_arm, run_arm, speed, kinematics):
     return out, series
 
 
+def between(run_a, run_b, t, speed, kinematics):
+    """TCP distance (mm, rms and max) between two runs at demo times t."""
+    tcp = [np.array([kinematics.tcp(q)[0] for q in _at(t, r['t'] * speed, r['q'])[::2]]) for r in (run_a, run_b)]
+    d = 1000.0 * np.linalg.norm(tcp[0] - tcp[1], axis=1)
+    return float(np.sqrt(np.mean(d**2))), float(np.max(d))
+
+
+def color(label, index, count):
+    """Pose blue, force orange; repeats and iterations from light to dark."""
+    base = matplotlib_colors()['tab:blue' if label.startswith('pose') else 'tab:orange']
+    shade = 0.35 + 0.65 * (index + 1) / count
+    return tuple(1.0 - shade * (1.0 - c) for c in base)
+
+
+def matplotlib_colors():
+    from matplotlib.colors import TABLEAU_COLORS, to_rgb
+
+    return {name: to_rgb(value) for name, value in TABLEAU_COLORS.items()}
+
+
 def write_report(out, demo, runs, arms, settings):
     import matplotlib
 
@@ -60,10 +83,12 @@ def write_report(out, demo, runs, arms, settings):
     out = Path(out)
     out.mkdir(parents=True, exist_ok=True)
     speed = float(settings.get('speed', 1.0))
-    for mode, run in runs.items():  # the raw logs, for analysis beyond this report
-        np.savez(out / f'replay_{mode}.npz', **{f'{arm}_{k}': v for arm, d in run.items() for k, v in d.items()})
+    for label, run in runs.items():  # the raw logs, for analysis beyond this report
+        name = label.replace(' #', '_').replace(' ', '_')
+        np.savez(out / f'replay_{name}.npz', **{f'{arm}_{k}': v for arm, d in run.items() for k, v in d.items()})
     summary, lines = {'settings': settings, 'results': {}}, []
-    colors = {'pose': 'tab:blue', 'force': 'tab:orange'}
+    same_mode = {label: [lb for lb in runs if lb.split()[0] == label.split()[0]] for label in runs}
+    colors = {label: color(label, same_mode[label].index(label), len(same_mode[label])) for label in runs}
     for arm in arms:
         kinematics = ArmKinematics(arm)
         results, series = {}, {}
@@ -121,7 +146,34 @@ def write_report(out, demo, runs, arms, settings):
                 f'| {mode} | {r["joint_error_rms_deg"]:.2f} | {r["joint_error_max_deg"]:.2f} | '
                 f'{r["tcp_error_rms_mm"]:.1f} | {r["tcp_error_max_mm"]:.1f} | {r["lag_ms"]:.0f} | {torque} |'
             )
+        repeats = [lb for lb in runs if ' #' in lb]
+        if repeats:
+            t_demo = demo[arm]['t'][demo[arm]['t'] <= min(r[arm]['t'][-1] * speed for r in runs.values())]
+            lines += ['', '| repeat | TCP from the first run, rms (mm) | max (mm) |', '|---|---:|---:|']
+            for label in repeats:
+                first = label.split(' #')[0] + ' #1'
+                if label != first:
+                    rms, peak = between(runs[first][arm], runs[label][arm], t_demo, speed, kinematics)
+                    results[label]['tcp_from_first_run_rms_mm'] = rms
+                    lines.append(f'| {label} | {rms:.2f} | {peak:.2f} |')
+        learning = [lb for lb in runs if ' ilc' in lb]
+        if learning:
+            fig, ax = plt.subplots(figsize=(6, 3.5))
+            for mode in sorted({lb.split()[0] for lb in learning}):
+                its = [lb for lb in learning if lb.startswith(mode)]
+                ax.plot(range(len(its)), [results[lb]['tcp_error_rms_mm'] for lb in its], 'o-', label=mode,
+                        color=colors[its[-1]])  # fmt: skip
+            ax.set_xlabel('learning iteration')
+            ax.set_ylabel('TCP error rms (mm)')
+            ax.set_title(f'{arm} arm: replay error as the command learns')
+            ax.set_ylim(bottom=0)
+            ax.legend()
+            fig.tight_layout()
+            fig.savefig(out / f'{arm}_learning.png', dpi=110)
+            plt.close(fig)
         lines += ['', f'![joints]({arm}_joints.png)', '', f'![TCP error]({arm}_tcp_error.png)', '']
+        if learning:
+            lines += [f'![learning]({arm}_learning.png)', '']
         if (out / f'{arm}_torque.png').exists():
             lines += [f'![torque]({arm}_torque.png)', '']
 

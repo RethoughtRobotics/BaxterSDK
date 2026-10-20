@@ -1,6 +1,7 @@
 """Replay a recorded demonstration on the arms, in joint space, by pose or by force.
 
   python -m baxter_teleop.replay EPISODE [--mode pose|force|both] [--arms left,right] [--out DIR]
+                                 [--runs N] [--ilc N] [--offsets FILE]
 
 EPISODE is a bag folder with /robot/joint_states (a RethoughtAI episode, a record_teleop.sh bag).
 Both arms first move slowly to the demo's first pose, then follow the demo at its own timing:
@@ -16,6 +17,10 @@ Both arms first move slowly to the demo's first pose, then follow the demo at it
          states. Baxter adds gravity compensation. Lower --omega is more compliant: contact forces
          come from the scene, not from a stiff servo.
 
+--runs N plays the same command N times (the run-to-run spread is the floor any replay can reach).
+--ilc N practises N + 1 times, correcting the command after each run with its error (iterative
+learning control, iterative_learning.py), and saves the learned offsets (learned_<mode>.npz) for
+--offsets, which replays the demo plus a learned offset from the start.
 Each run logs the measured joints, torques and endpoint wrench; --out writes the comparison with
 the demo (diagnostics/replay_comparison.py). Raw position and torque modes bypass Baxter's
 collision avoidance: keep the workspace clear.
@@ -34,6 +39,7 @@ from scipy.signal import savgol_filter
 
 import baxter_interface
 
+from .iterative_learning import IterativeLearning
 from .kinematics import ArmKinematics
 from .outputs.raw_position import JointCommandPublisher
 from .outputs.setpoint import Setpoint
@@ -155,6 +161,9 @@ class Replayer:
         self.executor.add_node(node)
         self.limbs = {arm: baxter_interface.Limb(arm, node=node) for arm in arms}
         self.trajectories = {arm: Trajectory(demo[arm]['t'], demo[arm]['q']) for arm in arms}
+        # the demo on its uniform grid: what learned offsets are added to
+        self.grid = {arm: tr._grid for arm, tr in self.trajectories.items()}
+        self.demo_on_grid = {arm: np.array([tr(t)[0] for t in self.grid[arm]]) for arm, tr in self.trajectories.items()}
         self.duration = min(tr.duration for tr in self.trajectories.values())
         if until is not None:
             self.duration = min(self.duration, float(until))
@@ -169,6 +178,12 @@ class Replayer:
                 if arm in gripper and np.ptp(gripper[arm][1]) > 1.0:
                     self.gripper[arm] = (baxter_interface.Gripper(arm, node=node), *gripper[arm])
         self.log = Log(node, arms)
+
+    def set_offsets(self, offsets):
+        """Command the demo plus an offset per arm ((len(grid), 7) on the demo grid); {} for the demo itself."""
+        for arm in self.arms:
+            q = self.demo_on_grid[arm] + offsets.get(arm, 0.0)
+            self.trajectories[arm] = Trajectory(self.grid[arm], q)
 
     def _spin(self):
         """Run every callback that is ready now (as the teleop's control loop does)."""
@@ -279,6 +294,11 @@ def main(argv=None):
     parser.add_argument('--no-gripper', action='store_true', help='leave the grippers alone')
     parser.add_argument('--until', type=float, default=None, help="replay only the demo's first SECONDS")
     parser.add_argument('--out', default=None, help='write the comparison with the demo into this folder')
+    parser.add_argument('--runs', type=int, default=1, help='play the same command this many times (default: 1)')
+    parser.add_argument('--ilc', type=int, default=0, help='learning iterations after the first run (default: 0)')
+    parser.add_argument('--ilc-gain', type=float, default=0.8, help='learning gain (default: 0.8)')
+    parser.add_argument('--ilc-cutoff', type=float, default=3.0, help='learning low-pass cutoff, Hz (default: 3)')
+    parser.add_argument('--offsets', default=None, help='learned_<mode>.npz: replay the demo plus these offsets')
     args, ros_args = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
 
     demo, gripper = read_demo(args.episode)
@@ -300,9 +320,36 @@ def main(argv=None):
         replayer = Replayer(
             node, demo, gripper, arms, args.omega, args.speed, args.lead, not args.no_gripper, args.until
         )
+        start = dict(np.load(args.offsets)) if args.offsets else {}
         for mode in modes:
-            print(f'== {mode}: moving to the demo start pose, then {replayer.duration / args.speed:.1f} s of replay')
-            runs[mode] = replayer.run(mode)
+            offsets = {arm: start[arm] for arm in arms if arm in start}
+            replayer.set_offsets(offsets)
+            count = args.ilc + 1 if args.ilc else args.runs
+            learners = None
+            for k in range(count):
+                label = f'{mode} ilc{k}' if args.ilc else (mode if count == 1 else f'{mode} #{k + 1}')
+                print(
+                    f'== {label}: moving to the demo start pose, then {replayer.duration / args.speed:.1f} s of replay'
+                )
+                runs[label] = run = replayer.run(mode)
+                if not args.ilc or k == args.ilc:
+                    continue
+                if learners is None:  # align corrections by the lag the first run showed
+                    from .diagnostics.replay_comparison import compare
+
+                    learners = {}
+                    for arm in arms:
+                        lag = compare(demo[arm], run[arm], args.speed, replayer.kinematics[arm])[0]['lag_ms'] / 1000.0
+                        learners[arm] = IterativeLearning(
+                            replayer.grid[arm], args.ilc_gain, args.ilc_cutoff, max(lag, 0.0)
+                        )
+                for arm in arms:
+                    error = learners[arm].error(replayer.demo_on_grid[arm], run[arm]['t'] * args.speed, run[arm]['q'])
+                    offsets[arm] = learners[arm].update(offsets.get(arm, 0.0), error)
+                replayer.set_offsets(offsets)
+            if args.ilc and args.out:
+                Path(args.out).mkdir(parents=True, exist_ok=True)
+                np.savez(Path(args.out) / f'learned_{mode}.npz', **offsets)
     finally:
         node.destroy_node()
         rclpy.shutdown()
