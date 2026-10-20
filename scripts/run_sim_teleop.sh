@@ -1,9 +1,10 @@
 #!/bin/bash
 # Teleop the simulated Baxter: starts the sim and RViz, untucks, then opens run_teleop.sh.
-# Usage: scripts/run_sim_teleop.sh [--vr] [--table|--objects] [run_teleop.sh options]
+# Usage: scripts/run_sim_teleop.sh [--vr] [--table|--objects|--cup] [run_teleop.sh options]
 #   --vr       live VR (start libsurvive_ros2 first); default keyboard
 #   --table    keep the table
 #   --objects  keep the table and its objects
+#   --cup      the BlueCupRedContainer scene: real table height, cup, container, cameras
 #   run_teleop.sh options, e.g. --left, --policy (scripts/run_teleop.sh -h)
 
 # The sim is baxter_mujoco on the real robot's ROS 2 interface. RViz shows the sim's table and
@@ -24,6 +25,7 @@ for a in "$@"; do
         --policy) INPUT=policy; ARGS+=("$a") ;;  # run_teleop.sh points the teleop at the policy
         --table) SIM_ARGS=(--empty) ;;
         --objects) SIM_ARGS=() ;;
+        --cup) SIM_ARGS=(--scene cup --no-viewer) ;;  # cameras render headless; watch in RViz
         --left | --right) ARM="${a#--}"; ARGS+=("$a") ;;
         *) ARGS+=("$a") ;;
     esac
