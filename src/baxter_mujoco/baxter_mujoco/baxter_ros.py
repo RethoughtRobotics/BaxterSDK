@@ -66,6 +66,21 @@ FINGER_JOINTS = (
 )
 
 
+def torso_ignores_arms(m):
+    """Stop the torso's collision shape from touching the arms; objects and the table still hit it.
+
+    The torso collides as the convex hull of one concave mesh (base_link_collision), which fills
+    space the real arms move through: a hand-guided demo on the robot (SweepTrash_Kin episode 0)
+    puts the upper elbow 47 mm inside it without contact. Contact needs contype & conaffinity in
+    either direction; the arms have contype 2 or 4, everything else contype 1, so a torso with
+    contype 0 and conaffinity 1 still collides with all but the arms.
+    """
+    body = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, 'robot0_torso')
+    for g in np.flatnonzero(m.geom_bodyid == body):
+        if m.geom_contype[g] or m.geom_conaffinity[g]:
+            m.geom_contype[g], m.geom_conaffinity[g] = 0, 1
+
+
 def remove_table(m):
     """Take the table out of the scene: no collisions, and hidden (geom group 5 is not drawn)."""
     body = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, 'table')
@@ -223,6 +238,7 @@ class SimBaxter:
             mujoco.mj_forward(self.m, self.d)
         if not table:
             remove_table(self.m)
+        torso_ignores_arms(self.m)
         self.base = mujoco.mj_name2id(self.m, mujoco.mjtObj.mjOBJ_BODY, 'robot0_base')
         self.arms = {side: Arm(self.m, self.d, side) for side in ARMS}
         self.grippers = {side: Gripper(node, self.m, side) for side in ARMS}
