@@ -17,6 +17,9 @@ Both arms first move slowly to the demo's first pose, then follow the demo at it
          states. Baxter adds gravity compensation. Lower --omega is more compliant: contact forces
          come from the scene, not from a stiff servo.
 
+--joint-error-model FILE (pose mode, one arm): each joint is commanded ahead along the demo by its
+own steady lag, q_cmd = q_demo + lag * qd_demo (joint_error_model.JointErrorModel.lag(), fitted by
+diagnostics/joint_error_fit.py on other recordings of that arm), so the joint settles on the demo.
 --runs N plays the same command N times (the run-to-run spread is the floor any replay can reach).
 --ilc N practises N + 1 times, correcting the command after each run with its error (iterative
 learning control, iterative_learning.py), and saves the learned offsets (learned_<mode>.npz) for
@@ -40,6 +43,7 @@ from scipy.signal import savgol_filter
 import baxter_interface
 
 from .iterative_learning import IterativeLearning
+from .joint_error_model import JointErrorModel
 from .kinematics import ArmKinematics
 from .outputs.raw_position import JointCommandPublisher
 from .outputs.setpoint import Setpoint
@@ -155,8 +159,11 @@ class Log:
 class Replayer:
     """Plays a demo on the arms by pose or by force (module docstring)."""
 
-    def __init__(self, node, demo, gripper, arms, omega=20.0, speed=1.0, lead=0.0, drive_gripper=True, until=None):
+    def __init__(
+        self, node, demo, gripper, arms, omega=20.0, speed=1.0, lead=0.0, drive_gripper=True, until=None, joint_lag=None
+    ):
         self.node, self.arms, self.omega, self.speed, self.lead = node, arms, float(omega), float(speed), float(lead)
+        self.joint_lag = joint_lag or {}  # {arm: (7,) s}: pose mode commands each joint this far ahead
         self.executor = rclpy.get_global_executor()
         self.executor.add_node(node)
         self.limbs = {arm: baxter_interface.Limb(arm, node=node) for arm in arms}
@@ -256,7 +263,11 @@ class Replayer:
                 for arm in self.arms:
                     q_d, qd_d, qdd_d = self.trajectories[arm](t + self.lead)
                     if mode == 'pose':
-                        self.raw[arm](Setpoint(q_d, qd_d * self.speed, qdd_d * self.speed**2))
+                        qd_d, qdd_d = qd_d * self.speed, qdd_d * self.speed**2
+                        lag = self.joint_lag.get(arm)
+                        if lag is not None:  # ahead by the joint's lag, and the velocity of that
+                            q_d, qd_d = q_d + lag * qd_d, qd_d + lag * qdd_d
+                        self.raw[arm](Setpoint(q_d, qd_d, qdd_d))
                     else:
                         self._command_force(arm, q_d, qd_d * self.speed, qdd_d * self.speed**2)
                 for arm, (gripper, gt, gp) in self.gripper.items():
@@ -299,6 +310,9 @@ def main(argv=None):
     parser.add_argument('--ilc-gain', type=float, default=0.8, help='learning gain (default: 0.8)')
     parser.add_argument('--ilc-cutoff', type=float, default=3.0, help='learning low-pass cutoff, Hz (default: 3)')
     parser.add_argument('--offsets', default=None, help='learned_<mode>.npz: replay the demo plus these offsets')
+    parser.add_argument(
+        '--joint-error-model', default=None, help="pose mode, one arm: command each joint ahead by this model's lag"
+    )
     args, ros_args = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
 
     demo, gripper = read_demo(args.episode)
@@ -313,12 +327,19 @@ def main(argv=None):
         f'Demo {Path(args.episode).name}: {duration:.1f} s, arms {", ".join(arms)}; replaying by {" then ".join(modes)}'
     )
 
+    joint_lag = None
+    if args.joint_error_model:
+        if len(arms) != 1:
+            parser.error('--joint-error-model is fitted for one arm: give --arms left or --arms right')
+        joint_lag = {arms[0]: JointErrorModel.load(args.joint_error_model).lag()}
+        print(f'Joint lags (ms): {np.round(joint_lag[arms[0]] * 1e3).astype(int).tolist()}')
+
     rclpy.init(args=[sys.argv[0], *ros_args])
     node = rclpy.create_node('demo_replay')
     runs = {}
     try:
         replayer = Replayer(
-            node, demo, gripper, arms, args.omega, args.speed, args.lead, not args.no_gripper, args.until
+            node, demo, gripper, arms, args.omega, args.speed, args.lead, not args.no_gripper, args.until, joint_lag
         )
         start = dict(np.load(args.offsets)) if args.offsets else {}
         for mode in modes:
