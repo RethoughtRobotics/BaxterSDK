@@ -42,7 +42,8 @@ Success of adaptations is the mean of three update seeds.
 | S10a | 2.3 (1, 3, 3) | -0.7 [-1.7, +0.0] | -0.78 | 18.1 | 363 | 1.7 | missed grasp |
 | S10b | 3.3 (2, 3, 5) | +0.3 [-1.7, +2.7] | -0.78 | 15.9 | 363 | 2.1 | missed grasp |
 | S10c | 4.0 (4, 4, 4) | +1.0 [-1.3, +3.3] | -0.61 | 16.9 | 363 | 2.3 | missed grasp |
-| S11, S12a to S12c | pending | | | | | | |
+| S11 (preference, beta 10) | 2.3 (3, 2, 2) | -0.7 [-2.3, +1.0] | -0.83 | 15.0 | 363 | 4.2 | missed grasp |
+| S12a to S12c | pending | | | | | | |
 | S13a | 6.0 (6, 8, 4) | +3.0 [+0.3, +6.0] | -0.61 | 16.1 | 363 | 0.8 | missed grasp |
 | S13b | 5.7 (7, 4, 6) | +2.7 [+0.7, +5.0] | -0.56 | 16.8 | 363 | 8.6 | missed grasp |
 | S13c | 4.3 (5, 5, 3) | +1.3 [-0.7, +3.7] | -0.67 | 16.6 | 363 | 2.1 | missed grasp |
@@ -73,7 +74,7 @@ Update compute is measured on cluster A100 GPUs (S4's retraining on an H100), no
 | H-S8 where the adapter sits | | pending |
 | H-S9 capacity | [H-S9_rank.md](H-S9_rank.md) | inconclusive: no rank beats another, but M0 itself shows no gain over the base to scale |
 | H-S10 replay | [H-S10_anchor.md](H-S10_anchor.md) | inconclusive: forgetting falls with lambda (clearly open loop, within noise closed loop); no lambda gains, so the gain part is untestable |
-| H-S11 the negative | | pending |
+| H-S11 the negative | [H-S11_negative.md](H-S11_negative.md) | falsified: the preference term adds no gain over M0 (-0.7 [-2.3, +1.0]) |
 | H-S12 which frames | | pending |
 | H-S13 how long | [H-S13_steps.md](H-S13_steps.md) | inconclusive: 800 steps beat M0 (+2.7 [+0.7, +5.0]) but under the noise floor and only to the base's level; longer or faster updates do not forget more |
 | H-S14 blend dial | | pending |
@@ -98,3 +99,6 @@ Update compute is measured on cluster A100 GPUs (S4's retraining on an H100), no
   and trains on labels led by 640 ms; the sim bases were retrained the same way. Those zero-lead
   results (S0 4, S0b 4, S0c 3, S2c 15 of 50) are kept as a documented negative and are not used by
   any claim.
+- **Lighting.** The evaluator draws a random lighting per layout unless told to use the lab lighting;
+  every closed-loop evaluation and on-policy attempt here ran with the random lighting (paired across
+  conditions, so differences are unaffected, but absolute success may differ from the lab lighting).
