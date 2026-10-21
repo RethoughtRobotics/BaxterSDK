@@ -27,11 +27,13 @@
 
 JOINT_ANGLE_TOLERANCE = 0.008726646
 # Home pose: tuck_arms -u and the teleop H key, joints s0 s1 e0 e1 w0 w1 w2. Rethink's untuck hand
-# positions with each {arm}_gripper frame aligned to base: x = -base x, y = +base y, z = down
+# positions with each {arm}_gripper frame aligned to base: x = +base x, y = -base y, z = down
 # (baxter_description/urdf/baxter.urdf, < 0.01 deg), both hands at the same height and distance.
+# w2 is Rethink's turned by 180 deg (+pi left, -pi right) so the hand camera faces forward, not
+# back; the other way round would pass the +-3.059 rad w2 limit.
 UNTUCK_POSITIONS = {
-    'left': [-0.1124, -1.0097, -1.1317, 1.9033, 0.5854, 1.0585, -0.7055],
-    'right': [0.1124, -1.0097, 1.1317, 1.9033, -0.5854, 1.0585, 0.7055],
+    'left': [-0.1124, -1.0097, -1.1317, 1.9033, 0.5854, 1.0585, 2.4361],
+    'right': [0.1124, -1.0097, 1.1317, 1.9033, -0.5854, 1.0585, -2.4361],
 }
 HEAD_PAN_ANGLE_TOLERANCE = 0.1396263401
 
