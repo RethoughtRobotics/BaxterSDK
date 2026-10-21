@@ -342,13 +342,16 @@ class SimBaxter:
         ]
         scene_name = 'BlueCupRedContainer' if scene == 'cup' else 'TwoArmLift'
         self.config_pub.publish(String(data=json.dumps({'scene': scene_name, 'empty': empty, 'table': table})))
-        self.pending_layout = self.pending_lighting = None
+        self.pending_layout = self.pending_lighting = self.pending_cup_color = None
         self.sim_state_pub = node.create_publisher(JointState, '/sim/state', 1)  # for the cameras (cameras.py)
         if scene == 'cup':
             self.objects_pub = node.create_publisher(PoseArray, '/sim/objects', 10)
             node.create_subscription(Float64MultiArray, '/sim/layout', self.on_layout, 10)
             node.create_subscription(
                 Float64MultiArray, '/sim/lighting', lambda msg: setattr(self, 'pending_lighting', list(msg.data)), 10
+            )
+            node.create_subscription(
+                Float64MultiArray, '/sim/cup_color', lambda msg: setattr(self, 'pending_cup_color', list(msg.data)), 10
             )
 
     def on_command(self, arm, msg):
@@ -376,6 +379,9 @@ class SimBaxter:
         lighting, self.pending_lighting = self.pending_lighting, None
         if lighting is not None:
             scenes.apply_lighting(self.env, lighting)
+        cup_color, self.pending_cup_color = self.pending_cup_color, None
+        if cup_color is not None:
+            scenes.apply_cup_color(self.env, cup_color)
 
     def publish_state(self):
         """The full MuJoCo state, stamped, for the camera process to render from."""

@@ -30,6 +30,9 @@ CONTAINER_RANGE = ((0.42, REACH_X), (-0.28, 0.36))  # m, base frame
 MIN_SEPARATION = 0.18  # m between cup and container centres
 DEFAULT_CUP, DEFAULT_CONTAINER = (0.85, 0.17), (0.69, -0.12)  # m, base frame: the real medians
 BLUE, RED = '0.12 0.32 0.85 1', '0.85 0.12 0.10 1'
+# The cup's colours (/sim/cup_color): blue as demonstrated; the others are conditions the
+# demonstrations never show (red as the container, black).
+CUP_COLORS = {'blue': BLUE, 'red': RED, 'black': '0.05 0.05 0.05 1'}
 # Lighting randomisation for data generation, around the lab's (lab.toml): per light a position offset
 # (which moves its shadows), an intensity scale, a colour tint and whether it casts shadows; and the
 # ambient level. /sim/lighting carries [ambient scale, then per light dx dy dz scale r g b shadow].
@@ -252,6 +255,13 @@ def build_cup_scene(env):
             m.geom_rgba[g, 3], m.geom_contype[g], m.geom_conaffinity[g] = 0.0, 0, 0
     place(env, DEFAULT_CUP, DEFAULT_CONTAINER)
     return env
+
+
+def apply_cup_color(env, rgba):
+    """Colour every geom of the cup (a /sim/cup_color vector: r, g, b, a in 0 .. 1)."""
+    m = env.sim.model._model
+    cup = mujoco.mj_name2id(m, mujoco.mjtObj.mjOBJ_BODY, 'cup')
+    m.geom_rgba[m.geom_bodyid == cup] = np.asarray(rgba, dtype=float)[:4]
 
 
 def place(env, cup_xy, container_xy, cup_yaw=0.0, container_yaw=0.0):

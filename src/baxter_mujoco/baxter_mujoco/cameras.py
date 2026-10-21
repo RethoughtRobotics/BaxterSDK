@@ -111,6 +111,9 @@ class SimCameras:
             node.create_subscription(
                 Float64MultiArray, '/sim/lighting', lambda msg: scenes.apply_lighting(self.env, list(msg.data)), 10
             )
+            node.create_subscription(
+                Float64MultiArray, '/sim/cup_color', lambda msg: scenes.apply_cup_color(self.env, list(msg.data)), 10
+            )
         node.create_subscription(JointState, '/sim/state', self.on_state, 1)
 
     def on_state(self, msg):
