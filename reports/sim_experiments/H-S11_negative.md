@@ -1,6 +1,6 @@
 # H-S11: the negative (preference loss against the base's own answer)
 
-Plan S11 of RethoughtAI `training/sim_experiments.md` (part 3): the real test plan 6, closed loop.
+Plan S11 of RethoughtAI `training/sim_experiments.md` (part 2): the real test plan 6, closed loop.
 
 ## Claim
 

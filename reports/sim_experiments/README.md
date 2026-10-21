@@ -33,9 +33,17 @@ Success of adaptations is the mean of three update seeds.
 | S2b (37 demonstrations) | 11 | +8.0 [+2.0, +14.7] vs M0 | -0.67 | 16.3 | | | missed grasp |
 | S2c (55 demonstrations) | 18 | +15.0 [+8.0, +22.0] vs M0 | -0.50 | 13.9 | | | missed grasp |
 | M0 | 3.0 (4, 3, 2) | -3.0 [-7.3, +0.7] vs S0 | -0.72 | 16.3 | 363 | 2.1 | missed grasp |
-| S3a to S3d | pending | | | | | | |
+| S3a (everything) | 2.7 (3, 3, 2) | -0.3 [-2.7, +2.0] | -0.67 | 21.4 | 363 | 12.6 | missed grasp |
+| S3b (whole flow net) | 6.0 (5, 6, 7) | +3.0 [+0.3, +6.3] | -0.67 | 17.6 | 363 | 2.1 | missed grasp |
+| S3c (last layer) | 1.7 (0, 4, 1) | -1.3 [-4.3, +1.0] | -0.94 | 17.5 | 363 | 1.1 | missed grasp |
+| S3d (LoRA, no anchor) | 2.0 (2, 2, 2) | -1.0 [-3.7, +0.7] | -0.94 | 21.9 | 363 | 3.2 | missed grasp |
 | S4 (retrained, DAgger) | 6 | +3.0 [-1.3, +7.7] | -0.67 | 16.4 | 363 (714 added) | 4080 (H100) | missed grasp |
-| S5 to S8c | pending | | | | | | |
+| S5 (residual MLP) | 6.3 (8, 4, 7) | +3.3 [+0.7, +6.3] | -0.67 | 20.3 | 363 | 1.0 | missed grasp |
+| S6 (latent offset) | 0.7 (0, 1, 1) | -2.3 [-5.3, +0.0] | -0.94 | 31.5 | 363 | 1.4 | missed grasp |
+| S7a, S7b | pending | | | | | | |
+| S8a (encoder) | 6.7 (7, 7, 6) | +3.7 [+0.7, +7.0] | -0.61 | 15.1 | 363 | 8.9 | missed grasp |
+| S8b (decoder) | 5.7 (9, 4, 4) | +2.7 [-0.3, +5.7] | -0.56 | 18.7 | 363 | 6.4 | missed grasp |
+| S8c (all three) | 2.3 (3, 1, 3) | -0.7 [-3.0, +1.3] | -0.78 | 20.4 | 363 | 14.4 | missed grasp |
 | S9a | 4.0 (4, 4, 4) | +1.0 [-1.7, +4.0] | -0.72 | 16.7 | 363 | 2.9 | missed grasp |
 | S9b | 4.0 (4, 6, 2) | +1.0 [-0.3, +2.7] | -0.78 | 17.2 | 363 | 2.5 | missed grasp |
 | S9c | 2.7 (3, 3, 2) | -0.3 [-2.3, +2.0] | -0.78 | 19.6 | 363 | 2.6 | missed grasp |
@@ -43,17 +51,26 @@ Success of adaptations is the mean of three update seeds.
 | S10b | 3.3 (2, 3, 5) | +0.3 [-1.7, +2.7] | -0.78 | 15.9 | 363 | 2.1 | missed grasp |
 | S10c | 4.0 (4, 4, 4) | +1.0 [-1.3, +3.3] | -0.61 | 16.9 | 363 | 2.3 | missed grasp |
 | S11 (preference, beta 10) | 2.3 (3, 2, 2) | -0.7 [-2.3, +1.0] | -0.83 | 15.0 | 363 | 4.2 | missed grasp |
-| S12a to S12c | pending | | | | | | |
+| S12a (all frames) | 3.0 (3, 4, 2) | +0.0 [-3.0, +2.7] | -0.83 | 18.2 | 1686 | 2.1 | missed grasp |
+| S12b (1 cm gate) | 2.7 (3, 2, 3) | -0.3 [-2.0, +1.3] | -0.78 | 15.9 | 910 | 2.0 | missed grasp |
+| S12c (6 cm gate) | 2.0 (2, 3, 1) | -1.0 [-4.0, +1.7] | -0.94 | 15.4 | 165 | 2.2 | missed grasp |
 | S13a | 6.0 (6, 8, 4) | +3.0 [+0.3, +6.0] | -0.61 | 16.1 | 363 | 0.8 | missed grasp |
 | S13b | 5.7 (7, 4, 6) | +2.7 [+0.7, +5.0] | -0.56 | 16.8 | 363 | 8.6 | missed grasp |
 | S13c | 4.3 (5, 5, 3) | +1.3 [-0.7, +3.7] | -0.67 | 16.6 | 363 | 2.1 | missed grasp |
-| S14 | pending | | | | | | |
+| S14 (alpha 0.25) | 7.0 (6, 10, 5) | +4.0 [+1.3, +7.3] | -0.44 | 16.4 | 363 (M0's) | (M0's) | missed grasp |
+| S14 (alpha 0.5) | 5.3 (6, 4, 6) | +2.3 [-0.3, +5.3] | -0.72 | 17.6 | 363 (M0's) | (M0's) | missed grasp |
+| S14 (alpha 0.75) | 2.3 (4, 3, 0) | -0.7 [-3.0, +1.7] | -0.78 | 15.1 | 363 (M0's) | (M0's) | missed grasp |
 | S15 | 0.0 (0, 0, 0) | -3.0 [-6.0, -0.7] | -1.00 | | 363 | 2.4 | stalled |
 | S16a (0.5 s late) | 0.0 (0 of 37, 0, 0) | +0.0 [+0.0, +0.0] vs S15 | -1.00 | | 358 | 2.2 | stalled |
 | S16b (half chunk) | 0.0 (0, 0, 0) | +0.0 [+0.0, +0.0] vs S15 | -1.00 | | 363 | 2.2 | stalled |
 | S16c (2 cm noise) | 0.0 (0, 0, 0) | +0.0 [+0.0, +0.0] vs S15 | -1.00 | | 363 | 5.5 | stalled |
 | S16d (30% dropped) | 0.0 (0, 0, 0) | +0.0 [+0.0, +0.0] vs S15 | -1.00 | | 254 | 2.0 | stalled |
-| S17 to S19b | pending | | | | | | |
+| S17 (1 attempt) | 3.7 (3, 2, 6) | +0.7 [-3.0, +4.0] | -0.89 | 16.7 | 127 | 2.0 | missed grasp |
+| S17 (2 attempts) | 2.7 (3, 3, 2) | -0.3 [-4.0, +3.3] | -0.83 | 13.9 | 942 | 2.0 | missed grasp |
+| S17 (4 attempts) | 1.7 (1, 2, 2) | -1.3 [-4.7, +1.3] | -0.94 | 21.0 | 2066 | 2.0 | stalled |
+| S17 (8 attempts) | 0.0 (0, 0, 0) | -3.0 [-6.0, -0.7] | -1.00 | | 4553 | 2.3 | stalled |
+| S17 (16 attempts) | 0.3 (0, 1, 0) | -2.7 [-5.7, -0.3] | -1.00 | 19.0 | 6755 | 2.0 | stalled |
+| S18 to S19b | pending | | | | | | |
 | S20 (DiT base) | 0 | -6 vs S0 | | | | | stalled |
 | S20-M | pending | | | | | | |
 | S21a (5 demonstrations) | 0 | -6 vs S0 | | | | | missed grasp |
@@ -70,21 +87,21 @@ Update compute is measured on cluster A100 GPUs (S4's retraining on an H100), no
 |---|---|---|
 | H-S1 the base's failures (former part 1) | [H-S1_base.md](H-S1_base.md) | falsified: failed layouts overlap across training seeds no more than chance (40 against 39.7); failure modes per layout do agree above chance |
 | H-S2 more demonstrations (former part 1) | [H-S2_demos.md](H-S2_demos.md) | falsified: 25 demonstrations (7 of 50) match M0 (3.0), and 37 and 55 beat it |
-| H-S3 which weights | | pending |
+| H-S3 which weights | [H-S3_weights.md](H-S3_weights.md) | inconclusive: the whole flow net beats M0 (+3.0 [+0.3, +6.3]) but under the noise floor and only to the base's level; LoRA does not forget less than full fine-tuning |
 | H-S4 retraining (DAgger) | [H-S4_dagger.md](H-S4_dagger.md) | supported: S4 (6 of 50) is within noise of M0 (3.0) at about 1900 times the compute, and forgets no less; neither beats the base |
-| H-S5 residual policy | | pending |
-| H-S6 latent steering | | pending |
+| H-S5 residual policy | [H-S5_residual.md](H-S5_residual.md) | falsified: the residual MLP is not below M0 (6.3 of 50, +3.3 [+0.7, +6.3]), though only at the base's level |
+| H-S6 latent steering | [H-S6_latent.md](H-S6_latent.md) | falsified: the offset falls below the base (0.7 of 50) and forgets most (-0.94), not nothing |
 | H-S7 reward | | pending |
-| H-S8 where the adapter sits | | pending |
+| H-S8 where the adapter sits | [H-S8_placement.md](H-S8_placement.md) | falsified: encoder (+3.7 [+0.7, +7.0]) and decoder (+2.7 [-0.3, +5.7]) adapters match or beat the flow net |
 | H-S9 capacity | [H-S9_rank.md](H-S9_rank.md) | inconclusive: no rank beats another, but M0 itself shows no gain over the base to scale |
 | H-S10 replay | [H-S10_anchor.md](H-S10_anchor.md) | inconclusive: forgetting falls with lambda (clearly open loop, within noise closed loop); no lambda gains, so the gain part is untestable |
 | H-S11 the negative | [H-S11_negative.md](H-S11_negative.md) | falsified: the preference term adds no gain over M0 (-0.7 [-2.3, +1.0]) |
-| H-S12 which frames | | pending |
+| H-S12 which frames | [H-S12_frames.md](H-S12_frames.md) | falsified: all frames match the 3 cm gate (+0.0 [-3.0, +2.7]); no gate stands out |
 | H-S13 how long | [H-S13_steps.md](H-S13_steps.md) | inconclusive: 800 steps beat M0 (+2.7 [+0.7, +5.0]) but under the noise floor and only to the base's level; longer or faster updates do not forget more |
-| H-S14 blend dial | | pending |
+| H-S14 blend dial | [H-S14_blend.md](H-S14_blend.md) | inconclusive: success falls and forgetting grows with alpha from 0.25 up; alpha 0.75 dips below both ends only within noise (-0.7 [-3.0, +1.7] vs alpha 1) |
 | H-S15 on-policy corrections | [H-S15_onpolicy.md](H-S15_onpolicy.md) | falsified: on-policy planner corrections fall below M0 (0 of 50); the corrector matches the demonstrations' convention, the gate selects off-path and pace frames |
 | H-S16 correction quality | [H-S16_quality.md](H-S16_quality.md) | falsified, degenerate: every degradation is at 0 of 50 like S15, which has no gain to lose |
-| H-S17 how many corrections | | pending |
+| H-S17 how many corrections | [H-S17_attempts.md](H-S17_attempts.md) | inconclusive: no number of attempts gains; success falls with more (3.7 at 1 to 0.3 at 16, -3.3 [-6.0, -1.0]), so saturation cannot be judged |
 | H-S18 update schedule | | pending |
 | H-S19 unseen conditions | | pending |
 | H-S20 other bases | | pending |
