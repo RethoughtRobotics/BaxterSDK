@@ -17,6 +17,9 @@ Both arms first move slowly to the demo's first pose, then follow the demo at it
          states. Baxter adds gravity compensation. Lower --omega is more compliant: contact forces
          come from the scene, not from a stiff servo.
 
+--tcp keeps only the demo's TCP path (forward kinematics of its joints with the teleop's offset from the
+bag) and plays joints rebuilt from it (tcp_ik: from the demo's first joints, the least joint motion
+per sample), as a TCP plan (a policy's) would be played; the comparison is still with the demo's joints.
 --joint-error-model FILE (pose mode, one arm): each joint is commanded ahead along the demo by its
 own steady lag, q_cmd = q_demo + lag * qd_demo (joint_error_model.JointErrorModel.lag(), fitted by
 diagnostics/joint_error_fit.py on other recordings of that arm), so the joint settles on the demo.
@@ -47,7 +50,8 @@ from .joint_error_model import JointErrorModel
 from .kinematics import ArmKinematics
 from .outputs.raw_position import JointCommandPublisher
 from .outputs.setpoint import Setpoint
-from .settings import joint_names
+from .settings import LIMITS, joint_names
+from .tcp_ik import joints_along
 
 RATE = 200.0  # Hz, setpoints per second
 DEMO_RATE = 100.0  # Hz, Baxter's /robot/joint_states
@@ -95,6 +99,42 @@ def read_demo(bag):
         d['t'] -= t0
     grip = {arm: (np.asarray(t) - t0, np.asarray(p)) for arm, (t, p) in gripper.items() if t}
     return demo, grip
+
+
+def tcp_offset(bag, arm):
+    """The TCP offset the teleop recorded in the bag's /teleop/{arm}/config (wrist frame, m)."""
+    import json
+
+    import rosbag2_py
+    from rclpy.serialization import deserialize_message
+    from std_msgs.msg import String
+
+    reader = rosbag2_py.SequentialReader()
+    reader.open(rosbag2_py.StorageOptions(uri=str(bag)), rosbag2_py.ConverterOptions('', ''))
+    reader.set_filter(rosbag2_py.StorageFilter(topics=[f'/teleop/{arm}/config']))
+    if not reader.has_next():
+        raise SystemExit(f'{bag}: no /teleop/{arm}/config, so no recorded TCP offset for --tcp')
+    return np.asarray(json.loads(deserialize_message(reader.read_next()[1], String).data)['tcp_offset'])
+
+
+def joints_from_tcp(bag, arm, q):
+    """Joints rebuilt from the TCP path of the demo joints q: what a TCP replay commands."""
+    from scipy.spatial.transform import Rotation
+
+    kinematics = ArmKinematics(arm)
+    kinematics.tcp_offset = tcp_offset(bag, arm).astype(np.float32)
+    poses = [kinematics.tcp(row) for row in q]
+    positions, rotations = np.array([p for p, _ in poses]), Rotation.from_matrix([R for _, R in poses])
+    rebuilt, errors = joints_along(kinematics, q[0], positions, rotations, LIMITS.position_low, LIMITS.position_high)
+    drift = np.degrees(np.abs(rebuilt - q))
+    print(
+        f'{arm}: TCP path rebuilt within {errors.max() * 1e3:.3f} mm; joints off the demo by (deg, median / max) '
+        + ', '.join(
+            f'{j} {m:.1f}/{x:.1f}'
+            for j, m, x in zip(('s0', 's1', 'e0', 'e1', 'w0', 'w1', 'w2'), np.median(drift, 0), drift.max(0))
+        )
+    )
+    return rebuilt
 
 
 class Trajectory:
@@ -160,14 +200,26 @@ class Replayer:
     """Plays a demo on the arms by pose or by force (module docstring)."""
 
     def __init__(
-        self, node, demo, gripper, arms, omega=20.0, speed=1.0, lead=0.0, drive_gripper=True, until=None, joint_lag=None
+        self,
+        node,
+        demo,
+        gripper,
+        arms,
+        omega=20.0,
+        speed=1.0,
+        lead=0.0,
+        drive_gripper=True,
+        until=None,
+        joint_lag=None,
+        commanded=None,
     ):
         self.node, self.arms, self.omega, self.speed, self.lead = node, arms, float(omega), float(speed), float(lead)
         self.joint_lag = joint_lag or {}  # {arm: (7,) s}: pose mode commands each joint this far ahead
         self.executor = rclpy.get_global_executor()
         self.executor.add_node(node)
         self.limbs = {arm: baxter_interface.Limb(arm, node=node) for arm in arms}
-        self.trajectories = {arm: Trajectory(demo[arm]['t'], demo[arm]['q']) for arm in arms}
+        commanded = commanded or {}  # {arm: joints to play instead of the demo's (e.g. rebuilt from its TCP)}
+        self.trajectories = {arm: Trajectory(demo[arm]['t'], commanded.get(arm, demo[arm]['q'])) for arm in arms}
         # the demo on its uniform grid: what learned offsets are added to
         self.grid = {arm: tr._grid for arm, tr in self.trajectories.items()}
         self.demo_on_grid = {arm: np.array([tr(t)[0] for t in self.grid[arm]]) for arm, tr in self.trajectories.items()}
@@ -310,6 +362,7 @@ def main(argv=None):
     parser.add_argument('--ilc-gain', type=float, default=0.8, help='learning gain (default: 0.8)')
     parser.add_argument('--ilc-cutoff', type=float, default=3.0, help='learning low-pass cutoff, Hz (default: 3)')
     parser.add_argument('--offsets', default=None, help='learned_<mode>.npz: replay the demo plus these offsets')
+    parser.add_argument('--tcp', action='store_true', help="play joints rebuilt from the demo's TCP path (pose mode)")
     parser.add_argument(
         '--joint-error-model', default=None, help="pose mode, one arm: command each joint ahead by this model's lag"
     )
@@ -327,6 +380,7 @@ def main(argv=None):
         f'Demo {Path(args.episode).name}: {duration:.1f} s, arms {", ".join(arms)}; replaying by {" then ".join(modes)}'
     )
 
+    commanded = {arm: joints_from_tcp(args.episode, arm, demo[arm]['q']) for arm in arms} if args.tcp else None
     joint_lag = None
     if args.joint_error_model:
         if len(arms) != 1:
@@ -339,7 +393,17 @@ def main(argv=None):
     runs = {}
     try:
         replayer = Replayer(
-            node, demo, gripper, arms, args.omega, args.speed, args.lead, not args.no_gripper, args.until, joint_lag
+            node,
+            demo,
+            gripper,
+            arms,
+            args.omega,
+            args.speed,
+            args.lead,
+            not args.no_gripper,
+            args.until,
+            joint_lag,
+            commanded,
         )
         start = dict(np.load(args.offsets)) if args.offsets else {}
         for mode in modes:
