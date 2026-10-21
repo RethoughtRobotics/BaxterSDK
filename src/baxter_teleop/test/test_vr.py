@@ -106,3 +106,16 @@ def test_swap_hands_argument_overrides_the_config(tmp_path, monkeypatch):
 def test_malformed_axes_are_rejected_with_a_clear_message(tmp_path, monkeypatch, axes):
     with pytest.raises(ValueError, match='axes'):
         make(tmp_path, monkeypatch, angular_axes=axes)
+
+
+def test_a_new_stream_after_a_gap_anchors_at_the_current_pose(tmp_path, monkeypatch):
+    target, clock = make(tmp_path, monkeypatch)
+    stroke(target, clock, (0.10, 0, 0))
+    clock[0] += 10.0  # stream stops: stale
+    assert target.twist(np.array([0.6, -0.2, 0.1]), np.eye(3)) is None
+    tcp = np.array([0.5, 0.2, 0.0])  # the arm was moved meanwhile
+    send(target, clock, (0.6, 0.2, 0.0))  # a new stream, far from the old one
+    target.twist(tcp, np.eye(3))  # anchors at the current TCP
+    send(target, clock, (0.65, 0.2, 0.0))
+    target.twist(tcp, np.eye(3))
+    np.testing.assert_allclose(target.goal[0], tcp + [0.05, 0, 0], atol=1e-6)
