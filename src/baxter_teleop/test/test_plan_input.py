@@ -83,3 +83,35 @@ def test_a_stale_or_reset_plan_holds():
     clock[0] = 10.1
     target.reset()
     assert target.plan(HOME, None) is None
+
+
+def test_a_new_plan_takes_over_without_a_velocity_jump():
+    """Consecutive plans along one motion: at the switch the played velocity is continuous."""
+    clock = [10.0]
+    node, subs = fake_node(clock)
+    kinematics = ArmKinematics('left')
+    target = PlanTarget(node, '/policy/left/path', kinematics)
+    first = 10.0 + 0.04 * np.arange(17)
+    subs['/policy/left/path'](plan_msg(kinematics, first))
+    clock[0] = 10.04
+    old, old_t0 = target.plan(HOME, None)
+    q_now = old(10.04 - old_t0)[0]
+    subs['/policy/left/path'](
+        plan_msg_from(kinematics, 10.04 + 0.04 * np.arange(17), 10.0)
+    )  # the same motion, a step on
+    new, new_t0 = target.plan(HOME, q_now)
+    np.testing.assert_allclose(new(10.06 - new_t0)[1], old(10.06 - old_t0)[1], atol=0.02)  # rad/s
+
+
+def plan_msg_from(kinematics, t, origin):
+    """plan_msg for times t of the motion that started at `origin`."""
+    msg = Path()
+    for tk, q in zip(t, joints(t - origin)):
+        p, R = kinematics.tcp(q)
+        pose = PoseStamped()
+        pose.header.stamp.sec, pose.header.stamp.nanosec = int(tk), int(round((tk % 1) * 1e9))
+        pose.pose.position.x, pose.pose.position.y, pose.pose.position.z = map(float, p)
+        o = pose.pose.orientation
+        o.x, o.y, o.z, o.w = map(float, Rotation.from_matrix(R).as_quat())
+        msg.poses.append(pose)
+    return msg
