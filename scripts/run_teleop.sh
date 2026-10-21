@@ -5,7 +5,8 @@
 #   --left, --right, --both  arms (default: both)
 #   --session NAME           record episodes to rethought_ai/recorder/data/NAME (implies --record)
 #   --record                 run the RethoughtAI recorder below the teleop
-#   --policy                 follow the policy (rethought_ai scripts/run_inference) instead of VR
+#   --policy                 play the policy (rethought_ai scripts/run_inference) instead of VR: its plan
+#                            through the replay stream (--input plan), the cuff and gripper as always
 #   --swap                   you stand beside Baxter, not facing it
 #   --no-gripper             the VR trigger and going home leave the gripper alone
 #   --no-camera              do not start the third_eye RealSense
@@ -97,7 +98,7 @@ ARGS=(--input vr "${ARGS[@]}")
 teleop_cmd() {  # $1: arm, or empty when --arm was given directly
     local arm="${1:-$GIVEN_ARM}" policy_args=""
     if [[ -n "$POLICY" ]]; then
-        policy_args=" --vr-config vr_axes_policy.yaml --vr-topic /policy/${arm}/target --vr-trigger-topic /policy/${arm}/trigger"
+        policy_args=" --input plan --vr-config vr_axes_policy.yaml --vr-trigger-topic /policy/${arm}/trigger"
     fi
     echo "cd '${WS_DIR}' \
   && source '${SCRIPT_DIR}/env.sh' \

@@ -9,10 +9,10 @@
 #   BAG_PATH=DIR     record to exactly DIR
 
 # Records robot state and commands, teleop telemetry (/teleop/{arm}/*), VR input (/vive,
-# /libsurvive), the cuffs (squeeze and gripper buttons), TF and the robot description; not the
-# real robot's cameras or its other IO. While a RethoughtAI policy runs it records a rollout
-# instead (data/rollouts/): also /policy/* and the policy's cameras as JPEG (compress_images.py),
-# with the checkpoint in session.yaml.
+# /libsurvive), the cuffs (squeeze and gripper buttons), TF, the robot description, a policy's
+# topics (/policy/*) and the policies' cameras (both hand cameras and the third eye) as JPEG
+# (compress_images.py), whether or not a policy is running yet. With a RethoughtAI policy running
+# at the start it files the bag as a rollout (data/rollouts/), with the checkpoint in session.yaml.
 
 if [[ " $* " =~ \ (-h|--help)\  ]]; then sed -n '2,/^$/{/^#/s/^# \{0,1\}//p}' "$0"; exit 0; fi
 set -e
@@ -36,19 +36,19 @@ TOPICS+='|^/robot/(joint_states|state|head/.*|limb/.*|end_effector/[^/]+/(state|
 TOPICS+='|^/robot/(range|accelerometer)/.*'  # hand IR range (distance to what's in/below the gripper), hand IMU
 TOPICS+='|^/teleop/.*|^/vive/.*|^/libsurvive/.*|^/sim/.*'
 TOPICS+='|^/robot/digital_io/(left|right)_(lower_cuff|upper_button|lower_button)/state$'  # cuff squeeze (zero-g takeover), gripper buttons
-CAMERAS=(/cameras/left_hand_camera/image /cameras/third_eye/color/image_raw)  # the policy's
+TOPICS+='|^/policy/.*'  # a policy's chunks, plans, targets and engagement
+CAMERAS=(/cameras/left_hand_camera/image /cameras/right_hand_camera/image /cameras/third_eye/color/image_raw)  # the policies'
+TOPICS+='|^/cameras/(left_hand_camera|right_hand_camera|third_eye/color)/camera_info$'
 if [[ -n "$ALL_TOPICS" ]]; then  # every colour camera up (depth stays as it is)
     mapfile -t CAMERAS < <(ros2 topic list 2>/dev/null | grep -E '^/cameras/.*/(image|image_raw)$' | grep -vi depth || true)
 fi
-if [[ ( "$KIND" == rollouts || -n "$ALL_TOPICS" ) && -z "$RAW_IMAGES" ]] && (( ${#CAMERAS[@]} )); then
+if [[ -z "$RAW_IMAGES" ]] && (( ${#CAMERAS[@]} )); then
     # cameras as JPEG on <topic>/compressed (raw: ~3 GB a minute); the raw topics are not recorded
     python3 "${SCRIPT_DIR}/compress_images.py" "${CAMERAS[@]}" & COMPRESS=$!
     RAW_CAMERAS="^($(IFS='|'; echo "${CAMERAS[*]}"))\$"
+    TOPICS+="|^($(IFS='|'; echo "${CAMERAS[*]/%//compressed}"))\$"
 fi
 if [[ "$KIND" == rollouts ]]; then
-    # the policy's chunks and commands, and its cameras
-    TOPICS+='|^/policy/.*|^/cameras/(left_hand_camera/image|third_eye/color/image_raw)/compressed$'
-    TOPICS+='|^/cameras/(left_hand_camera|third_eye/color)/camera_info$'
     # the running checkpoint, from RethoughtAI's `inference serve` / `inference run` command lines
     arg() { pgrep -af "[i]nference $1 " | grep -v "uv run" | head -1 | sed -n "s/.* $2 \([^ ]*\).*/\1/p"; }
     MODEL="$(arg serve --model)" REVISION="$(arg serve --revision)" EPISODE="$(arg run --start-at)"

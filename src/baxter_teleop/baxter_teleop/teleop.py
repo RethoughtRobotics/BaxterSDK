@@ -19,7 +19,8 @@ from .inputs.cuff import Cuff
 from .inputs.keyboard import KeyboardTarget, twist_from_key
 from .inputs.vr import VRController
 from .kinematics import ArmKinematics
-from .outputs.raw_position import start_raw_position_output
+from .outputs.raw_position import JointCommandPublisher, start_raw_position_output
+from .outputs.replay_stream import ReplayStream
 from .outputs.velocity import VelocityOutput
 from .safety import CommandValidator
 from .settings import DEFAULTS, LIMITS, TCP_OFFSET, joint_names, servo_feedback_for
@@ -33,8 +34,10 @@ class Teleop:
 
     output       'velocity': the IK velocity, ramped, in VELOCITY_MODE. 'raw' / 'raw_id': the IK
                  velocity is the target of a jerk-limited setpoint streamed in RAW_POSITION_MODE,
-                 raw_id with inverse dynamics feedforward (outputs/raw_position.py). Raw modes
-                 bypass Baxter's collision avoidance.
+                 raw_id with inverse dynamics feedforward (outputs/raw_position.py). 'replay': no
+                 IK; a plan input's joint trajectory is streamed as replay plays a demo
+                 (outputs/replay_stream.py, raw position with inverse dynamics). Raw modes bypass
+                 Baxter's collision avoidance.
     Defaults come from config/teleop.yaml (settings.DEFAULTS).
 
     servo_feedback  what the pose servo and IK close on (None: settings.servo_feedback_for). 'measured': the arm's joint states.
@@ -84,8 +87,8 @@ class Teleop:
             raise ValueError("ik must be 'dls' or 'bounded'")
         if frame not in ('tool', 'base'):
             raise ValueError("frame must be 'tool' or 'base'")
-        if output not in ('velocity', 'raw', 'raw_id'):
-            raise ValueError("output must be 'velocity', 'raw' or 'raw_id'")
+        if output not in ('velocity', 'raw', 'raw_id', 'replay'):
+            raise ValueError("output must be 'velocity', 'raw', 'raw_id' or 'replay'")
         servo_feedback = servo_feedback_for(output, servo_feedback)
         if servo_feedback not in ('measured', 'setpoint'):
             raise ValueError("servo_feedback must be 'measured' or 'setpoint'")
@@ -138,7 +141,10 @@ class Teleop:
         )
         self.velocity_output = VelocityOutput(self.limb, self.joint_names, self.joint_acceleration_limits, self.dt)
         self.raw_output = None
-        if output != 'velocity':
+        if output == 'replay':
+            send = JointCommandPublisher(self.node, arm, self.joint_names, self.limb.joint_names())
+            self.raw_output = ReplayStream(send, lambda: self.node.get_clock().now().nanoseconds * 1e-9).start()
+        elif output != 'velocity':
             self.raw_output = start_raw_position_output(
                 self.node,
                 arm,
@@ -352,6 +358,17 @@ class Teleop:
                         self._hold()
                     target.reset()
                     moving = False
+                    continue
+                if hasattr(target, 'plan'):  # a timed plan, played as replay plays a demo (no servo, no IK loop)
+                    plan = target.plan(q_meas, self.raw_output.position)
+                    if target.goal is not None:
+                        self.telemetry.goal(target.goal)
+                    if plan is not None:
+                        self.raw_output.play(*plan)
+                        moving = True
+                    elif moving:
+                        self._hold()
+                        moving = False
                     continue
                 if self.servo_feedback == 'setpoint':
                     tcp_position, tcp_rotation = self.kinematics.tcp(self._servo_q(q_meas))
