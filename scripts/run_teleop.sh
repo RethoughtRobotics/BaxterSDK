@@ -7,6 +7,8 @@
 #   --record                 run the RethoughtAI recorder below the teleop
 #   --policy                 play the policy (rethought_ai scripts/run_inference) instead of VR: its plan
 #                            through the replay stream (--input plan), the cuff and gripper as always
+#   --policy-target          follow the policy's TCP target stream as a VR controller (servo and IK):
+#                            for policies trained on teleop goals, which that servo was chasing
 #   --swap                   you stand beside Baxter, not facing it
 #   --no-gripper             the VR trigger and going home leave the gripper alone
 #   --no-camera              do not start the third_eye RealSense
@@ -78,7 +80,8 @@ while (( $# )); do
             RECORD=1 ;;
         --camera) CAMERA=1 ;;
         --no-camera) CAMERA="" ;;
-        --policy) POLICY=1 ;;
+        --policy) POLICY=plan ;;
+        --policy-target) POLICY=target ;;
         --no-viz) NO_VIZ=1 ;;
         --swap)  SWAP=1; ARGS+=(--swap-hands false) ;;
         *)       ARGS+=("$1") ;;
@@ -97,8 +100,10 @@ ARGS=(--input vr "${ARGS[@]}")
 # command through one more shell, which would expand $PY first, to nothing.
 teleop_cmd() {  # $1: arm, or empty when --arm was given directly
     local arm="${1:-$GIVEN_ARM}" policy_args=""
-    if [[ -n "$POLICY" ]]; then
+    if [[ "$POLICY" == plan ]]; then
         policy_args=" --input plan --vr-config vr_axes_policy.yaml --vr-trigger-topic /policy/${arm}/trigger"
+    elif [[ "$POLICY" == target ]]; then
+        policy_args=" --vr-config vr_axes_policy.yaml --vr-topic /policy/${arm}/target --vr-trigger-topic /policy/${arm}/trigger"
     fi
     echo "cd '${WS_DIR}' \
   && source '${SCRIPT_DIR}/env.sh' \
