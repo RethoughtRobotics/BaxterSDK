@@ -33,6 +33,7 @@ Success of adaptations is the mean of three update seeds.
 | S2b (37 demonstrations) | 11 | +8.0 [+2.0, +14.7] vs M0 | -0.67 | 16.3 | | | missed grasp |
 | S2c (55 demonstrations) | 18 | +15.0 [+8.0, +22.0] vs M0 | -0.50 | 13.9 | | | missed grasp |
 | M0 | 3.0 (4, 3, 2) | -3.0 [-7.3, +0.7] vs S0 | -0.72 | 16.3 | 363 | 2.1 | missed grasp |
+| M0, update seeds 3 and 4 | 4, 5 (all five seeds: 3.6) | -2.4 [-6.6, +1.2] vs S0 (five seeds) | -0.70 (five seeds) | 14.6, 15.3 | 363 | | missed grasp |
 | S3a (everything) | 2.7 (3, 3, 2) | -0.3 [-2.7, +2.0] | -0.67 | 21.4 | 363 | 12.6 | missed grasp |
 | S3b (whole flow net) | 6.0 (5, 6, 7) | +3.0 [+0.3, +6.3] | -0.67 | 17.6 | 363 | 2.1 | missed grasp |
 | S3c (last layer) | 1.7 (0, 4, 1) | -1.3 [-4.3, +1.0] | -0.94 | 17.5 | 363 | 1.1 | missed grasp |
@@ -74,8 +75,8 @@ Success of adaptations is the mean of three update seeds.
 | S18b (an update after every attempt) | 1.0 (1, 1, 1) | -2.0 [-5.0, +0.7]; +1.0 [+0.0, +2.3] vs S18a | -1.00 | 28.9 | 3268 (2706, 3584, 3514) | 2.2 per update, 8 updates | stalled |
 | S19a (cups below 0.65 m) | 0.0 (0, 0, 0); 0 below, 0 beyond | -3.0 [-6.0, -0.7]; gain vs S0 beyond 0.65 m -2.0 [-5.0, +0.0] of 23 | -1.00 | | 5845 | 2.1 | stalled |
 | S19b (lab lighting) | 0.3 (0, 0, 1); 0.3 below, 0 beyond | -2.7 [-5.7, -0.3]; +0.3 [+0.0, +1.0] vs S15 | -1.00 | 32.7 | 363 | 2.1 | stalled |
-| S20 (DiT base) | 0 | -6 vs S0 | | | | | stalled |
-| S20-M | pending | | | | | | |
+| S20 (DiT base) | 0 | -6.0 [-11.0, -2.0] vs S0 | | | | | stalled |
+| S20-M | 0.7 (1, 0, 1) | +0.7 [+0.0, +1.7] vs S20 | (S20 solved none) | 26.7 | 1263 | 25.0 | timeout |
 | S21a (5 demonstrations) | 0 | -6 vs S0 | | | | | missed grasp |
 | S21a-M | 0.3 (0, 0, 1) | +0.3 [+0.0, +1.0] vs S21a | | 34.4 | 1404 | 2.1 | missed grasp |
 | S21b (55 demonstrations) | 18 | +12 vs S0 | | 13.9 | | | missed grasp |
@@ -111,7 +112,7 @@ Update compute is measured on cluster A100 GPUs (S4's retraining on an H100), no
 | H-S17 how many corrections | [H-S17_attempts.md](H-S17_attempts.md) | inconclusive: no number of attempts gains; success falls with more (3.7 at 1 to 0.3 at 16, -3.3 [-6.0, -1.0]), so saturation cannot be judged |
 | H-S18 update schedule | [H-S18_schedule.md](H-S18_schedule.md) | inconclusive: S18b used fewer frames (3268 against 4003) at no lower success (+1.0 [+0.0, +2.3]), but both fail (1.0 and 0.0 of 50, below the base and M0), so there is no gain to reach more cheaply |
 | H-S19 unseen conditions | [H-S19_generalise.md](H-S19_generalise.md) | falsified, degenerate: the gain beyond 0.65 m is within noise of zero (-2.0 [-5.0, +0.0] of 23), but S19a scores 0 of 50 on both halves and S19b 0.3, so there is no gain to transfer; lab lighting changes nothing |
-| H-S20 other bases | | pending |
+| H-S20 other bases | [H-S20_bases.md](H-S20_bases.md) | falsified, degenerate: S20-M's interval against the DiT base includes zero (+0.7 [+0.0, +1.7]), but the DiT base scores 0 of 50 and VITA's own gain is not a gain (M0 -2.4 [-6.6, +1.2] over five seeds), so there is no gain to transfer |
 | H-S21 weak and strong bases | [H-S21_strength.md](H-S21_strength.md) | inconclusive: no base gains beyond noise (+0.3, -3.0, -1.0 for 5, 21, 55 demonstrations; 55 partial); the middle base gains least |
 | H-S22 repeated adaptation | | pending |
 | H-S23 chunk execution | [H-S23_horizon.md](H-S23_horizon.md) | supported, weakly: the gain at 8 (+2.7) exceeds the gain at 16 (-3.0) by +5.7 [+1.3, +10.3], but mostly because the base drops at 8 (2 against 6, single evaluations); 31 was run for 32 (the runtime limit) |
@@ -132,9 +133,23 @@ Update compute is measured on cluster A100 GPUs (S4's retraining on an H100), no
   conditions, so differences are unaffected, but absolute success may differ from the lab lighting).
 - **Evaluation noise.** A closed-loop run is not deterministic: S3d's adapters are bit-identical to
   S10a's, and their two evaluations scored 2, 2, 2 and 1, 3, 3 of 50 (7 of 150 layout outcomes
-  differ). The same adapter can move by about one layout of 50 between evaluations, on top of the
-  update-seed and training-seed spread.
+  differ). Two repeat evaluations on the same 50 layouts show larger swings: M0's seed 0 adapter,
+  identical file, scored 2 of 50 against 4 the first time (1 layout solved in both; paired difference
+  -2.0 [-6.0, +2.0]), and the base S0 scored 7 against 6 (3 layouts solved in both; +1.0 [-4.0,
+  +6.0]). Most solved layouts are not solved again: success here is a per-attempt chance, not a
+  property of the layout. Differences of about 3 to 4 successes of 50 between single evaluations are
+  within the evaluator's own repeat noise, on top of the update-seed and training-seed spread.
 - **A low M0.** S3b, S5, S8a, S13a and S13b each score about 3 of 50 above M0 (3.0) with intervals
   that exclude zero, yet only reach the base's 6. M0's three update seeds may be a low draw, which
   favours every condition compared against it; claims decided by a difference to M0 near the noise
-  floor are marked inconclusive or carry this threat.
+  floor are marked inconclusive or carry this threat. Two more update seeds of M0 (3 and 4) scored 4
+  and 5 of 50, so M0 over five update seeds is 4, 3, 2, 4, 5, mean 3.6, against the 3.0 the reports
+  use (three seeds). Every difference against M0 in the table shifts down by 0.6 (gain over S0: -2.4
+  [-6.6, +1.2]; forgetting -0.70 against -0.72). No verdict changes: none rests on a difference to M0
+  smaller than 0.6. With five seeds, the intervals of S3b (+2.4 [-0.6, +5.7]), S5 (+2.7 [-0.0, +5.8]),
+  S13a (+2.4 [-0.2, +5.3]) and S13b (+2.1 [-0.1, +4.6]) reach zero, which strengthens their
+  inconclusive or "matches M0" readings; S8a stays above (+3.1 [+0.1, +6.3]). S6's interval against M0
+  moves off zero (-2.9 [-5.9, -0.6]), so H-S6's secondary count (S6 matches M0) weakens, but H-S6
+  stays falsified on forgetting. H-S23's difference of gains becomes +5.1 [+0.9, +9.5] (from +5.7),
+  still above the floor; H-S11 (-1.3 [-3.0, +0.4]) and H-S12 (S12a -0.6 [-3.6, +2.3]) still include
+  zero. The table keeps the three-seed figures the reports used.
