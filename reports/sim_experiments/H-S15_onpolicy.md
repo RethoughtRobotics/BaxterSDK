@@ -69,16 +69,24 @@ demonstrations, both on held-out test episodes (28.6 against 22.5 mm) and on the
 
 ## Threats
 
-- **Corrector and demonstrations may disagree.** 57% of the base's own frames were gated, and 363
-  planner chunks shift the open-loop error on the base's own episodes by more than twice what M0's
-  363 demonstration chunks do. Either the planner's replanned chunks differ systematically from how
-  the demonstrations move (another path, timing or gripper schedule, so the anchor and the
-  corrections pull apart), or a timing or frame mismatch between the recorded observation and the
-  planner's chunk remains in the extraction. A check that would separate the two: gate the planner
-  against the demonstrations themselves (planner chunks at demonstration states against the
-  demonstrations' labels); a large gap there means the corrector, not the method, is what S15
-  measures. This result should not be read as evidence against on-policy correction until that check
-  is done.
+- **Corrector convention: checked, no mismatch.** The planner was replanned at demonstration states
+  (episodes 0 to 5, 2409 frames) and its chunks, relabelled with the 16-step lead, compared with the
+  demonstrations' labels: median 4.1 mm (9.9% above 30 mm), rotation median 0.4 deg, gripper on the
+  same scale. A sweep of the lead finds the best match at exactly 16 steps, and no constant offset or
+  quaternion reordering closes any gap. The corrector and the demonstrations agree in frame, lead,
+  rotation and gripper.
+- **The 57% gate comes from frame selection, not from the corrector.** (a) Off-path attempts: the
+  base's stalled and timeout attempts, after their first 30 frames, are 63% of the gated frames (gate
+  rate 89% there). (b) Pace: the planner replans at the demonstrator's speed and gripper rate from
+  wherever a slower base is; 46.5% of gated frames fall within 3 cm once the planner's chunk is shifted
+  in time, so they are timing, not path, corrections (with the best shift the gated share drops from
+  57% to 31%). (c) Start: the demonstrations idle at home for 27 to 33 frames, the planner moves at
+  once (84% of frames 0 to 29 gated; 6% of gated frames). S15 therefore trains on mostly large,
+  demonstrator-paced chunks from off-distribution states that disagree with the anchor's tempo, which
+  fits its open-loop drift and 0 of 50. A gate on the time-aligned distance, or corrections limited to
+  the frames around each attempt's first deviation (as DAgger), would test on-policy correction with
+  this selection removed; until then the result is evidence against this gate on these attempts, not
+  against on-policy correction in general.
 - The cap draws 363 of 7,805 gated frames at random, so most layouts contribute few frames; frames
   are not weighted toward where the base fails.
 - One base attempt per layout; the base is weak (6 of 50), so most attempts are failures and many
