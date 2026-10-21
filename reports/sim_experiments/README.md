@@ -70,14 +70,21 @@ Success of adaptations is the mean of three update seeds.
 | S17 (4 attempts) | 1.7 (1, 2, 2) | -1.3 [-4.7, +1.3] | -0.94 | 21.0 | 2066 | 2.0 | stalled |
 | S17 (8 attempts) | 0.0 (0, 0, 0) | -3.0 [-6.0, -0.7] | -1.00 | | 4553 | 2.3 | stalled |
 | S17 (16 attempts) | 0.3 (0, 1, 0) | -2.7 [-5.7, -0.3] | -1.00 | 19.0 | 6755 | 2.0 | stalled |
-| S18 to S19b | pending | | | | | | |
+| S18a (one update after 8 attempts) | 0.0 (0, 0, 0) | -3.0 [-6.0, -0.7] | -1.00 | | 4003 | 2.1 | stalled |
+| S18b (an update after every attempt) | 1.0 (1, 1, 1) | -2.0 [-5.0, +0.7]; +1.0 [+0.0, +2.3] vs S18a | -1.00 | 28.9 | 3268 (2706, 3584, 3514) | 2.2 per update, 8 updates | stalled |
+| S19a (cups below 0.65 m) | 0.0 (0, 0, 0); 0 below, 0 beyond | -3.0 [-6.0, -0.7]; gain vs S0 beyond 0.65 m -2.0 [-5.0, +0.0] of 23 | -1.00 | | 5845 | 2.1 | stalled |
+| S19b (lab lighting) | 0.3 (0, 0, 1); 0.3 below, 0 beyond | -2.7 [-5.7, -0.3]; +0.3 [+0.0, +1.0] vs S15 | -1.00 | 32.7 | 363 | 2.1 | stalled |
 | S20 (DiT base) | 0 | -6 vs S0 | | | | | stalled |
 | S20-M | pending | | | | | | |
 | S21a (5 demonstrations) | 0 | -6 vs S0 | | | | | missed grasp |
 | S21a-M | 0.3 (0, 0, 1) | +0.3 [+0.0, +1.0] vs S21a | | 34.4 | 1404 | 2.1 | missed grasp |
 | S21b (55 demonstrations) | 18 | +12 vs S0 | | 13.9 | | | missed grasp |
 | S21b-M (partial: seed 1 at 38 of 50) | 15.3 (19, 12 of 38, 15) | -1.0 [-8.3, +6.3] vs S21b | -0.53 vs S21b | 13.0 | 14 | 2.2 | missed grasp |
-| S22 to S23b-M | pending | | | | | | |
+| S22 | pending | | | | | | |
+| S23a (base, re-plan every 8) | 2 | -4.0 [-9.0, +0.0] vs S0 | -0.83 | 15.6 | | | missed grasp |
+| S23a-M (M0's adapters, every 8) | 4.7 (6, 4, 4) | +2.7 [-0.3, +6.0] vs S23a; +1.7 [-1.0, +4.3] vs M0 | -0.78 | 16.8 | 363 (M0's) | (M0's) | missed grasp |
+| S23b (base, every 31; plan: 32) | 4 | -2.0 [-8.0, +3.0] vs S0 | -0.83 | 18.4 | | | missed grasp |
+| S23b-M (M0's adapters, every 31) | 2.0 (2, 3, 1) | -2.0 [-6.0, +1.3] vs S23b; -1.0 [-3.7, +1.7] vs M0 | -0.78 | 14.7 | 363 (M0's) | (M0's) | missed grasp |
 
 Update compute is measured on cluster A100 GPUs (S4's retraining on an H100), not the robot computer.
 
@@ -102,12 +109,12 @@ Update compute is measured on cluster A100 GPUs (S4's retraining on an H100), no
 | H-S15 on-policy corrections | [H-S15_onpolicy.md](H-S15_onpolicy.md) | falsified: on-policy planner corrections fall below M0 (0 of 50); the corrector matches the demonstrations' convention, the gate selects off-path and pace frames |
 | H-S16 correction quality | [H-S16_quality.md](H-S16_quality.md) | falsified, degenerate: every degradation is at 0 of 50 like S15, which has no gain to lose |
 | H-S17 how many corrections | [H-S17_attempts.md](H-S17_attempts.md) | inconclusive: no number of attempts gains; success falls with more (3.7 at 1 to 0.3 at 16, -3.3 [-6.0, -1.0]), so saturation cannot be judged |
-| H-S18 update schedule | | pending |
-| H-S19 unseen conditions | | pending |
+| H-S18 update schedule | [H-S18_schedule.md](H-S18_schedule.md) | inconclusive: S18b used fewer frames (3268 against 4003) at no lower success (+1.0 [+0.0, +2.3]), but both fail (1.0 and 0.0 of 50, below the base and M0), so there is no gain to reach more cheaply |
+| H-S19 unseen conditions | [H-S19_generalise.md](H-S19_generalise.md) | falsified, degenerate: the gain beyond 0.65 m is within noise of zero (-2.0 [-5.0, +0.0] of 23), but S19a scores 0 of 50 on both halves and S19b 0.3, so there is no gain to transfer; lab lighting changes nothing |
 | H-S20 other bases | | pending |
 | H-S21 weak and strong bases | [H-S21_strength.md](H-S21_strength.md) | inconclusive: no base gains beyond noise (+0.3, -3.0, -1.0 for 5, 21, 55 demonstrations; 55 partial); the middle base gains least |
 | H-S22 repeated adaptation | | pending |
-| H-S23 chunk execution | | pending |
+| H-S23 chunk execution | [H-S23_horizon.md](H-S23_horizon.md) | supported, weakly: the gain at 8 (+2.7) exceeds the gain at 16 (-3.0) by +5.7 [+1.3, +10.3], but mostly because the base drops at 8 (2 against 6, single evaluations); 31 was run for 32 (the runtime limit) |
 | H-S24 the robot | | pending, needs the robot |
 
 ## Threats common to all claims
