@@ -9,6 +9,7 @@ import rclpy
 import yaml
 from ament_index_python.packages import get_package_share_directory
 
+from .inputs.plan import PlanTarget
 from .inputs.trajectory import TrajectoryTarget
 from .inputs.vr import VRTarget
 from .settings import DEFAULTS, servo_feedback_for
@@ -27,9 +28,10 @@ def parser():
     p.add_argument('--arm', choices=['left', 'right'], default='right', help='arm to control (default: right)')
     p.add_argument(
         '--input',
-        choices=['keyboard', 'vr', 'trajectory'],
+        choices=['keyboard', 'vr', 'trajectory', 'plan'],
         default='keyboard',
-        help="command source; 'trajectory': timed TCP paths (--trajectory-topic) with the VR trigger and B button",
+        help="command source; 'trajectory': timed TCP paths (--trajectory-topic) with the VR trigger and B button; "
+        "'plan': a policy's timed TCP plan (--trajectory-topic) played as replay plays a demo (output replay)",
     )
     p.add_argument(
         '--trajectory-topic', default=None, help='timed TCP path topic, nav_msgs/Path (default: /policy/{arm}/path)'
@@ -164,8 +166,10 @@ def parser():
 
 def main(argv=None):
     args, ros_args = parser().parse_known_args(sys.argv[1:] if argv is None else argv)
+    if args.input == 'plan':  # a plan is played by the replay stream, never through the servo and IK
+        args.output = 'replay'
     args.servo_feedback = servo_feedback_for(args.output, args.servo_feedback)
-    if args.input in ('vr', 'trajectory'):
+    if args.input in ('vr', 'trajectory', 'plan'):
         args.vr_config = config_file(args.vr_config)
         vr_linear, vr_angular = Teleop.VR_SPEEDS
         args.linear_speed = vr_linear if args.linear_speed is None else args.linear_speed
@@ -196,7 +200,7 @@ def main(argv=None):
     # The controller (libsurvive_ros2 /vive/{hand}/...) driving this arm; swap_hands crosses them.
     hand = args.arm
     swap_hands = None if args.swap_hands is None else args.swap_hands == 'true'
-    if args.input in ('vr', 'trajectory'):
+    if args.input in ('vr', 'trajectory', 'plan'):
         with open(args.vr_config) as f:
             config['vr_config'] = f.read()
         config['swap_hands'] = (
@@ -224,6 +228,13 @@ def main(argv=None):
                     teleop.angular_speed,
                     swap_hands=swap_hands,
                 ),
+            )
+        elif args.input == 'plan':
+            teleop.spin_vr(
+                trigger_topic=args.vr_trigger_topic or f'/policy/{args.arm}/trigger',
+                b_button_topic=args.vr_b_button_topic or f'/vive/{hand}/b_button',
+                home_button=args.home_button,
+                target=PlanTarget(teleop.node, args.trajectory_topic or f'/policy/{args.arm}/path', teleop.kinematics),
             )
         elif args.input == 'trajectory':
             # The VR policy servo's gain and per-axis scales, so a path is chased as a VR target is
