@@ -408,11 +408,13 @@ class Teleop:
 
         self.spin_target(target, on_key)
 
-    def spin_vr(self, target, trigger_topic, b_button_topic, home_button=None):
+    def spin_vr(self, target, trigger_topic, b_button_topic, home_button=None, takeover_trigger_topic=None):
         """Follow a VRTarget. The controller's analog trigger sets the gripper opening (released
         open, pulled closed) and its B button sends the arm home (as H), as does the robot button
         home_button (a DigitalIO component, e.g. right_button_ok; every arm's teleop listens, so one
         press homes them all). Guided by hand (cuff squeezed), the cuff's buttons drive the gripper.
+        With a Takeover target, the operator's trigger (takeover_trigger_topic) drives the gripper
+        while they drive the arm, and each cycle says on /teleop/{arm}/takeover whether they do.
         The keyboard keeps gripper/home/ESC."""
         print(f'\n{self.arm.capitalize()} arm VR teleop ({type(self.ik).__name__})')
         print(
@@ -421,6 +423,8 @@ class Teleop:
             'dash/circle buttons close/open'
         )
         controller = self._vr = VRController(self.node, trigger_topic, b_button_topic)
+        hand = VRController(self.node, takeover_trigger_topic, None) if takeover_trigger_topic else None
+        gripper_source = controller
         if self.gripper is not None and self.gripper.type() == 'electric' and not self.gripper.calibrated():
             self.node.get_logger().info('Calibrating the gripper...')
             self._calibrate_gripper()
@@ -431,9 +435,18 @@ class Teleop:
         cuff_was_squeezed = False
 
         def on_cycle():
-            nonlocal cuff_was_squeezed
+            nonlocal cuff_was_squeezed, gripper_source
+            if hand is not None:
+                active = target.active
+                self.telemetry.takeover(active)
+                source = hand if active else controller
+                if source is not gripper_source and self._gripper_target is not None:
+                    # Filter on from the opening last commanded: the new side's own last command
+                    # may equal its trigger now and then never be resent.
+                    source.restart_opening(self._gripper_target)
+                gripper_source = source
             if self.drive_gripper and self._gripper_ready:
-                opening = controller.gripper_opening()
+                opening = gripper_source.gripper_opening()
                 if opening is not None:
                     self._command_gripper(opening)
             action = self._cuff.take_button()  # open or close fully, also with --no-gripper

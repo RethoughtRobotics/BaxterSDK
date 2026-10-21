@@ -6,6 +6,7 @@ ik         JointState     joints used (position), IK joint velocities (velocity)
 goal       PoseStamped    the pose the TCP is servoed toward, base frame
 tcp        PoseStamped    the measured TCP (kinematics.tcp_pose), base frame
 key        String         each key read, as typed
+takeover   Bool           the operator's VR overrides a policy's target (--takeover), every VR cycle
 config     String         the session's settings as JSON, latched
 """
 
@@ -16,7 +17,7 @@ from geometry_msgs.msg import PoseStamped, TwistStamped
 from rclpy.qos import DurabilityPolicy, QoSProfile
 from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
-from std_msgs.msg import String
+from std_msgs.msg import Bool, String
 
 
 def pose_msg(position, rotation, stamp, frame_id='base'):
@@ -42,6 +43,7 @@ class Telemetry:
         self._goal = node.create_publisher(PoseStamped, ns + 'goal', 10)
         self._tcp = node.create_publisher(PoseStamped, ns + 'tcp', 10)
         self._key = node.create_publisher(String, ns + 'key', 10)
+        self._takeover = node.create_publisher(Bool, ns + 'takeover', 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self._config = node.create_publisher(String, ns + 'config', latched)
 
@@ -74,6 +76,9 @@ class Telemetry:
 
     def key(self, key):
         self._key.publish(String(data=key))
+
+    def takeover(self, active):
+        self._takeover.publish(Bool(data=bool(active)))
 
     def config(self, config):
         self._config.publish(String(data=json.dumps(config, indent=1, default=str)))

@@ -9,6 +9,9 @@
 #                            through the replay stream (--input plan), the cuff and gripper as always
 #   --policy-target          follow the policy's TCP target stream as a VR controller (servo and IK):
 #                            for policies trained on teleop goals, which that servo was chasing
+#   --takeover               with --policy-target: touch your controller's trackpad to drive the arm
+#                            (trigger: gripper), lift to hand back; engage the policy with
+#                            rethought_ai scripts/start, since the touch is then no deadman
 #   --swap                   you stand beside Baxter, not facing it
 #   --no-gripper             the VR trigger and going home leave the gripper alone
 #   --no-camera              do not start the third_eye RealSense
@@ -51,6 +54,7 @@ RECORD=""
 CAMERA=1
 SESSION=""
 POLICY=""
+TAKEOVER=""
 NO_VIZ=""
 while (( $# )); do
     case "$1" in
@@ -82,6 +86,7 @@ while (( $# )); do
         --no-camera) CAMERA="" ;;
         --policy) POLICY=plan ;;
         --policy-target) POLICY=target ;;
+        --takeover) TAKEOVER=1 ;;
         --no-viz) NO_VIZ=1 ;;
         --swap)  SWAP=1; ARGS+=(--swap-hands false) ;;
         *)       ARGS+=("$1") ;;
@@ -91,6 +96,9 @@ done
 [[ -z "$ARMS" && -z "$GIVEN_ARM" ]] && ARMS="left right"
 # The control settings are the teleop's own defaults (teleop.yaml); --policy adds its own mapping
 # (vr_axes_policy.yaml) and topics in teleop_cmd.
+if [[ -n "$TAKEOVER" && "$POLICY" != target ]]; then
+    echo "ERROR: --takeover overrides a policy's target stream: use it with --policy-target." >&2; exit 1
+fi
 if [[ -n "$POLICY" && -n "$SWAP" ]]; then
     echo "ERROR: --swap with --policy would mirror the policy's targets (x/y negated)." >&2; exit 1
 fi
@@ -103,7 +111,7 @@ teleop_cmd() {  # $1: arm, or empty when --arm was given directly
     if [[ "$POLICY" == plan ]]; then
         policy_args=" --input plan --vr-config vr_axes_policy.yaml --vr-trigger-topic /policy/${arm}/trigger"
     elif [[ "$POLICY" == target ]]; then
-        policy_args=" --vr-config vr_axes_policy.yaml --vr-topic /policy/${arm}/target --vr-trigger-topic /policy/${arm}/trigger"
+        policy_args=" --vr-config vr_axes_policy.yaml --vr-topic /policy/${arm}/target --vr-trigger-topic /policy/${arm}/trigger${TAKEOVER:+ --takeover}"
     fi
     echo "cd '${WS_DIR}' \
   && source '${SCRIPT_DIR}/env.sh' \
