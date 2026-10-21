@@ -32,6 +32,7 @@ from rclpy.qos import DurabilityPolicy, QoSProfile
 from std_msgs.msg import Bool, Empty
 from std_srvs.srv import SetBool
 
+from baxter_mujoco import scenes
 from baxter_mujoco.datagen.generate import TASKS, Scene, conditions, park
 from baxter_mujoco.datagen.motion import HOME_TIME, wait_for_subscriber
 from baxter_mujoco.datagen.outcome import Attempt
@@ -62,8 +63,8 @@ def seed_list(text):
 
 
 class Evaluator:
-    def __init__(self, node, task, arm='left', home_topic='/vive/right/b_button'):
-        self.node, self.task, self.arm, self.scene = node, task, arm, Scene(node)
+    def __init__(self, node, task, arm='left', home_topic='/vive/right/b_button', cup_color='blue'):
+        self.node, self.task, self.arm, self.scene = node, task, arm, Scene(node, cup_color)
         self.tcp = self.grip = self.engaged = None
         self.chunks = 0
         node.create_subscription(PoseStamped, f'/teleop/{arm}/tcp', lambda m: setattr(self, 'tcp', m), 10)
@@ -202,11 +203,12 @@ def main():
     parser.add_argument(
         '--lab-lighting', action='store_true', help="the lab's lighting in every attempt, not the seed's"
     )
+    parser.add_argument('--cup-color', choices=sorted(scenes.CUP_COLORS), default='blue')
     args, ros_args = parser.parse_known_args()
     rclpy.init(args=['evaluate', *ros_args])
     node = rclpy.create_node('evaluate')
     threading.Thread(target=rclpy.spin, args=(node,), daemon=True).start()
-    Evaluator(node, TASKS[args.task], args.arm).run(
+    Evaluator(node, TASKS[args.task], args.arm, cup_color=args.cup_color).run(
         args.seeds, args.out, args.timeout, not args.lab_lighting, args.bags, args.bag_images, args.ready_timeout
     )
     rclpy.shutdown()
