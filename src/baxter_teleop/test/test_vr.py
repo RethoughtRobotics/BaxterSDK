@@ -119,3 +119,62 @@ def test_a_new_stream_after_a_gap_anchors_at_the_current_pose(tmp_path, monkeypa
     send(target, clock, (0.65, 0.2, 0.0))
     target.twist(tcp, np.eye(3))
     np.testing.assert_allclose(target.goal[0], tcp + [0.05, 0, 0], atol=1e-6)
+
+
+def takeover(tmp_path, monkeypatch):
+    """A Takeover of two base-frame targets on one clock: the policy's and the operator's."""
+    policy, clock = make(tmp_path, monkeypatch)
+    node = types.SimpleNamespace(create_subscription=lambda *a, **k: None)
+    hand = vr.VRTarget(node, '', str(tmp_path / 'vr.yaml'), 1.0, 2.0, 5.0)
+    return vr.Takeover(policy, hand), clock
+
+
+def test_takeover_follows_the_policy_until_the_operator_clutches(tmp_path, monkeypatch):
+    t, clock = takeover(tmp_path, monkeypatch)
+    tcp = np.array([0.6, -0.2, 0.1])
+    send(t.policy, clock, (0, 0, 0))
+    send(t.policy, clock, (1e-6, 0, 0))
+    t.twist(tcp, np.eye(3))  # the policy's stream anchors at the TCP
+    send(t.policy, clock, (0.02, 0, 0))
+    send(t.hand, clock, (0.3, 0.3, 0.3))  # the operator's target published, not clutched
+    t.twist(tcp, np.eye(3))
+    assert not t.active
+    np.testing.assert_allclose(t.goal[0], tcp + [0.02, 0, 0], atol=1e-5)
+
+
+def test_takeover_hands_over_both_ways_from_where_the_arm_is(tmp_path, monkeypatch):
+    t, clock = takeover(tmp_path, monkeypatch)
+    send(t.policy, clock, (0, 0, 0))
+    send(t.policy, clock, (1e-6, 0, 0))
+    t.twist(np.array([0.6, -0.2, 0.1]), np.eye(3))
+
+    # The operator clutches: their stroke starts at the TCP where the policy left the arm
+    tcp = np.array([0.62, -0.2, 0.1])
+    send(t.hand, clock, (0.3, 0.3, 0.3))
+    send(t.hand, clock, (0.3 + 1e-6, 0.3, 0.3))
+    assert t.active
+    assert t.twist(tcp, np.eye(3)) is None  # anchors on the TCP: no jump
+    send(t.policy, clock, (0.5, 0, 0))  # the policy's stream goes on, overridden
+    send(t.hand, clock, (0.3, 0.35, 0.3))
+    t.twist(tcp, np.eye(3))
+    np.testing.assert_allclose(t.goal[0], tcp + [0, 0.05, 0], atol=1e-5)
+
+    # The operator lifts: the policy continues from where they left the arm, not from its old anchor
+    tcp = np.array([0.62, -0.15, 0.1])
+    clock[0] += 0.1
+    send(t.hand, clock, (0.3, 0.35, 0.3))  # frozen: released
+    send(t.policy, clock, (0.51, 0, 0))
+    assert not t.active
+    assert t.twist(tcp, np.eye(3)) is None
+    send(t.policy, clock, (0.52, 0, 0))
+    t.twist(tcp, np.eye(3))
+    np.testing.assert_allclose(t.goal[0], tcp + [0.01, 0, 0], atol=1e-5)
+
+
+def test_a_stale_operator_stream_hands_back_to_the_policy(tmp_path, monkeypatch):
+    t, clock = takeover(tmp_path, monkeypatch)
+    send(t.hand, clock, (0, 0, 0))
+    send(t.hand, clock, (1e-6, 0, 0))
+    assert t.active
+    clock[0] += 1.0  # the controller stops publishing (lost tracking) while clutched
+    assert not t.active
