@@ -123,3 +123,11 @@ Update compute is measured on cluster A100 GPUs (S4's retraining on an H100), no
 - **Lighting.** The evaluator draws a random lighting per layout unless told to use the lab lighting;
   every closed-loop evaluation and on-policy attempt here ran with the random lighting (paired across
   conditions, so differences are unaffected, but absolute success may differ from the lab lighting).
+- **Evaluation noise.** A closed-loop run is not deterministic: S3d's adapters are bit-identical to
+  S10a's, and their two evaluations scored 2, 2, 2 and 1, 3, 3 of 50 (7 of 150 layout outcomes
+  differ). The same adapter can move by about one layout of 50 between evaluations, on top of the
+  update-seed and training-seed spread.
+- **A low M0.** S3b, S5, S8a, S13a and S13b each score about 3 of 50 above M0 (3.0) with intervals
+  that exclude zero, yet only reach the base's 6. M0's three update seeds may be a low draw, which
+  favours every condition compared against it; claims decided by a difference to M0 near the noise
+  floor are marked inconclusive or carry this threat.
