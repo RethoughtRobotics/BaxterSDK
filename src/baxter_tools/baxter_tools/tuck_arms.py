@@ -33,11 +33,11 @@ Tool to tuck/untuck Baxter's arms to/from the shipping pose
 
 import argparse
 import time
-from copy import deepcopy
 
 import rclpy
 from baxter_core_msgs.msg import CollisionAvoidanceState
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.utilities import remove_ros_args
 from std_msgs.msg import Bool, Empty
 
 import baxter_interface
@@ -161,8 +161,9 @@ class Tuck(object):
                 self._enforce_rate(loop_start)
 
     def _move_to(self, tuck, disabled):
-        if any(disabled.values()):
-            [pub.publish(Empty()) for pub in self._disable_pub.values()]
+        for limb in self._limbs:
+            if disabled[limb]:
+                self._disable_pub[limb].publish(Empty())
 
         while any(self._arm_state['tuck'][limb] != goal for limb, goal in tuck.items()) and rclpy.ok():
             loop_start = time.time()
@@ -197,7 +198,7 @@ class Tuck(object):
                 return
             else:
                 self._node.get_logger().info('Tucking: One or more arms not Tucked.')
-                any_flipped = not all(self._arm_state['flipped'].values())
+                any_flipped = not all(self._arm_state['flipped'][limb] for limb in self._limbs)
                 if any_flipped:
                     self._node.get_logger().info(
                         f'Moving to neutral start position with collision {"on" if any_flipped else "off"}.'
@@ -213,28 +214,28 @@ class Tuck(object):
                 self._move_to(actions, disabled)
 
                 self._node.get_logger().info('Tucking: Tucking with collision avoidance off.')
-                actions = {'left': 'tuck', 'right': 'tuck'}
-                disabled = {'left': True, 'right': True}
+                actions = {limb: 'tuck' for limb in self._limbs}
+                disabled = {limb: True for limb in self._limbs}
                 self._move_to(actions, disabled)
                 self._done = True
                 return
 
         else:
-            if any(self._arm_state['flipped'].values()):
+            if any(self._arm_state['flipped'][limb] for limb in self._limbs):
                 self._node.get_logger().info(
                     'Untucking: One or more arms Tucked; Disabling Collision Avoidance and untucking.'
                 )
                 self._check_arm_state()
-                suppress = deepcopy(self._arm_state['flipped'])
-                actions = {'left': 'untuck', 'right': 'untuck'}
+                suppress = {limb: self._arm_state['flipped'][limb] for limb in self._limbs}
+                actions = {limb: 'untuck' for limb in self._limbs}
                 self._move_to(actions, suppress)
                 self._done = True
                 return
             else:
                 self._node.get_logger().info('Untucking: Arms already Untucked; Moving to neutral position.')
                 self._check_arm_state()
-                suppress = deepcopy(self._arm_state['flipped'])
-                actions = {'left': 'untuck', 'right': 'untuck'}
+                suppress = {limb: self._arm_state['flipped'][limb] for limb in self._limbs}
+                actions = {limb: 'untuck' for limb in self._limbs}
                 self._move_to(actions, suppress)
                 self._done = True
                 return
@@ -276,7 +277,8 @@ def main(args=None):
     )
 
     rclpy.init(args=args)
-    parsed_args, _ = parser.parse_known_args()
+    # Reject unknown flags (e.g. --left) instead of silently moving both arms
+    parsed_args = parser.parse_args(remove_ros_args(args)[1:])
     tuck = parsed_args.tuck is not None
     arm = parsed_args.tuck if parsed_args.tuck else parsed_args.untuck
 
