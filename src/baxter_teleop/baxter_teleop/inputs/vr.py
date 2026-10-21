@@ -126,6 +126,7 @@ class VRTarget:
         """Base-frame TCP twist [v, w] toward the target, or None to hold position."""
         self.goal = None
         if self._pose is None or time.monotonic() - self._received > self.stale_after:
+            self.reference = None  # the next stream anchors at the TCP where it starts
             return None
         offset, rotation = self._filtered
         tcp_rotation = Rotation.from_matrix(tcp_rotation)
