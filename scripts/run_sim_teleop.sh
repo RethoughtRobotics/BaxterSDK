@@ -27,7 +27,7 @@ ARGS=()
 for a in "$@"; do
     case "$a" in
         --vr) INPUT=vr ;;
-        --policy) INPUT=policy; ARGS+=("$a") ;;  # run_teleop.sh points the teleop at the policy
+        --policy | --policy-target) INPUT=policy; ARGS+=("$a") ;;  # run_teleop.sh points the teleop at the policy
         --table) SIM_ARGS=(--empty) ;;
         --objects) SIM_ARGS=() ;;
         --cup) SIM_ARGS=(--scene cup) ;;
