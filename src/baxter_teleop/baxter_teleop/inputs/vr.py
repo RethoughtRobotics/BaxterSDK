@@ -152,9 +152,52 @@ class VRTarget:
             self.goal, tcp_position, tcp_rotation, self.gain, self.max_linear, self.max_angular, self.scale
         )
 
+    def clutched(self):
+        """Whether the target is moving now: clutched, and its stream not stale."""
+        return self._moving and time.monotonic() - self._received <= self.stale_after
+
     def reset(self):
         """Re-anchor on the next cycle (e.g. after the arm was moved home)."""
         self.reference = None
+
+
+class Takeover:
+    """A policy's VRTarget that the operator's own VRTarget overrides while it is clutched (trackpad
+    touched): a correction by VR, as a cuff squeeze is one by hand.
+
+    Both targets are relative, so each handoff re-anchors the side taking over on the current TCP:
+    the operator's stroke starts from wherever the policy left the arm, and the policy continues
+    from wherever the operator left it, with no jump either way. The policy runtime is told through
+    the teleop's takeover topic and plans from the arm meanwhile, as during a cuff squeeze.
+    """
+
+    def __init__(self, policy, hand):
+        self.policy, self.hand = policy, hand
+        self.goal = None
+        self._driving = False  # the hand's target drove the last cycle
+
+    @property
+    def active(self):
+        """The operator is driving now."""
+        return self.hand.clutched()
+
+    @property
+    def _moving(self):
+        return self.policy._moving or self.hand._moving
+
+    def twist(self, tcp_position, tcp_rotation):
+        active = self.active
+        if active != self._driving:  # a handoff: the side taking over anchors on the TCP now
+            self._driving = active
+            self.reset()
+        source = self.hand if active else self.policy
+        twist = source.twist(tcp_position, tcp_rotation)
+        self.goal = source.goal
+        return twist
+
+    def reset(self):
+        self.policy.reset()
+        self.hand.reset()
 
 
 class VRController:
@@ -171,7 +214,8 @@ class VRController:
         self._filtered = self._filtered_at = self._sent = None  # opening filter state
         self._b_pressed = False
         node.create_subscription(Float32, trigger_topic, self._on_trigger, 10)
-        node.create_subscription(Empty, b_button_topic, self._on_b_button, 10)
+        if b_button_topic:  # None: the trigger only (a takeover's hand; the policy's controller homes)
+            node.create_subscription(Empty, b_button_topic, self._on_b_button, 10)
 
     def gripper_opening(self):
         """The opening to command now (%: 0 closed, 100 open), or None."""

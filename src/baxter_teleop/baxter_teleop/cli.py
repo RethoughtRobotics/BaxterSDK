@@ -11,7 +11,7 @@ from ament_index_python.packages import get_package_share_directory
 
 from .inputs.plan import PlanTarget
 from .inputs.trajectory import TrajectoryTarget
-from .inputs.vr import VRTarget
+from .inputs.vr import Takeover, VRTarget
 from .settings import DEFAULTS, servo_feedback_for
 from .teleop import Teleop
 
@@ -82,6 +82,18 @@ def parser():
         '--vr-b-button-topic',
         default=None,
         help='VR B button topic, sends the arm home (default: /vive/{arm}/b_button)',
+    )
+    p.add_argument(
+        '--takeover',
+        action='store_true',
+        help="VR input following a policy's --vr-topic: your controller (/vive/{hand}/target, its "
+        'trigger the gripper) takes over while its trackpad is touched, and the policy continues from '
+        'where you leave the arm. Engage the policy with its start script: the touch is no deadman here',
+    )
+    p.add_argument(
+        '--takeover-config',
+        default=DEFAULTS['vr_config'],
+        help="--takeover: your controller's VR mapping, as when demonstrating (default: %(default)s)",
     )
     p.add_argument(
         '--no-gripper',
@@ -165,12 +177,16 @@ def parser():
 
 
 def main(argv=None):
-    args, ros_args = parser().parse_known_args(sys.argv[1:] if argv is None else argv)
+    p = parser()
+    args, ros_args = p.parse_known_args(sys.argv[1:] if argv is None else argv)
+    if args.takeover and (args.input != 'vr' or args.vr_topic is None):
+        p.error("--takeover needs --input vr following a policy's target (--vr-topic)")
     if args.input == 'plan':  # a plan is played by the replay stream, never through the servo and IK
         args.output = 'replay'
     args.servo_feedback = servo_feedback_for(args.output, args.servo_feedback)
     if args.input in ('vr', 'trajectory', 'plan'):
         args.vr_config = config_file(args.vr_config)
+        args.takeover_config = config_file(args.takeover_config)
         vr_linear, vr_angular = Teleop.VR_SPEEDS
         args.linear_speed = vr_linear if args.linear_speed is None else args.linear_speed
         args.angular_speed = vr_angular if args.angular_speed is None else args.angular_speed
@@ -215,19 +231,35 @@ def main(argv=None):
     teleop.telemetry.config(config)
     try:
         if args.input == 'vr':
-            teleop.spin_vr(
-                trigger_topic=args.vr_trigger_topic or f'/vive/{hand}/trigger',
-                b_button_topic=args.vr_b_button_topic or f'/vive/{hand}/b_button',
-                home_button=args.home_button,
-                target=VRTarget(
+            target = VRTarget(
+                teleop.node,
+                args.vr_topic or f'/vive/{hand}/target',
+                args.vr_config,
+                args.vr_gain,
+                teleop.linear_speed,
+                teleop.angular_speed,
+                swap_hands=swap_hands,
+            )
+            if args.takeover:
+                own = VRTarget(
                     teleop.node,
-                    args.vr_topic or f'/vive/{hand}/target',
-                    args.vr_config,
+                    f'/vive/{hand}/target',
+                    args.takeover_config,
                     args.vr_gain,
                     teleop.linear_speed,
                     teleop.angular_speed,
                     swap_hands=swap_hands,
-                ),
+                )
+                target = Takeover(target, own)
+                teleop.node.get_logger().info(
+                    f'Takeover: touch the {hand} controller trackpad to drive, lift to hand back to the policy'
+                )
+            teleop.spin_vr(
+                trigger_topic=args.vr_trigger_topic or f'/vive/{hand}/trigger',
+                b_button_topic=args.vr_b_button_topic or f'/vive/{hand}/b_button',
+                home_button=args.home_button,
+                target=target,
+                takeover_trigger_topic=f'/vive/{hand}/trigger' if args.takeover else None,
             )
         elif args.input == 'plan':
             teleop.spin_vr(
