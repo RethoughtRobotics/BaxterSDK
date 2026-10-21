@@ -66,10 +66,35 @@ def test_error_is_pulled_back_at_the_gain():
     target, clock = make()
     times, positions = line()
     target._on_path(path(times, positions))
+    clock[0] = 10.4
+    target.twist(START + 0.4 * VELOCITY, np.eye(3))  # on the path: anchors with no offset
     clock[0] = 10.5
     behind = START + 0.5 * VELOCITY - np.array([0.01, 0.0, 0.0])
     twist = target.twist(behind, np.eye(3))
     np.testing.assert_allclose(twist[:3], VELOCITY + 2.0 * np.array([0.01, 0.0, 0.0]), atol=1e-5)
+
+
+def test_a_path_anchors_at_the_current_pose_and_keeps_its_velocity():
+    target, clock = make()
+    times, positions = line()
+    target._on_path(path(times, positions))
+    tcp = START + np.array([0.05, -0.03, 0.02])  # the arm is away from the path
+    tcp_rotation = Rotation.from_rotvec([0.0, 0.0, 0.3])
+    clock[0] = 10.2
+    target.twist(tcp, tcp_rotation.as_matrix())
+    np.testing.assert_allclose(target.goal[0], tcp, atol=1e-9)  # no jump: the goal starts at the arm
+    assert (target.goal[1] * tcp_rotation.inv()).magnitude() < 1e-9
+    clock[0] = 10.5
+    twist = target.twist(tcp, tcp_rotation.as_matrix())
+    np.testing.assert_allclose(target.goal[0], tcp + 0.3 * VELOCITY, atol=1e-9)  # moves as the path moves
+    np.testing.assert_allclose(twist[:3], VELOCITY + 2.0 * 0.3 * VELOCITY, atol=1e-5)
+    clock[0] = times[-1] + 1.0  # stale: the next path anchors again
+    assert target.twist(tcp, np.eye(3)) is None
+    later = times + 5.0
+    target._on_path(path(later, positions))
+    clock[0] = later[0] + 0.1
+    target.twist(START, np.eye(3))
+    np.testing.assert_allclose(target.goal[0], START, atol=1e-9)
 
 
 def test_holds_the_last_pose_then_goes_stale():
@@ -87,6 +112,8 @@ def test_continue_extrapolates_the_last_segment():
     target, clock = make(end='continue')
     times, positions = line()
     target._on_path(path(times, positions))
+    clock[0] = times[-1]
+    target.twist(positions[-1], np.eye(3))  # on the path: anchors with no offset
     clock[0] = times[-1] + 0.1
     target.twist(positions[-1], np.eye(3))
     np.testing.assert_allclose(target.goal[0], positions[-1] + 0.1 * VELOCITY, atol=1e-9)

@@ -39,8 +39,11 @@ class TrajectoryTarget:
     PoseStamped stamped with the time it is due (a policy's chunk: its observation time plus k steps).
     Each new path replaces the last. Every cycle the servo chases the pose due now, r(t), with the
     path's velocity there, r'(t), as feedforward: twist = r' + gain * (r - x), so the tracking error
-    decays as e' = -gain * e for any gain, with no standing lag to compensate. Poses are absolute:
-    nothing is anchored on the arm, and a path that has run out holds its last pose.
+    decays as e' = -gain * e for any gain, with no standing lag to compensate. A stream of paths is
+    anchored at the arm where it starts: the goal is r(t) shifted by the TCP's offset from r then
+    (position added, rotation composed on the right), so the arm never jumps, and a constant offset
+    leaves r' unchanged. The anchor holds while paths keep coming and is dropped when they go stale
+    or on reset (home, cuff). A path that has run out holds its last pose.
 
     feedforward=False drops r' (the servo alone, lagging a moving goal by 1/gain). interpolation:
     'linear' (piecewise linear, velocity constant per segment), 'cubic' (C2 spline through every
@@ -81,6 +84,7 @@ class TrajectoryTarget:
         self.feedforward, self.interpolation, self.end = bool(feedforward), interpolation, end
         self.shift, self.stale_after = float(shift), float(stale_after)
         self.goal = None  # (position, Rotation) the TCP is servoed toward this cycle, base frame
+        self.anchor = None  # (position offset, rotation offset): TCP minus the path where the stream started
         self._moving = False  # read by the teleop's cuff handling, as VRTarget's
         self._path = None
         node.create_subscription(Path, topic, self._on_path, 10)
@@ -140,14 +144,19 @@ class TrajectoryTarget:
         now = self.node.get_clock().now().nanoseconds * 1e-9 + self.shift
         sample = self._sample(now)
         if sample is None:
+            self.anchor = None  # the next stream anchors at the TCP where it starts
             return None
         position, rotation, v, w = sample
-        self.goal = (position, rotation)
+        tcp = Rotation.from_matrix(tcp_rotation)
+        if self.anchor is None:
+            self.anchor = (tcp_position - position, rotation.inv() * tcp)
+        offset, turn = self.anchor
+        self.goal = (position + offset, rotation * turn)
         self._moving = True
         return servo_twist(
             self.goal,
             tcp_position,
-            Rotation.from_matrix(tcp_rotation),
+            tcp,
             self.gain,
             self.max_linear,
             self.max_angular,
@@ -156,4 +165,5 @@ class TrajectoryTarget:
         )
 
     def reset(self):
-        """Absolute poses: nothing to re-anchor; the next path is followed as it is."""
+        """Re-anchor on the next cycle (e.g. after the arm was moved home or by hand)."""
+        self.anchor = None
