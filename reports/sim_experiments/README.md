@@ -49,7 +49,11 @@ Success of adaptations is the mean of three update seeds.
 | S13c | 4.3 (5, 5, 3) | +1.3 [-0.7, +3.7] | -0.67 | 16.6 | 363 | 2.1 | missed grasp |
 | S14 | pending | | | | | | |
 | S15 | 0.0 (0, 0, 0) | -3.0 [-6.0, -0.7] | -1.00 | | 363 | 2.4 | stalled |
-| S16a to S19b | pending | | | | | | |
+| S16a (0.5 s late) | 0.0 (0 of 37, 0, 0) | +0.0 [+0.0, +0.0] vs S15 | -1.00 | | 358 | 2.2 | stalled |
+| S16b (half chunk) | 0.0 (0, 0, 0) | +0.0 [+0.0, +0.0] vs S15 | -1.00 | | 363 | 2.2 | stalled |
+| S16c (2 cm noise) | 0.0 (0, 0, 0) | +0.0 [+0.0, +0.0] vs S15 | -1.00 | | 363 | 5.5 | stalled |
+| S16d (30% dropped) | 0.0 (0, 0, 0) | +0.0 [+0.0, +0.0] vs S15 | -1.00 | | 254 | 2.0 | stalled |
+| S17 to S19b | pending | | | | | | |
 | S20 (DiT base) | 0 | -6 vs S0 | | | | | stalled |
 | S20-M | pending | | | | | | |
 | S21a (5 demonstrations) | 0 | -6 vs S0 | | | | | missed grasp |
@@ -79,7 +83,7 @@ Update compute is measured on cluster A100 GPUs (S4's retraining on an H100), no
 | H-S13 how long | [H-S13_steps.md](H-S13_steps.md) | inconclusive: 800 steps beat M0 (+2.7 [+0.7, +5.0]) but under the noise floor and only to the base's level; longer or faster updates do not forget more |
 | H-S14 blend dial | | pending |
 | H-S15 on-policy corrections | [H-S15_onpolicy.md](H-S15_onpolicy.md) | falsified: on-policy planner corrections fall below M0 (0 of 50); the corrector matches the demonstrations' convention, the gate selects off-path and pace frames |
-| H-S16 correction quality | | pending |
+| H-S16 correction quality | [H-S16_quality.md](H-S16_quality.md) | falsified, degenerate: every degradation is at 0 of 50 like S15, which has no gain to lose |
 | H-S17 how many corrections | | pending |
 | H-S18 update schedule | | pending |
 | H-S19 unseen conditions | | pending |
