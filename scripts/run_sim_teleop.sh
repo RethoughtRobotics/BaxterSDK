@@ -55,7 +55,8 @@ start() {  # run in its own process group, so cleanup stops all of its children
 wait_for_topic() {  # topic, seconds (each try allows 5 s: the ros2 CLI alone takes ~2 s to start)
     local deadline=$((SECONDS + $2))
     while ((SECONDS < deadline)); do
-        timeout 5 ros2 topic echo --once "$1" >/dev/null 2>&1 && return 0
+        # -k: a ros2 CLI can ignore SIGTERM, and a plain timeout then waits forever
+        timeout -k 2 5 ros2 topic echo --once "$1" >/dev/null 2>&1 && return 0
         sleep 0.5
     done
     return 1
@@ -63,7 +64,7 @@ wait_for_topic() {  # topic, seconds (each try allows 5 s: the ros2 CLI alone ta
 
 pgrep -f rmw_zenohd >/dev/null || start ros2 run rmw_zenoh_cpp rmw_zenohd
 if wait_for_topic /robot/joint_states 5; then
-    if ! ros2 node list 2>/dev/null | grep -qx /baxter_sim; then
+    if ! timeout -k 2 10 ros2 node list 2>/dev/null | grep -qx /baxter_sim; then
         echo 'A robot is already publishing /robot/joint_states; not starting the sim.'
         exit 1
     fi

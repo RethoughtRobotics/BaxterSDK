@@ -11,7 +11,9 @@ A seed's attempt has the layout and lighting the generator gives that seed's fir
 engaged through the runtime's engage service (as its scripts/start) for at most --timeout s, stopped at
 success or a stall, released and sent home. One JSON line per attempt (outcome.py); seeds already in
 --out are skipped, so a rerun resumes. With --bags, a bag per attempt of BAG_TOPICS (and the policy's
-cameras with --bag-images), from just before the engage to the release.
+cameras with --bag-images), from just before the engage to the release, its chunks zstd compressed
+(the cameras' 2 GB of an attempt to about a ninth). The expert's chunk at every frame of a bag:
+python -m baxter_mujoco.datagen.expert.
 """
 
 import argparse
@@ -113,13 +115,27 @@ class Evaluator:
         if self.engaged:
             self.set_engaged(False)
         self.go_home()
+        park_failed = []
         for arm, q in self.task.parked.items():
-            park(self.node, arm, q)
+            try:
+                park(self.node, arm, q)
+            except RuntimeError as e:
+                # an object the last attempt left against the arm, or the policy arm not yet home: the new
+                # layout clears the one, home again the other, then park again; if the arm still does not
+                # get there, the attempt runs from where it is and its row says so
+                print(f'seed {seed}: {e}, retrying with the scene reset and home again', flush=True)
+                self.scene.set(layout, lighting)
+                self.go_home()
+                try:
+                    park(self.node, arm, q, timeout=40.0)
+                except RuntimeError as e2:
+                    print(f'seed {seed}: {e2}, attempting anyway', flush=True)
+                    park_failed.append(arm)
         self.scene.set(layout, lighting)
         recorder = None
         if bag:
             recorder = subprocess.Popen(
-                ['ros2', 'bag', 'record', '-o', str(bag), *bag_topics],
+                ['ros2', 'bag', 'record', '-o', str(bag), '--storage-preset-profile', 'zstd_fast', *bag_topics],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
@@ -143,6 +159,8 @@ class Evaluator:
                 except subprocess.TimeoutExpired:
                     recorder.kill()
         row = {'seed': seed, **score.outcome(stalled=stop == 'stalled'), 'duration': round(duration, 2)}
+        if park_failed:
+            row['park_failed'] = park_failed
         return {**row, 'layout': [round(float(v), 4) for v in layout], 'bag': str(bag) if bag else None}
 
     def run(self, seeds, out, timeout=TIMEOUT, randomize_lighting=True, bags=None, bag_images=False, ready=900.0):
