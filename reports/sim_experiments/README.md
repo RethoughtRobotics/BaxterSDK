@@ -70,7 +70,9 @@ Success of adaptations is the mean of three update seeds.
 | S17 (4 attempts) | 1.7 (1, 2, 2) | -1.3 [-4.7, +1.3] | -0.94 | 21.0 | 2066 | 2.0 | stalled |
 | S17 (8 attempts) | 0.0 (0, 0, 0) | -3.0 [-6.0, -0.7] | -1.00 | | 4553 | 2.3 | stalled |
 | S17 (16 attempts) | 0.3 (0, 1, 0) | -2.7 [-5.7, -0.3] | -1.00 | 19.0 | 6755 | 2.0 | stalled |
-| S18 to S19b | pending | | | | | | |
+| S18a (one update after 8 attempts) | 0.0 (0, 0, 0) | -3.0 [-6.0, -0.7] | -1.00 | | 4003 | 2.1 | stalled |
+| S18b (an update after every attempt) | 1.0 (1, 1, 1) | -2.0 [-5.0, +0.7]; +1.0 [+0.0, +2.3] vs S18a | -1.00 | 28.9 | 3268 (2706, 3584, 3514) | 2.2 per update, 8 updates | stalled |
+| S19a, S19b | pending | | | | | | |
 | S20 (DiT base) | 0 | -6 vs S0 | | | | | stalled |
 | S20-M | pending | | | | | | |
 | S21a (5 demonstrations) | 0 | -6 vs S0 | | | | | missed grasp |
@@ -102,7 +104,7 @@ Update compute is measured on cluster A100 GPUs (S4's retraining on an H100), no
 | H-S15 on-policy corrections | [H-S15_onpolicy.md](H-S15_onpolicy.md) | falsified: on-policy planner corrections fall below M0 (0 of 50); the corrector matches the demonstrations' convention, the gate selects off-path and pace frames |
 | H-S16 correction quality | [H-S16_quality.md](H-S16_quality.md) | falsified, degenerate: every degradation is at 0 of 50 like S15, which has no gain to lose |
 | H-S17 how many corrections | [H-S17_attempts.md](H-S17_attempts.md) | inconclusive: no number of attempts gains; success falls with more (3.7 at 1 to 0.3 at 16, -3.3 [-6.0, -1.0]), so saturation cannot be judged |
-| H-S18 update schedule | | pending |
+| H-S18 update schedule | [H-S18_schedule.md](H-S18_schedule.md) | inconclusive: S18b used fewer frames (3268 against 4003) at no lower success (+1.0 [+0.0, +2.3]), but both fail (1.0 and 0.0 of 50, below the base and M0), so there is no gain to reach more cheaply |
 | H-S19 unseen conditions | | pending |
 | H-S20 other bases | | pending |
 | H-S21 weak and strong bases | [H-S21_strength.md](H-S21_strength.md) | inconclusive: no base gains beyond noise (+0.3, -3.0, -1.0 for 5, 21, 55 demonstrations; 55 partial); the middle base gains least |
