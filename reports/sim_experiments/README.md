@@ -34,7 +34,7 @@ Success of adaptations is the mean of three update seeds.
 | S9b | 4.0 (4, 6, 2) | +1.0 [-0.3, +2.7] | -0.78 | 17.2 | 363 | 2.5 | missed grasp |
 | S9c | 2.7 (3, 3, 2) | -0.3 [-2.3, +2.0] | -0.78 | 19.6 | 363 | 2.6 | missed grasp |
 | S10a to S14 | pending | | | | | | |
-| S15 | pending (first run: 0, 0, 0) | | | | | | |
+| S15 | 0.0 (0, 0, 0) | -3.0 [-6.0, -0.7] | -1.00 | | 363 | 2.4 | stalled |
 | S16a to S19b | pending | | | | | | |
 | S20 (DiT base) | 0 | -6 vs S0 | | | | | stalled |
 | S20-M | pending | | | | | | |
@@ -62,7 +62,7 @@ Update compute is measured on cluster A100 GPUs, not the robot computer.
 | H-S12 which frames | | pending |
 | H-S13 how long | | pending |
 | H-S14 blend dial | | pending |
-| H-S15 on-policy corrections | | pending |
+| H-S15 on-policy corrections | [H-S15_onpolicy.md](H-S15_onpolicy.md) | falsified: on-policy planner corrections fall below M0 (0 of 50); a corrector and demonstration mismatch is not yet ruled out |
 | H-S16 correction quality | | pending |
 | H-S17 how many corrections | | pending |
 | H-S18 update schedule | | pending |
