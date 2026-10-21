@@ -116,7 +116,13 @@ class Evaluator:
             self.set_engaged(False)
         self.go_home()
         for arm, q in self.task.parked.items():
-            park(self.node, arm, q)
+            try:
+                park(self.node, arm, q)
+            except RuntimeError as e:
+                # an object the last attempt left against the arm: the new layout clears it, then park again
+                print(f'seed {seed}: {e}, retrying with the scene reset', flush=True)
+                self.scene.set(layout, lighting)
+                park(self.node, arm, q)
         self.scene.set(layout, lighting)
         recorder = None
         if bag:
