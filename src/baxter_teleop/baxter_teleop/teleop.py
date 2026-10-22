@@ -445,17 +445,10 @@ class Teleop:
                     # may equal its trigger now and then never be resent.
                     source.restart_opening(self._gripper_target)
                 gripper_source = source
-            if self.drive_gripper and self._gripper_ready:
-                opening = gripper_source.gripper_opening()
-                if opening is not None:
-                    self._command_gripper(opening)
-            action = self._cuff.take_button()  # open or close fully, also with --no-gripper
-            if action is not None and self.gripper is not None and self.gripper.calibrated() and self.gripper.ready():
-                (self.gripper.close if action == 'close' else self.gripper.open)()
-                self._gripper_target = 0.0 if action == 'close' else 100.0
+            squeezed = self._cuff.squeezed
+            self._drive_gripper(gripper_source, squeezed, released=cuff_was_squeezed and not squeezed)
             # On release of the cuff Baxter's position hold would pull the arm back to where it was
             # held before. Not streaming (no stroke under way): hold where the hand left it.
-            squeezed = self._cuff.squeezed
             if cuff_was_squeezed and not squeezed and not target._moving:
                 target.reset()
                 if self.raw_output is not None:
@@ -467,6 +460,23 @@ class Teleop:
             return 'h' if home else None
 
         self.spin_target(target, on_cycle=on_cycle)
+
+    def _drive_gripper(self, source, squeezed, released):
+        """One cycle of the gripper: the cuff's buttons open or close it fully (also with --no-gripper),
+        and the trigger source drives it unless the cuff is squeezed. Squeezed, the cuff owns it: the
+        policy runtime echoes every gripper command back as its trigger, so a trigger filter running
+        then would chase its own output and stop a button's motion after one step. On release the
+        filter restarts from the cuff's last command."""
+        if released and self._gripper_target is not None:
+            source.restart_opening(self._gripper_target)
+        if self.drive_gripper and self._gripper_ready and not squeezed:
+            opening = source.gripper_opening()
+            if opening is not None:
+                self._command_gripper(opening)
+        action = self._cuff.take_button()
+        if action is not None and self.gripper is not None and self.gripper.calibrated() and self.gripper.ready():
+            (self.gripper.close if action == 'close' else self.gripper.open)()
+            self._gripper_target = 0.0 if action == 'close' else 100.0
 
     def _on_home_button(self, pressed):
         if pressed:
