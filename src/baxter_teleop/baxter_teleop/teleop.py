@@ -17,7 +17,7 @@ from baxter_external_devices.getch import getch
 from .differential_ik import BoundedLeastSquaresIK, DampedLeastSquaresIK
 from .inputs.cuff import Cuff
 from .inputs.keyboard import KeyboardTarget, twist_from_key
-from .inputs.vr import VRController
+from .inputs.vr import Nudge, VRController
 from .kinematics import ArmKinematics
 from .outputs.raw_position import JointCommandPublisher, start_raw_position_output
 from .outputs.replay_stream import ReplayStream
@@ -414,7 +414,9 @@ class Teleop:
         home_button (a DigitalIO component, e.g. right_button_ok; every arm's teleop listens, so one
         press homes them all). Guided by hand (cuff squeezed), the cuff's buttons drive the gripper.
         With a Takeover target, the operator's trigger (takeover_trigger_topic) drives the gripper
-        while they drive the arm, and each cycle says on /teleop/{arm}/takeover whether they do.
+        while they drive the arm, and each cycle says on /teleop/{arm}/takeover whether they do. With
+        a Nudge target the same while they nudge, said on /teleop/{arm}/nudging, with the offset on
+        /teleop/{arm}/correction_offset.
         The keyboard keeps gripper/home/ESC."""
         print(f'\n{self.arm.capitalize()} arm VR teleop ({type(self.ik).__name__})')
         print(
@@ -438,7 +440,10 @@ class Teleop:
             nonlocal cuff_was_squeezed, gripper_source
             if hand is not None:
                 active = target.active
-                self.telemetry.takeover(active)
+                if isinstance(target, Nudge):
+                    self.telemetry.nudge(active, target.offset)
+                else:
+                    self.telemetry.takeover(active)
                 source = hand if active else controller
                 if source is not gripper_source and self._gripper_target is not None:
                     # Filter on from the opening last commanded: the new side's own last command

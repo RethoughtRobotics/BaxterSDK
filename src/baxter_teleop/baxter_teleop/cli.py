@@ -11,7 +11,7 @@ from ament_index_python.packages import get_package_share_directory
 
 from .inputs.plan import PlanTarget
 from .inputs.trajectory import TrajectoryTarget
-from .inputs.vr import Takeover, VRTarget
+from .inputs.vr import Nudge, Takeover, VRTarget
 from .settings import DEFAULTS, servo_feedback_for
 from .teleop import Teleop
 
@@ -85,10 +85,20 @@ def parser():
     )
     p.add_argument(
         '--takeover',
-        action='store_true',
-        help="VR input following a policy's --vr-topic: your controller (/vive/{hand}/target, its "
-        'trigger the gripper) takes over while its trackpad is touched, and the policy continues from '
-        'where you leave the arm. Engage the policy with its start script: the touch is no deadman here',
+        nargs='?',
+        const='replace',
+        choices=('replace', 'nudge'),
+        help="VR input following a policy's --vr-topic: while your controller's trackpad is touched, "
+        "'replace' (the default): your controller (/vive/{hand}/target, its trigger the gripper) drives "
+        "instead, and the policy continues from where you leave the arm; 'nudge': the policy keeps "
+        'driving and your hand motion since the touch is added to its goal, fading out after you lift '
+        '(inputs.vr.Nudge). Engage the policy with its start script: the touch is no deadman here',
+    )
+    p.add_argument(
+        '--nudge-rotation',
+        type=float,
+        default=1.0,
+        help='--takeover nudge: scale of your wrist turn in the offset, 0 for position only (default: %(default)s)',
     )
     p.add_argument(
         '--takeover-config',
@@ -250,10 +260,16 @@ def main(argv=None):
                     teleop.angular_speed,
                     swap_hands=swap_hands,
                 )
-                target = Takeover(target, own)
-                teleop.node.get_logger().info(
-                    f'Takeover: touch the {hand} controller trackpad to drive, lift to hand back to the policy'
-                )
+                if args.takeover == 'nudge':
+                    target = Nudge(target, own, rotation=args.nudge_rotation)
+                    teleop.node.get_logger().info(
+                        f'Nudge: touch the {hand} controller trackpad and move to offset the policy, lift to fade out'
+                    )
+                else:
+                    target = Takeover(target, own)
+                    teleop.node.get_logger().info(
+                        f'Takeover: touch the {hand} controller trackpad to drive, lift to hand back to the policy'
+                    )
             teleop.spin_vr(
                 trigger_topic=args.vr_trigger_topic or f'/vive/{hand}/trigger',
                 b_button_topic=args.vr_b_button_topic or f'/vive/{hand}/b_button',

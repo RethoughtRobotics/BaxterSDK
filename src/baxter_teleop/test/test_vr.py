@@ -178,3 +178,52 @@ def test_a_stale_operator_stream_hands_back_to_the_policy(tmp_path, monkeypatch)
     assert t.active
     clock[0] += 1.0  # the controller stops publishing (lost tracking) while clutched
     assert not t.active
+
+
+def nudge(tmp_path, monkeypatch, **options):
+    """A Nudge of two base-frame targets on one clock: the policy's and the operator's."""
+    policy, clock = make(tmp_path, monkeypatch)
+    node = types.SimpleNamespace(create_subscription=lambda *a, **k: None)
+    hand = vr.VRTarget(node, '', str(tmp_path / 'vr.yaml'), 1.0, 2.0, 5.0)
+    return vr.Nudge(policy, hand, **options), clock
+
+
+def test_a_nudge_adds_the_hands_motion_to_the_policys_goal_and_fades_after(tmp_path, monkeypatch):
+    t, clock = nudge(tmp_path, monkeypatch, smoothing=0.0, max_linear=100.0)
+    tcp = np.array([0.6, -0.2, 0.1])
+    send(t.policy, clock, (0, 0, 0))
+    send(t.policy, clock, (1e-6, 0, 0))
+    t.twist(tcp, np.eye(3))  # the policy's stream anchors at the TCP
+    send(t.hand, clock, (0.3, 0.3, 0.3))
+    send(t.hand, clock, (0.3 + 1e-6, 0.3, 0.3))
+    t.twist(tcp, np.eye(3))  # the hand's stroke anchors
+    assert t.active
+    for k in range(5):  # the policy moves on in +x while the hand moves 5 cm in +y
+        send(t.policy, clock, (0.01 * (k + 1), 0, 0))
+        send(t.hand, clock, (0.3, 0.3 + 0.01 * (k + 1), 0.3))
+        t.twist(tcp, np.eye(3))
+    np.testing.assert_allclose(t.offset[:3], [0, 0.05, 0], atol=1e-5)
+    np.testing.assert_allclose(t.goal[0], tcp + [0.05, 0.05, 0], atol=1e-5)  # the policy's goal, shifted
+
+    clock[0] += 0.1
+    send(t.hand, clock, (0.3, 0.35, 0.3))  # frozen: lifted
+    send(t.policy, clock, (0.06, 0, 0))
+    assert not t.active
+    for _ in range(40):  # 2 s of 50 ms cycles: the offset fades to (almost) nothing
+        clock[0] += 0.05
+        send(t.policy, clock, (0.06, 0, 0))
+        t.twist(tcp, np.eye(3))
+    assert np.linalg.norm(t.offset[:3]) < 1e-3
+
+
+def test_the_nudge_is_slew_limited_and_rotation_can_be_left_out(tmp_path, monkeypatch):
+    t, clock = nudge(tmp_path, monkeypatch, smoothing=0.0, max_linear=0.3, rotation=0.0)
+    raw = np.r_[0.5, 0, 0, 0, 0, 0]  # a 50 cm jump of the hand
+    t.step(raw, 0.0)
+    t.step(raw, 0.1)  # 0.1 s later: at most 3 cm
+    np.testing.assert_allclose(t.offset[:3], [0.03, 0, 0], atol=1e-9)
+    send(t.hand, clock, (0.3, 0.3, 0.3))
+    send(t.hand, clock, (0.3 + 1e-6, 0.3, 0.3))
+    t.hand.twist(np.zeros(3), np.eye(3))
+    t.hand._filtered = (np.array([0.3, 0.3, 0.3]), vr.Rotation.from_rotvec([0, 0, 0.5]))  # a wrist turn
+    assert not t._raw(np.zeros(3), np.eye(3))[3:].any()
