@@ -7,6 +7,9 @@ goal       PoseStamped    the pose the TCP is servoed toward, base frame
 tcp        PoseStamped    the measured TCP (kinematics.tcp_pose), base frame
 key        String         each key read, as typed
 takeover   Bool           the operator's VR overrides a policy's target (--takeover), every VR cycle
+nudging    Bool           the operator nudges a policy's target (--takeover nudge), every VR cycle
+correction_offset  TwistStamped  the nudge offset added to the policy's goal (inputs.vr.Nudge), base
+           frame: linear the translation (m), angular the rotation vector (rad); every VR cycle
 config     String         the session's settings as JSON, latched
 """
 
@@ -44,6 +47,8 @@ class Telemetry:
         self._tcp = node.create_publisher(PoseStamped, ns + 'tcp', 10)
         self._key = node.create_publisher(String, ns + 'key', 10)
         self._takeover = node.create_publisher(Bool, ns + 'takeover', 10)
+        self._nudging = node.create_publisher(Bool, ns + 'nudging', 10)
+        self._offset = node.create_publisher(TwistStamped, ns + 'correction_offset', 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self._config = node.create_publisher(String, ns + 'config', latched)
 
@@ -79,6 +84,15 @@ class Telemetry:
 
     def takeover(self, active):
         self._takeover.publish(Bool(data=bool(active)))
+
+    def nudge(self, active, offset):
+        """Whether the operator nudges now, and the offset added to the policy's goal (6,)."""
+        self._nudging.publish(Bool(data=bool(active)))
+        msg = TwistStamped()
+        msg.header.stamp, msg.header.frame_id = self._now(), 'base'
+        t = msg.twist
+        t.linear.x, t.linear.y, t.linear.z, t.angular.x, t.angular.y, t.angular.z = (float(x) for x in offset)
+        self._offset.publish(msg)
 
     def config(self, config):
         self._config.publish(String(data=json.dumps(config, indent=1, default=str)))

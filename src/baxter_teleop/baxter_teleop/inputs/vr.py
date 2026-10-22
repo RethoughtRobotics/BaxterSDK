@@ -200,6 +200,78 @@ class Takeover:
         self.hand.reset()
 
 
+class Nudge:
+    """A policy's VRTarget that the operator nudges while their own VRTarget is clutched (trackpad
+    touched): the policy keeps driving from its own view, and the operator's hand motion since the
+    touch is added to its goal as an offset b, FlowCorrect's relative correction (Welte et al. 2026,
+    after Pan et al.'s decaying relative correction).
+
+    Each cycle the raw offset, the hand's displacement and turn since the touch (base frame), is
+    scaled (`rotation` scales the turn; 0 nudges position only), low-pass filtered (time constant
+    `smoothing` s) and slew-limited (`max_linear` m/s, `max_angular` rad/s); after the hand lifts, b
+    decays to 0 with time constant `decay` s, so the arm glides back onto the policy's own goals.
+    The goal is the policy's, translated by b and turned by b's rotation vector. `offset` is b now,
+    [x y z rx ry rz]; the teleop publishes it, the training target of a nudge corrector.
+    """
+
+    def __init__(self, policy, hand, rotation=1.0, smoothing=0.1, decay=0.33, max_linear=0.3, max_angular=1.0):
+        self.policy, self.hand = policy, hand
+        self.rotation, self.smoothing, self.decay = float(rotation), float(smoothing), float(decay)
+        self.max_linear, self.max_angular = float(max_linear), float(max_angular)
+        self.offset = np.zeros(6)
+        self.goal = None
+        self._at = None  # when the offset was last updated
+
+    @property
+    def active(self):
+        """The operator is nudging now."""
+        return self.hand.clutched()
+
+    @property
+    def _moving(self):
+        return self.policy._moving or self.hand._moving
+
+    def _raw(self, tcp_position, tcp_rotation):
+        """The hand's displacement and turn since the touch, base frame, or zeros when not clutched."""
+        self.hand.twist(tcp_position, tcp_rotation)  # follows the hand's stroke; its twist is not used
+        if not self.active or self.hand.goal is None or self.hand.reference is None:
+            return np.zeros(6)
+        p0, R0 = self.hand.reference[:2]
+        position, rotation = self.hand.goal
+        return np.r_[position - p0, self.rotation * (rotation * R0.inv()).as_rotvec()]
+
+    def step(self, raw, now):
+        """b one cycle on toward `raw` (the hand's offset, or zeros once released), at time `now`."""
+        dt = 0.0 if self._at is None else max(now - self._at, 0.0)
+        self._at = now
+        tau = self.smoothing if raw.any() else self.decay
+        change = (raw - self.offset) * (dt / (tau + dt) if dt > 0 else 0.0)
+        for part, limit in ((slice(0, 3), self.max_linear), (slice(3, 6), self.max_angular)):
+            size = np.linalg.norm(change[part])
+            if size > limit * dt:
+                change[part] *= limit * dt / size
+        self.offset = self.offset + change
+        return self.offset
+
+    def twist(self, tcp_position, tcp_rotation):
+        self.step(self._raw(tcp_position, tcp_rotation), time.monotonic())
+        twist = self.policy.twist(tcp_position, tcp_rotation)
+        self.goal = self.policy.goal
+        if self.goal is None or not self.offset.any():
+            return twist
+        p = self.policy
+        self.goal = (self.goal[0] + self.offset[:3], Rotation.from_rotvec(self.offset[3:]) * self.goal[1])
+        return servo_twist(
+            self.goal, tcp_position, Rotation.from_matrix(tcp_rotation), p.gain, p.max_linear, p.max_angular, p.scale
+        )
+
+    def reset(self):
+        """Re-anchor both streams (e.g. after homing) and drop the offset."""
+        self.policy.reset()
+        self.hand.reset()
+        self.offset, self._at = np.zeros(6), None
+
+
 class VRController:
     """The controller's analog trigger and B button (libsurvive_ros2 /vive/{hand}/trigger, b_button).
 
