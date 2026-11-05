@@ -40,18 +40,28 @@ STIFF = 0.05  # rad: a squeezed arm that moved further than this is in zero-g
 RATE = 200.0  # Hz
 
 
+def sign_agrees(force, moved):
+    """Per joint pushed past its deadband: the arm gives way along the torque Admittance would follow,
+    -(effort - tare). True, or None with no such push. Steering the wrong way would pull into the hand."""
+    pushed = np.abs(force).max(0, initial=0.0) > 2 * np.array(STEER['deadband']) if len(force) else np.zeros(7, bool)
+    if not pushed.any():
+        return None
+    return bool(all(np.sum(-force[:, j] * moved[:, j]) > 0 for j in np.nonzero(pushed)[0]))
+
+
 def verdict(samples):
     """Findings from `samples` (time, phase, squeezed, torque - tare (7), displacement (7), contact)."""
     phase, squeezed = samples[:, 1].astype(int), samples[:, 2] > 0
     force = samples[:, 3:10]
-    moved = np.abs(samples[:, 10:17])
+    moved = samples[:, 10:17]
     still = force[phase == 0]
     noise = np.abs(still).max(0) if len(still) else np.zeros(7)
     pushes = np.abs(force[phase >= 2]).max(0) if (phase >= 2).any() else np.zeros(7)
     return {
         'cuff_read': bool(squeezed.any()),
-        'stiff': bool(moved[squeezed].max(initial=0.0) < STIFF),
-        'moved_rad': float(moved.max(initial=0.0)),
+        'stiff': bool(np.abs(moved[squeezed]).max(initial=0.0) < STIFF),
+        'moved_rad': float(np.abs(moved).max(initial=0.0)),
+        'sign_agrees': sign_agrees(force[phase >= 2], moved[phase >= 2]),
         'noise_nm': noise,
         'push_nm': pushes,
         'contact_events': int((np.diff(samples[:, 17]) > 0).sum()),

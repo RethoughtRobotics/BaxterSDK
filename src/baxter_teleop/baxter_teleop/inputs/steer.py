@@ -3,10 +3,11 @@ policy keeps moving it, instead of the zero-g a squeeze gives on its own.
 
 Baxter's joints are series elastic, so the torque the spring carries is measured after the gearbox:
     I qdd = (actual_effort - gravity_model_effort) + tau_ext
-A held arm has qdd = 0, so a hand's torque shows as tau_ext = -(actual - gravity). The fit of actual -
-gravity on measured qdd is positive on s0, s1 and e0 in a rollout (reports/2026-11-05-cuff-corrections),
-so this sign is the measured one, and the arm's own acceleration enters as a virtual mass, not as
-positive feedback. The torque is filtered at 5 Hz (hand motion stays below 2 Hz; Tuma et al. 2026) and
+A held arm has qdd = 0, so a hand's torque shows as tau_ext = -(actual - gravity). Two recordings agree
+(reports/2026-11-05-cuff-corrections): actual follows the gravity model at r 0.96 to 0.99 on s1, e0 and
+e1, so both are the torque that holds the arm up, and in a bag moved by hand alone actual - gravity
+falls as the acceleration rises on all seven joints. diagnostics/cuff_probe checks it on the robot. The
+arm's own acceleration enters as a virtual mass, not as positive feedback. The torque is filtered at 5 Hz (hand motion stays below 2 Hz; Tuma et al. 2026) and
 tared on the 0.2 s before the squeeze, which removes the model's offset at this pose.
 
 Admittance in joint space, with a leak:
