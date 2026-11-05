@@ -275,7 +275,8 @@ def test_a_share_of_zero_is_the_plain_position_hold():
 def test_following_sets_each_joint_apart():
     node, _, _, s = steer()
     node.on_parameters([types.SimpleNamespace(name='steer_follow_wrist', value=0.8)])
-    assert np.array_equal(s.follow.share, [0, 0, 0, 0, 0.8, 0.8, 0.8])
+    arm = STEER['follow']
+    assert np.array_equal(s.follow.share, [arm, arm, arm, arm, 0.8, 0.8, 0.8])
 
 
 def test_a_released_cuff_lets_the_followed_offset_decay():

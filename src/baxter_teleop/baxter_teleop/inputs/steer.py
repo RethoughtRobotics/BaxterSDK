@@ -134,6 +134,7 @@ class CuffSteer:
             k: STEER[k] for k in ('damping', 'deadband', 'decay', 'cutoff', 'max_rate', 'max_offset')
         })
         self.follow = Follow(STEER['cutoff'], STEER['decay'], STEER['follow_max_rate'], STEER['follow_max_offset'])
+        self.follow.share[:] = float(STEER['follow'])  # the sliders' start
         self.q_measured = None
         self._added = None  # (the plan's joints, the joint offset added to them) of the last period
         self.max_error = float(STEER['max_tracking_error'])
@@ -152,7 +153,7 @@ class CuffSteer:
             node.declare_parameter(name, 1.0, ParameterDescriptor(floating_point_range=[slider]))
         share = FloatingPointRange(from_value=0.0, to_value=float(STEER['max_follow']), step=0.0)
         for name in FOLLOW:
-            node.declare_parameter(name, 0.0, ParameterDescriptor(floating_point_range=[share]))
+            node.declare_parameter(name, float(STEER['follow']), ParameterDescriptor(floating_point_range=[share]))
         node.add_on_set_parameters_callback(self._on_parameters)
 
     @property
