@@ -23,7 +23,7 @@ class Node:
     ('call', 'flag', 'offset'),
     [
         ('nudge', '/teleop/left/nudging', '/teleop/left/correction_offset'),
-        ('kinesthetic', '/teleop/left/kinesthetic/active', '/teleop/left/kinesthetic/offset'),
+        ('kinesthetic', '/kinesthetic/left/active', '/kinesthetic/left/offset'),
     ],
 )
 def test_a_correction_goes_out_on_its_own_topics(call, flag, offset):

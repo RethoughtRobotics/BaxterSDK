@@ -8,7 +8,7 @@
 #   SESSION=NAME     file the bag under data/sessions/NAME/
 #   BAG_PATH=DIR     record to exactly DIR
 
-# Records robot state and commands, teleop telemetry (/teleop/{arm}/*), VR input (/vive,
+# Records robot state and commands, teleop telemetry (/teleop/{arm}/*, /kinesthetic/{arm}/*), VR input (/vive,
 # /libsurvive), the cuffs (squeeze and gripper buttons), TF, the robot description, a policy's
 # topics (/policy/*) and the policies' cameras (both hand cameras and the third eye) as JPEG
 # (compress_images.py), whether or not a policy is running yet. With a RethoughtAI policy running
@@ -34,7 +34,7 @@ mkdir -p "$(dirname "$BAG")"
 TOPICS='^/(tf|tf_static|robot_description|rosout)$'
 TOPICS+='|^/robot/(joint_states|state|head/.*|limb/.*|end_effector/[^/]+/(state|command|properties))$'
 TOPICS+='|^/robot/(range|accelerometer)/.*'  # hand IR range (distance to what's in/below the gripper), hand IMU
-TOPICS+='|^/teleop/.*|^/vive/.*|^/libsurvive/.*|^/sim/.*'
+TOPICS+='|^/teleop/.*|^/kinesthetic/.*|^/vive/.*|^/libsurvive/.*|^/sim/.*'
 TOPICS+='|^/robot/digital_io/(left|right)_(lower_cuff|upper_button|lower_button)/state$'  # cuff squeeze (zero-g takeover), gripper buttons
 TOPICS+='|^/policy/.*'  # a policy's chunks, plans, targets and engagement
 CAMERAS=(/cameras/left_hand_camera/image /cameras/right_hand_camera/image /cameras/third_eye/color/image_raw)  # the policies'

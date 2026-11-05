@@ -423,7 +423,7 @@ class Teleop:
         a Nudge target the same while they nudge, said on /teleop/{arm}/nudging, with the offset on
         /teleop/{arm}/correction_offset. With `steer` a squeeze steers a playing plan (inputs/steer.py),
         said on /teleop/{arm}/steering; the squeeze and the arm's TCP offset from the plan go out every cycle on
-        /teleop/{arm}/kinesthetic/active and /teleop/{arm}/kinesthetic/offset.
+        /kinesthetic/{arm}/active and /kinesthetic/{arm}/offset.
         The keyboard keeps gripper/home/ESC."""
         print(f'\n{self.arm.capitalize()} arm VR teleop ({type(self.ik).__name__})')
         print(
