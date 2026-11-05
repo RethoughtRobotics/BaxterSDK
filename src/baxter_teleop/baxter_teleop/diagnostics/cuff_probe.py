@@ -133,6 +133,7 @@ def main():
     found = verdict(samples)
     print(f'Cuff still reads: {found["cuff_read"]}')
     print(f'Arm stiff while squeezed: {found["stiff"]} (moved {found["moved_rad"]:.3f} rad)')
+    print(f'Steering sign agrees with the push: {found["sign_agrees"]} (None: push harder)')
     print(f'Contact safety events: {found["contact_events"]}')
     print('          ' + ''.join(f'{j:>7}' for j in JOINTS))
     print('noise N m ' + ''.join(f'{x:7.2f}' for x in found['noise_nm']))

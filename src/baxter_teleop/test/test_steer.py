@@ -207,6 +207,17 @@ def test_the_probe_tells_a_stiff_arm_from_a_free_one():
     assert not free['stiff']
 
 
+def test_the_probe_catches_a_steering_sign_that_would_pull_into_the_hand():
+    def rows(moved):
+        row = np.zeros((10, 18))
+        row[:, 1], row[:, 2], row[:, 3], row[:, 10] = 2, 1, -8.0, moved  # the spring carries -8: the hand's +8
+        return row
+
+    assert verdict(rows(0.01))['sign_agrees'] is True
+    assert verdict(rows(-0.01))['sign_agrees'] is False
+    assert verdict(np.zeros((10, 18)))['sign_agrees'] is None
+
+
 class Loop:
     """One cycle of Teleop.spin_target on a plan, the cuff squeezed."""
 
