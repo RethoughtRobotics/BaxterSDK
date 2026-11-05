@@ -28,16 +28,29 @@ The squeeze only selects this mode: suppress_cuff_interaction is published while
 without a plan a squeeze still gives zero-g. Should the suppression not hold, the firmware frees the
 arm and it leaves its setpoints; `live` then gives up for the session, and the teleop's zero-g handling
 takes over.
+
+Baxter's contact safety fires on a hard push (e0 at about 18 N m) and stops the arm following for about
+2 s. Steering stands down for that time and the squeeze gives zero-g; it comes back on the next squeeze.
+
+The node's parameters steer_softness_arm (s0 to e1) and steer_softness_wrist divide `damping` live, so a
+softness of 2 steers twice as fast for the same push. Sliders on them, with the teleop running:
+    ros2 run rqt_reconfigure rqt_reconfigure
+Each change is logged, and /teleop/{arm}/steer_state records the admittance: position the offset,
+velocity its rate, effort the torque of the hand.
 """
 
 import numpy as np
-from baxter_core_msgs.msg import SEAJointState
+from baxter_core_msgs.msg import CollisionDetectionState, SEAJointState
+from rcl_interfaces.msg import FloatingPointRange, ParameterDescriptor, SetParametersResult
+from sensor_msgs.msg import JointState
 from std_msgs.msg import Empty
 
 from ..settings import STEER, joint_names
 
 SUPPRESS_PERIOD = 0.1  # s: Baxter's suppress topics need more than 5 Hz (Rethink API reference)
 TARE_TIME = 0.2  # s
+SOFTNESS = {'steer_softness_arm': slice(0, 4), 'steer_softness_wrist': slice(4, 7)}  # of Admittance.damping
+MAX_SOFTNESS = 2.0  # phase margin 46 degrees at a 2000 N/m grip; at 3 it is 9, and unstable at 3000 N/m
 
 
 def deadzone(x, width):
@@ -92,18 +105,25 @@ class CuffSteer:
             k: STEER[k] for k in ('damping', 'deadband', 'decay', 'cutoff', 'max_rate', 'max_offset')
         })
         self.max_error = float(STEER['max_tracking_error'])
-        self.tripped = False
+        self.tripped, self.contact = False, False
         self._names = joint_names(arm)
+        self._damping = self.admittance.damping.copy()
         self._now = lambda: node.get_clock().now().nanoseconds * 1e-9
         ns = f'/robot/limb/{arm}/'
         self._suppress = node.create_publisher(Empty, ns + 'suppress_cuff_interaction', 1)
+        self._state = node.create_publisher(JointState, f'/teleop/{arm}/steer_state', 10)
         node.create_subscription(SEAJointState, ns + 'gravity_compensation_torques', self._on_effort, 10)
+        node.create_subscription(CollisionDetectionState, ns + 'collision_detection_state', self._on_contact, 10)
         node.create_timer(SUPPRESS_PERIOD, self._keep_suppressed)
+        slider = FloatingPointRange(from_value=1.0, to_value=MAX_SOFTNESS, step=0.0)
+        for name in SOFTNESS:
+            node.declare_parameter(name, 1.0, ParameterDescriptor(floating_point_range=[slider]))
+        node.add_on_set_parameters_callback(self._on_softness)
 
     @property
     def active(self):
         """A squeeze steers now, rather than giving zero-g: a plan plays and the suppression is sent."""
-        return self.stream.active and not self.tripped
+        return self.stream.active and not self.tripped and not self.contact
 
     @property
     def held(self):
@@ -112,9 +132,15 @@ class CuffSteer:
     def live(self, q_measured):
         """`active`, after checking the arm still follows its setpoints: a freed arm does not."""
         position = self.stream.position
-        if self.held and position is not None and np.max(np.abs(position - q_measured)) > self.max_error:
-            self.tripped = True
-            self.node.get_logger().error('Cuff steering off: the arm left its setpoints, cuff suppression did not hold')
+        if self.held and position is not None:
+            error = np.abs(position - q_measured)
+            if error.max() > self.max_error:
+                self.tripped = True
+                joint = int(error.argmax())
+                self.node.get_logger().error(
+                    f'Cuff steering off: {self._names[joint]} {error[joint]:.3f} rad from its setpoint with no '
+                    f'contact, hand torque {self._hand_torque()[joint]:.1f} N m: little torque means the arm is free'
+                )
         return self.active
 
     def reset(self):
@@ -122,6 +148,28 @@ class CuffSteer:
 
     def __call__(self, dt):
         return self.admittance.step(dt, self.held)
+
+    def _hand_torque(self):
+        a = self.admittance
+        return np.zeros(7) if a.effort is None else a.tare - a.effort
+
+    def _on_softness(self, parameters):
+        for parameter in parameters:
+            if parameter.name in SOFTNESS:
+                joints = SOFTNESS[parameter.name]
+                damping = self.admittance.damping.copy()
+                damping[joints] = self._damping[joints] / parameter.value
+                self.admittance.damping = damping
+                self.node.get_logger().info(f'{parameter.name} {parameter.value:.2f}: damping {damping}')
+        return SetParametersResult(successful=True)
+
+    def _on_contact(self, msg):
+        contact = bool(msg.collision_state)
+        if contact and not self.contact and self.held:
+            self.node.get_logger().warning(
+                f'Cuff steering paused: Baxter contact safety, hand torque {np.round(self._hand_torque(), 1)} N m'
+            )
+        self.contact = contact
 
     def _keep_suppressed(self):
         if self.active:
@@ -131,3 +179,14 @@ class CuffSteer:
         i = [msg.name.index(name) for name in self._names]
         effort = np.array(msg.actual_effort)[i] - np.array(msg.gravity_model_effort)[i]
         self.admittance.measure(effort, self._now(), self.held)
+        if self.active:
+            a = self.admittance
+            self._state.publish(
+                JointState(
+                    header=msg.header,
+                    name=self._names,
+                    position=a.offset.tolist(),
+                    velocity=a.rate.tolist(),
+                    effort=self._hand_torque().tolist(),
+                )
+            )

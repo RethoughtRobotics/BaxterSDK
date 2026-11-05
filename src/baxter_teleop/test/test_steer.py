@@ -4,11 +4,12 @@ import types
 
 import numpy as np
 import pytest
+from std_msgs.msg import Header
 
 from baxter_teleop.diagnostics.cuff_probe import verdict
 from baxter_teleop.inputs.steer import Admittance, CuffSteer, deadzone
 from baxter_teleop.outputs.replay_stream import ReplayStream
-from baxter_teleop.settings import LIMITS, STEER
+from baxter_teleop.settings import LIMITS, STEER, joint_names
 from baxter_teleop.teleop import ESC, Teleop
 
 DT = 0.005
@@ -146,13 +147,20 @@ def test_stopping_the_stream_drops_the_offset():
 
 class Node:
     def __init__(self):
-        self.published, self.timer, self.effort, self.errors = [], None, None, []
+        self.published, self.timer, self.errors, self.warnings, self.infos = [], None, [], [], []
+        self.subscribed, self.parameters, self.on_parameters = {}, {}, None
 
     def create_publisher(self, kind, topic, qos):
         return types.SimpleNamespace(publish=lambda m: self.published.append(topic))
 
     def create_subscription(self, kind, topic, callback, qos):
-        self.effort = callback
+        self.subscribed[topic] = callback
+
+    def declare_parameter(self, name, value, descriptor):
+        self.parameters[name] = (value, descriptor)
+
+    def add_on_set_parameters_callback(self, callback):
+        self.on_parameters = callback
 
     def create_timer(self, period, callback):
         self.timer = callback
@@ -161,7 +169,7 @@ class Node:
         return types.SimpleNamespace(now=lambda: types.SimpleNamespace(nanoseconds=0))
 
     def get_logger(self):
-        return types.SimpleNamespace(error=self.errors.append)
+        return types.SimpleNamespace(error=self.errors.append, warning=self.warnings.append, info=self.infos.append)
 
 
 def steer(squeezed=False):
@@ -189,6 +197,55 @@ def test_an_arm_that_leaves_its_setpoints_ends_steering_for_the_session():
     assert not s.live(np.zeros(7))
     node.timer()
     assert not node.published
+
+
+def contact(node, state):
+    node.subscribed['/robot/limb/left/collision_detection_state'](types.SimpleNamespace(collision_state=state))
+
+
+def test_a_contact_pauses_steering_and_does_not_end_it():
+    node, cuff, _, s = steer(squeezed=True)
+    contact(node, True)
+    assert not s.live(np.full(7, 1.0))
+    assert node.warnings and not node.errors and not s.tripped
+    node.timer()
+    assert not node.published
+    contact(node, False)
+    assert s.live(np.zeros(7))
+
+
+def test_a_trip_names_the_joint():
+    node, _, _, s = steer(squeezed=True)
+    q = np.zeros(7)
+    q[2] = STEER['max_tracking_error'] + 0.01
+    s.live(q)
+    assert 'left_e0' in node.errors[0]
+
+
+def test_softness_divides_the_damping_of_its_joints_live():
+    node, _, _, s = steer()
+    node.on_parameters([types.SimpleNamespace(name='steer_softness_arm', value=2.0)])
+    damping = np.array(STEER['damping'], float)
+    assert np.allclose(s.admittance.damping[:4], damping[:4] / 2)
+    assert np.allclose(s.admittance.damping[4:], damping[4:])
+    node.on_parameters([types.SimpleNamespace(name='steer_softness_wrist', value=1.5)])
+    assert np.allclose(s.admittance.damping[4:], damping[4:] / 1.5)
+    node.on_parameters([types.SimpleNamespace(name='steer_softness_arm', value=1.0)])
+    assert np.allclose(s.admittance.damping[:4], damping[:4])
+    assert len(node.infos) == 3
+
+
+def test_the_admittance_is_published_only_while_steering_can_run():
+    node, _, out, s = steer()
+    msg = types.SimpleNamespace(
+        header=Header(), name=joint_names('left'), actual_effort=[0.0] * 7, gravity_model_effort=[0.0] * 7
+    )
+    effort = node.subscribed['/robot/limb/left/gravity_compensation_torques']
+    effort(msg)
+    assert node.published == ['/teleop/left/steer_state']
+    out.active = False
+    effort(msg)
+    assert len(node.published) == 1
 
 
 def test_a_released_arm_away_from_its_setpoints_is_not_a_failure():
