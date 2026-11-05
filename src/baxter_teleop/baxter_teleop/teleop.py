@@ -17,6 +17,7 @@ from baxter_external_devices.getch import getch
 from .differential_ik import BoundedLeastSquaresIK, DampedLeastSquaresIK
 from .inputs.cuff import Cuff
 from .inputs.keyboard import KeyboardTarget, twist_from_key
+from .inputs.steer import CuffSteer
 from .inputs.vr import Nudge, VRController
 from .kinematics import ArmKinematics
 from .outputs.raw_position import JointCommandPublisher, start_raw_position_output
@@ -172,6 +173,7 @@ class Teleop:
             max_delta_jump=max_delta_jump,
         )
         self._cuff = None  # inputs.cuff.Cuff while VR teleop runs
+        self._steer = None  # inputs.steer.CuffSteer with --steer
         self._home_requested = False
 
     def _connect_gripper(self, arm):
@@ -345,7 +347,8 @@ class Teleop:
                 tcp_position, tcp_rotation = self.kinematics.tcp(q_meas)
                 # /teleop/{arm}/tcp stays the measured TCP; the servo closes on _servo_q().
                 self.telemetry.tcp(tcp_position, tcp_rotation)
-                if self._cuff is not None and self._cuff.squeezed:
+                steering = self._steer is not None and self._steer.live(q_meas)
+                if self._cuff is not None and self._cuff.squeezed and not steering:
                     # Cuff squeezed: the operator guides the arm in Baxter's zero-g mode. The squeeze
                     # releases the position loop, but the joint controller keeps applying the last
                     # command's torque (in raw_id, the motion's inverse dynamics feedforward) until
@@ -408,7 +411,9 @@ class Teleop:
 
         self.spin_target(target, on_key)
 
-    def spin_vr(self, target, trigger_topic, b_button_topic, home_button=None, takeover_trigger_topic=None):
+    def spin_vr(
+        self, target, trigger_topic, b_button_topic, home_button=None, takeover_trigger_topic=None, steer=False
+    ):
         """Follow a VRTarget. The controller's analog trigger sets the gripper opening (released
         open, pulled closed) and its B button sends the arm home (as H), as does the robot button
         home_button (a DigitalIO component, e.g. right_button_ok; every arm's teleop listens, so one
@@ -416,7 +421,8 @@ class Teleop:
         With a Takeover target, the operator's trigger (takeover_trigger_topic) drives the gripper
         while they drive the arm, and each cycle says on /teleop/{arm}/takeover whether they do. With
         a Nudge target the same while they nudge, said on /teleop/{arm}/nudging, with the offset on
-        /teleop/{arm}/correction_offset.
+        /teleop/{arm}/correction_offset. With `steer` a squeeze steers a playing plan (inputs/steer.py),
+        said on /teleop/{arm}/steering.
         The keyboard keeps gripper/home/ESC."""
         print(f'\n{self.arm.capitalize()} arm VR teleop ({type(self.ik).__name__})')
         print(
@@ -434,6 +440,8 @@ class Teleop:
             self._home_button = baxter_interface.DigitalIO(home_button, self.node, timeout=0, debounce=0.2)
             self._home_button.state_changed.connect(self._on_home_button)
         self._cuff = Cuff(self.node, self.arm)
+        if steer:
+            self._steer = self.raw_output.offset = CuffSteer(self.node, self.arm, self._cuff, self.raw_output)
         cuff_was_squeezed = False
 
         def on_cycle():
@@ -450,6 +458,8 @@ class Teleop:
                     # may equal its trigger now and then never be resent.
                     source.restart_opening(self._gripper_target)
                 gripper_source = source
+            if self._steer is not None:
+                self.telemetry.steering(self._steer.active)
             squeezed = self._cuff.squeezed
             self._drive_gripper(gripper_source, squeezed, released=cuff_was_squeezed and not squeezed)
             # On release of the cuff Baxter's position hold would pull the arm back to where it was

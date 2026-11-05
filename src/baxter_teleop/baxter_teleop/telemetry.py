@@ -48,6 +48,7 @@ class Telemetry:
         self._key = node.create_publisher(String, ns + 'key', 10)
         self._takeover = node.create_publisher(Bool, ns + 'takeover', 10)
         self._nudging = node.create_publisher(Bool, ns + 'nudging', 10)
+        self._steering = node.create_publisher(Bool, ns + 'steering', 10)
         self._offset = node.create_publisher(TwistStamped, ns + 'correction_offset', 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self._config = node.create_publisher(String, ns + 'config', latched)
@@ -84,6 +85,10 @@ class Telemetry:
 
     def takeover(self, active):
         self._takeover.publish(Bool(data=bool(active)))
+
+    def steering(self, active):
+        """A squeeze steers the plan now, so the policy keeps its run through it (inputs/steer.py)."""
+        self._steering.publish(Bool(data=bool(active)))
 
     def nudge(self, active, offset):
         """Whether the operator nudges now, and the offset added to the policy's goal (6,)."""

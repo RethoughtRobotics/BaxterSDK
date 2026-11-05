@@ -12,6 +12,10 @@ teleop's hold and cuff handling stop it as they stop the raw output. play() swap
 RAW_POSITION_MODE goes around Baxter's own command smoothing, so a step in the trajectory would reach the
 joints as sent. Each setpoint therefore moves at most SPEED_RATIO times the joint velocity limits from
 the last one sent, and the velocity sent with it is that of the clamped step.
+
+`offset`, if set, is called each period with the period and returns a joint offset and its rate, added
+to the setpoint (inputs/steer.py): the path that moves at 200 Hz while plans arrive at 25 Hz. It stays
+inside the joint limits.
 """
 
 import threading
@@ -34,6 +38,7 @@ class ReplayStream:
         self._lock = threading.Lock()
         self._trajectory, self._t0 = None, 0.0
         self._last = None  # the last Setpoint sent
+        self.offset = None  # (period) -> (joint offset, its rate), see the module docstring
         self._thread, self._running = None, False
 
     @property
@@ -60,6 +65,8 @@ class ReplayStream:
         """Send nothing more; the caller holds the arm (Limb.exit_control_mode)."""
         with self._lock:
             self._trajectory, self._last = None, None
+            if self.offset is not None:
+                self.offset.reset()
 
     def tick(self):
         """One period: sample the trajectory now and send it, as replay's pose mode does."""
@@ -68,6 +75,9 @@ class ReplayStream:
                 return None
             q, qd, qdd = self._trajectory(self.clock() - self._t0)
             q, qd, qdd = np.asarray(q), np.asarray(qd), np.asarray(qdd)
+            if self.offset is not None:
+                added, rate = self.offset(self.period)
+                q, qd = np.clip(q + added, LIMITS.position_low, LIMITS.position_high), qd + rate
             if self._last is not None:
                 largest = SPEED_RATIO * np.asarray(LIMITS.velocity) * self.period
                 step = np.clip(q - self._last.position, -largest, largest)

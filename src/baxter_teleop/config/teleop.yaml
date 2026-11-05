@@ -41,3 +41,17 @@ joint_limits:
 # as tcp_offset in /teleop/{arm}/config.
 tcp:
   offset: measured
+
+# Cuff steering (run_teleop.sh --policy --steer, inputs/steer.py). Worked in
+# reports/2026-11-05-cuff-corrections. Joint order s0 s1 e0 e1 w0 w1 w2.
+steer:
+  # N m s/rad: TCP mobility up to 0.0037 (m/s)/N over a rollout, 37 mm/s per 10 N. Phase margin is
+  # above 60 degrees to a loop stiffness of 2000 N/m; start here.
+  damping: [300, 300, 300, 300, 60, 60, 60]
+  # N m: the 99th percentile of the filtered torque's departure from a 2 s old tare, in a rollout.
+  deadband: [1.5, 1.6, 1.5, 0.5, 0.35, 0.2, 0.25]
+  decay: 0.72  # s: the mean age of the merged chunks, multi_task_dit ensemble (every 4, coeff -0.05, ramp 4)
+  cutoff: 5.0  # Hz, of the torque filter
+  max_rate: 0.2  # rad/s, per joint
+  max_offset: 0.15  # rad, per joint
+  max_tracking_error: 0.15  # rad: past this the arm is not following; it stays under 5 mrad on a rollout

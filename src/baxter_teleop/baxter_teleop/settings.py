@@ -1,7 +1,7 @@
 """The teleop's settings file, config/teleop.yaml: its tuned defaults and Baxter's joint limits.
 
 Read once, at import: from the source tree when running from it (tests), else from the installed
-package share. DEFAULTS maps option names (servo_feedback) to values; LIMITS holds the joint limits
+package share. DEFAULTS maps option names (servo_feedback) to values; STEER holds the cuff steering's; LIMITS holds the joint limits
 as tuples in JOINTS order; TCP_OFFSET says where the TCP is.
 """
 
@@ -43,6 +43,7 @@ def settings_path():
 with open(settings_path()) as f:
     _settings = yaml.safe_load(f)
 DEFAULTS = dict(_settings['defaults'])
+STEER = dict(_settings['steer'])
 TCP_OFFSET = _settings['tcp']['offset']  # 'measured', 'urdf' or [x, y, z] in the wrist frame
 LIMITS = JointLimitTable(**{name: tuple(float(x) for x in v) for name, v in _settings['joint_limits'].items()})
 

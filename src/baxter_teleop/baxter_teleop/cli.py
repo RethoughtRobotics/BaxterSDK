@@ -84,6 +84,11 @@ def parser():
         help='VR B button topic, sends the arm home (default: /vive/{arm}/b_button)',
     )
     p.add_argument(
+        '--steer',
+        action='store_true',
+        help='plan input: a held cuff steers the playing plan, position control kept, instead of zero-g',
+    )
+    p.add_argument(
         '--takeover',
         nargs='?',
         const='replace',
@@ -191,6 +196,8 @@ def main(argv=None):
     args, ros_args = p.parse_known_args(sys.argv[1:] if argv is None else argv)
     if args.takeover and (args.input != 'vr' or args.vr_topic is None):
         p.error("--takeover needs --input vr following a policy's target (--vr-topic)")
+    if args.steer and args.input != 'plan':
+        p.error('--steer steers a played plan: use it with --input plan')
     if args.input == 'plan':  # a plan is played by the replay stream, never through the servo and IK
         args.output = 'replay'
     args.servo_feedback = servo_feedback_for(args.output, args.servo_feedback)
@@ -283,6 +290,7 @@ def main(argv=None):
                 b_button_topic=args.vr_b_button_topic or f'/vive/{hand}/b_button',
                 home_button=args.home_button,
                 target=PlanTarget(teleop.node, args.trajectory_topic or f'/policy/{args.arm}/path', teleop.kinematics),
+                steer=args.steer,
             )
         elif args.input == 'trajectory':
             # The VR policy servo's gain and per-axis scales, so a path is chased as a VR target is
