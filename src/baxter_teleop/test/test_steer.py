@@ -307,7 +307,7 @@ def test_the_stream_passes_the_plan_and_a_stop_drops_what_followed():
 
 
 def test_the_tcp_offset_is_the_arm_while_held_and_the_command_after():
-    """Published as a VR nudge's correction_offset: translation and rotation vector, base frame. Held, the
+    """Published on kinesthetic/offset as a nudge's correction_offset: translation and rotation vector. Held, the
     arm's offset, not the share a of it the command takes; released, the command's decaying handback."""
     _, _, _, s = steer(squeezed=True)
 

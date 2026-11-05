@@ -10,6 +10,9 @@ takeover   Bool           the operator's VR overrides a policy's target (--takeo
 nudging    Bool           the operator nudges a policy's target (--takeover nudge), every VR cycle
 correction_offset  TwistStamped  the nudge offset added to the policy's goal (inputs.vr.Nudge), base
            frame: linear the translation (m), angular the rotation vector (rad); every VR cycle
+kinesthetic/active  Bool  the cuff is squeezed and steers a playing plan (--steer, inputs/steer.py); every cycle
+kinesthetic/offset  TwistStamped  that correction as a TCP offset from the plan (CuffSteer.tcp_offset), in
+           correction_offset's format; every cycle
 config     String         the session's settings as JSON, latched
 """
 
@@ -50,6 +53,8 @@ class Telemetry:
         self._nudging = node.create_publisher(Bool, ns + 'nudging', 10)
         self._steering = node.create_publisher(Bool, ns + 'steering', 10)
         self._offset = node.create_publisher(TwistStamped, ns + 'correction_offset', 10)
+        self._kinesthetic = node.create_publisher(Bool, ns + 'kinesthetic/active', 10)
+        self._kinesthetic_offset = node.create_publisher(TwistStamped, ns + 'kinesthetic/offset', 10)
         latched = QoSProfile(depth=1, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self._config = node.create_publisher(String, ns + 'config', latched)
 
@@ -92,12 +97,21 @@ class Telemetry:
 
     def nudge(self, active, offset):
         """Whether the operator nudges now, and the offset added to the policy's goal (6,)."""
-        self._nudging.publish(Bool(data=bool(active)))
+        self._correction(self._nudging, self._offset, active, offset)
+
+    def kinesthetic(self, active, offset):
+        """Whether the cuff steers the plan now, and that correction as a TCP offset from the plan (6,)."""
+        self._correction(self._kinesthetic, self._kinesthetic_offset, active, offset)
+
+    def _correction(self, flag, offset_publisher, active, offset):
+        """A correction's flag, and its offset as a base-frame TwistStamped: linear the translation (m),
+        angular the rotation vector (rad)."""
+        flag.publish(Bool(data=bool(active)))
         msg = TwistStamped()
         msg.header.stamp, msg.header.frame_id = self._now(), 'base'
         t = msg.twist
         t.linear.x, t.linear.y, t.linear.z, t.angular.x, t.angular.y, t.angular.z = (float(x) for x in offset)
-        self._offset.publish(msg)
+        offset_publisher.publish(msg)
 
     def config(self, config):
         self._config.publish(String(data=json.dumps(config, indent=1, default=str)))

@@ -422,8 +422,8 @@ class Teleop:
         while they drive the arm, and each cycle says on /teleop/{arm}/takeover whether they do. With
         a Nudge target the same while they nudge, said on /teleop/{arm}/nudging, with the offset on
         /teleop/{arm}/correction_offset. With `steer` a squeeze steers a playing plan (inputs/steer.py),
-        said on /teleop/{arm}/steering; the squeeze and the arm's TCP offset from the plan go out as a nudge's, on
-        /teleop/{arm}/nudging and /teleop/{arm}/correction_offset, every cycle.
+        said on /teleop/{arm}/steering; the squeeze and the arm's TCP offset from the plan go out every cycle on
+        /teleop/{arm}/kinesthetic/active and /teleop/{arm}/kinesthetic/offset.
         The keyboard keeps gripper/home/ESC."""
         print(f'\n{self.arm.capitalize()} arm VR teleop ({type(self.ik).__name__})')
         print(
@@ -461,8 +461,7 @@ class Teleop:
                 gripper_source = source
             if self._steer is not None:
                 self.telemetry.steering(self._steer.active)
-                if hand is None:  # with a VR takeover or nudge, that hand's state goes out instead
-                    self.telemetry.nudge(self._steer.held, self._steer.tcp_offset(self.kinematics.tcp))
+                self.telemetry.kinesthetic(self._steer.held, self._steer.tcp_offset(self.kinematics.tcp))
             squeezed = self._cuff.squeezed
             self._drive_gripper(gripper_source, squeezed, released=cuff_was_squeezed and not squeezed)
             # On release of the cuff Baxter's position hold would pull the arm back to where it was
