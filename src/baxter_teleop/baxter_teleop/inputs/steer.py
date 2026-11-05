@@ -51,6 +51,7 @@ Released, the share's offset decays like the admittance's. diagnostics/follow_pr
 import numpy as np
 from baxter_core_msgs.msg import CollisionDetectionState, SEAJointState
 from rcl_interfaces.msg import FloatingPointRange, ParameterDescriptor, SetParametersResult
+from scipy.spatial.transform import Rotation
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Empty
 
@@ -134,6 +135,7 @@ class CuffSteer:
         })
         self.follow = Follow(STEER['cutoff'], STEER['decay'], STEER['follow_max_rate'], STEER['follow_max_offset'])
         self.q_measured = None
+        self._added = None  # (the plan's joints, the joint offset added to them) of the last period
         self.max_error = float(STEER['max_tracking_error'])
         self.tripped, self.contact = False, False
         self._names = joint_names(arm)
@@ -179,11 +181,24 @@ class CuffSteer:
     def reset(self):
         self.admittance.offset[:] = 0.0
         self.follow.offset = np.zeros(7)
+        self._added = None
 
     def __call__(self, dt, q_plan):
         """(offset, rate) one period on. The rate is the admittance's: following sends no feedforward."""
         added, rate = self.admittance.step(dt, self.held)
-        return added + self.follow.step(dt, q_plan, self.q_measured, self.held), rate
+        added = added + self.follow.step(dt, q_plan, self.q_measured, self.held)
+        self._added = (np.array(q_plan, float), added)  # replaced whole: read from the teleop's thread
+        return added, rate
+
+    def tcp_offset(self, tcp):
+        """What steering adds now as a TCP offset (6,), as a VR nudge's: the translation and rotation vector,
+        base frame, from the plan's TCP to the steered one; zeros with nothing added. `tcp(q)` gives the
+        TCP (position, rotation matrix) at joints q (kinematics.ArmKinematics.tcp)."""
+        if self._added is None or not self._added[1].any():
+            return np.zeros(6)
+        q_plan, added = self._added
+        (p0, R0), (p1, R1) = tcp(q_plan), tcp(q_plan + added)
+        return np.r_[p1 - p0, Rotation.from_matrix(R1 @ R0.T).as_rotvec()]
 
     def hand_torque(self):
         a = self.admittance
