@@ -3,11 +3,12 @@
 import types
 
 import numpy as np
+import pytest
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
 from scipy.spatial.transform import Rotation
 
-from baxter_teleop.inputs.plan import PlanTarget
+from baxter_teleop.inputs.plan import MAX_IK_ERROR, PlanTarget, followable
 from baxter_teleop.kinematics import ArmKinematics
 from baxter_teleop.outputs.replay_stream import ReplayStream
 from baxter_teleop.replay import Trajectory
@@ -24,6 +25,7 @@ def fake_node(clock):
     subs = {}
     node = types.SimpleNamespace(
         create_subscription=lambda kind, topic, cb, qos: subs.setdefault(topic, cb),
+        get_logger=lambda: types.SimpleNamespace(warn=lambda text: None),
         get_clock=lambda: types.SimpleNamespace(now=lambda: types.SimpleNamespace(nanoseconds=int(clock[0] * 1e9))),
     )
     return node, subs
@@ -139,3 +141,71 @@ def test_a_disagreeing_plan_continues_from_the_setpoint_playing():
     after = 10.2 + BLEND + 0.04
     np.testing.assert_allclose(new(after - new_t0)[0], new.curve(after - new_t0)[0], atol=1e-12)
     assert kinematics.tcp(new.curve(after - new_t0)[0])[0][2] - kinematics.tcp(old(after - old_t0)[0])[0][2] > 0.015
+
+
+def test_an_unreachable_plan_holds_and_the_next_reachable_one_goes_on_without_a_reset():
+    clock = [10.0]
+    node, subs = fake_node(clock)
+    kinematics = ArmKinematics('left')
+    target = PlanTarget(node, '/policy/left/path', kinematics)
+    t = 10.0 + 0.04 * np.arange(17)
+    subs['/policy/left/path'](plan_msg(kinematics, t))
+    assert target.plan(HOME, None) is not None
+    far = plan_msg(kinematics, t + 0.04)
+    for pose in far.poses:
+        pose.pose.position.x += 2.0  # out of the arm's reach from the first knot
+    subs['/policy/left/path'](far)
+    clock[0] = 10.04
+    assert target.plan(HOME, None) is None and target.limited
+    subs['/policy/left/path'](plan_msg(kinematics, t + 0.08))
+    clock[0] = 10.08
+    assert target.plan(HOME, None) is not None and not target.limited
+
+
+def test_only_the_followable_start_of_a_plan_is_played():
+    clock = [10.0]
+    node, subs = fake_node(clock)
+    kinematics = ArmKinematics('left')
+    target = PlanTarget(node, '/policy/left/path', kinematics)
+    t = 10.0 + 0.04 * np.arange(17)
+    msg = plan_msg(kinematics, t)
+    for pose in msg.poses[10:]:
+        pose.pose.position.x += 2.0
+    subs['/policy/left/path'](msg)
+    played, _ = target.plan(HOME, None)
+    assert not target.limited  # 10 of 17 knots: worth playing, not worth reporting
+    assert played.duration == pytest.approx(0.04 * 9, abs=0.05)
+    assert np.allclose(played(played.duration)[0], joints(np.array([0.04 * 9]))[0], atol=0.02)
+
+
+@pytest.mark.parametrize('usable', range(0, 8))
+def test_a_first_plan_cut_short_never_raises(usable):
+    clock = [10.0]
+    node, subs = fake_node(clock)
+    kinematics = ArmKinematics('left')
+    target = PlanTarget(node, '/policy/left/path', kinematics)
+    msg = plan_msg(kinematics, 10.0 + 0.04 * np.arange(17))
+    for pose in msg.poses[usable:]:
+        pose.pose.position.x += 2.0
+    subs['/policy/left/path'](msg)
+    played = target.plan(HOME, None)
+    assert (played is None) == (usable < 5)
+
+
+def test_followable_stops_at_the_first_unreached_knot():
+    assert followable(np.zeros(5)) == 5
+    assert followable(np.array([0.0, 0.0, 2 * MAX_IK_ERROR, 0.0, 0.0])) == 2
+    assert followable(np.array([0.5 * MAX_IK_ERROR] * 5)) == 5
+
+
+def test_the_stream_never_steps_a_joint_faster_than_its_limit():
+    sent, clock = [], [0.0]
+    stream = ReplayStream(sent.append, lambda: clock[0])
+    stream.play(lambda t: (HOME + (0.72 if t >= 0.01 else 0.0), np.zeros(7), np.zeros(7)), 0.0)
+    stream.tick()
+    for k in range(1, 5):
+        clock[0] = k * 0.005
+        stream.tick()
+    steps = np.abs(np.diff([s.position for s in sent], axis=0))
+    assert np.all(steps <= 1.5 * np.array([1.2, 1.2, 1.2, 1.2, 3.2, 3.2, 3.2]) * 0.005 + 1e-9)
+    assert steps.max() > 0

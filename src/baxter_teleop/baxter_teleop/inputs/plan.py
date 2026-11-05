@@ -21,6 +21,13 @@ the last: 7 to 39 mm and up to 18 deg on SweepTrash), that gap was a step of up 
 in position, velocity and acceleration decays to zero over BLEND s along a quintic, the polynomial
 of least degree matching all three at both ends (Craig, Introduction to Robotics, 3rd ed., 7.3), so
 the inverse dynamics feedforward sees a continuous acceleration too.
+
+Near a joint limit the IK can stop reaching its plan while still returning joints: with the elbow on its
+limit at the singular straight arm and the wrist bending to compensate, the clipped solution moves the
+TCP away from the plan and the joints jump between plans. Only a plan's followable knots are played,
+those before the first with a position error above MAX_IK_ERROR, so the arm slows at the edge of what it
+can reach and goes on when a new plan comes back inside. With fewer than MIN_KNOTS followable it holds,
+until a plan can be followed. Joint speed is bounded by the replay stream, setpoint by setpoint.
 """
 
 import numpy as np
@@ -36,6 +43,15 @@ MIN_SPAN = 0.1  # s: a plan must cover this much to be played
 HISTORY = 0.4  # s of knots already played kept in the curve
 LAM = 1e-4  # smoothing spline penalty: within ~0.65 deg of the plan's joints on a recorded demo
 BLEND = 0.2  # s for a new curve to reach its plan from the setpoint playing; plans arrive every 0.04 s
+MAX_IK_ERROR = 0.03  # m: reachable plans solve to well under a millimetre, a clipped one to tens of mm or more
+MIN_KNOTS = 5  # followable knots needed to move at all, the fewest the smoothing spline can fit
+REPORT_KNOTS = 8  # a plan cut below this is logged: the next plan replaces any further knots before they play
+
+
+def followable(errors):
+    """How many leading knots of a plan, with IK position errors (N,) in m, can be played."""
+    bad = errors > MAX_IK_ERROR
+    return int(np.argmax(bad)) if bad.any() else len(errors)
 
 
 class SmoothJoints:
@@ -92,6 +108,7 @@ class PlanTarget:
         self._path = None  # (t (N,), positions (N, 3), Rotations): the newest plan received
         self._played = None  # (path it was built from, (trajectory, t0))
         self._history = []  # (t, q): the knot due at each plan's start, as played
+        self.limited = False  # the newest plan could not be followed to its end
         node.create_subscription(Path, topic, self._on_path, 10)
 
     def _on_path(self, msg):
@@ -112,7 +129,20 @@ class PlanTarget:
         if self._played is None or self._played[0] is not path:
             t, positions, rotations = path
             seed = q_measured if q_playing is None else q_playing
-            q, _ = joints_along(self.kinematics, seed, positions, rotations, LIMITS.position_low, LIMITS.position_high)
+            q, errors = joints_along(
+                self.kinematics, seed, positions, rotations, LIMITS.position_low, LIMITS.position_high
+            )
+            usable = followable(errors)
+            limited = usable < min(REPORT_KNOTS, len(t))
+            if limited != self.limited:
+                self.limited = limited
+                self.node.get_logger().warn(
+                    f'Plan limited to {usable} of {len(t)} knots' if limited else 'Plan followable again'
+                )
+            if usable < MIN_KNOTS:
+                self._path, self._played, self._history = None, None, []  # held: the next plan starts from the arm
+                return None
+            t, q = t[:usable], q[:usable]
             past = [(tk, qk) for tk, qk in self._history if t[0] - HISTORY <= tk < t[0] - 1e-6]
             knots_t = np.r_[[tk for tk, _ in past], t]
             knots_q = np.vstack([qk for _, qk in past] + [q])
@@ -133,3 +163,4 @@ class PlanTarget:
     def reset(self):
         """Drop the plan (a cuff squeeze, home): the next one is built from where the arm is."""
         self._path, self._played, self._history = None, None, []
+        self.limited = False

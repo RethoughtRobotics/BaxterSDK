@@ -8,6 +8,10 @@ plan is played as a demo is replayed.
 
 It has the raw output's interface for the teleop (stop, position, velocity, active, close), so the
 teleop's hold and cuff handling stop it as they stop the raw output. play() swaps in a new trajectory.
+
+RAW_POSITION_MODE goes around Baxter's own command smoothing, so a step in the trajectory would reach the
+joints as sent. Each setpoint therefore moves at most SPEED_RATIO times the joint velocity limits from
+the last one sent, and the velocity sent with it is that of the clamped step.
 """
 
 import threading
@@ -15,9 +19,11 @@ import time
 
 import numpy as np
 
+from ..settings import LIMITS
 from .setpoint import Setpoint
 
 RATE = 200.0  # Hz, as replay.RATE
+SPEED_RATIO = 1.5  # of LIMITS.velocity
 
 
 class ReplayStream:
@@ -61,7 +67,13 @@ class ReplayStream:
             if self._trajectory is None:
                 return None
             q, qd, qdd = self._trajectory(self.clock() - self._t0)
-            self._last = Setpoint(np.asarray(q), np.asarray(qd), np.asarray(qdd))
+            q, qd, qdd = np.asarray(q), np.asarray(qd), np.asarray(qdd)
+            if self._last is not None:
+                largest = SPEED_RATIO * np.asarray(LIMITS.velocity) * self.period
+                step = np.clip(q - self._last.position, -largest, largest)
+                if not np.array_equal(step, q - self._last.position):
+                    q, qd, qdd = self._last.position + step, step / self.period, np.zeros_like(qdd)
+            self._last = Setpoint(q, qd, qdd)
             self.send(self._last)
             return self._last
 
