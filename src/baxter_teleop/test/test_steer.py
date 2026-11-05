@@ -175,7 +175,7 @@ class Node:
 def steer(squeezed=False):
     node = Node()
     cuff = types.SimpleNamespace(squeezed=squeezed)
-    out = types.SimpleNamespace(active=True, position=np.zeros(7))
+    out = types.SimpleNamespace(active=True, position=np.zeros(7), commanded=np.zeros(7))
     return node, cuff, out, CuffSteer(node, 'left', cuff, out)
 
 

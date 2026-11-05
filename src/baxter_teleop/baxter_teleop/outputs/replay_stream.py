@@ -52,6 +52,11 @@ class ReplayStream:
             return None if self._trajectory is None or self._last is None else self._last.position.copy()
 
     @property
+    def commanded(self):
+        """The position last sent, offset included, or None while stopped (the same as `position` here)."""
+        return self.position
+
+    @property
     def velocity(self):
         with self._lock:
             return np.zeros(7) if self._trajectory is None or self._last is None else self._last.velocity.copy()

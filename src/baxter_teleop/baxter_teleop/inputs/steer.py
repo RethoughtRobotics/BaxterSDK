@@ -167,7 +167,7 @@ class CuffSteer:
 
     def live(self, q_measured):
         """`active`, after checking the arm still follows its setpoints: a freed arm does not."""
-        position = self.stream.position
+        position = self.stream.commanded
         if self.held and position is not None:
             error = np.abs(position - q_measured)
             if error.max() > self.max_error:

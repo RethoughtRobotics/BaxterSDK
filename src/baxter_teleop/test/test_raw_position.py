@@ -164,3 +164,47 @@ def test_sink_without_inverse_dynamics_sends_only_the_position(ros_msgs):
     node = FakeNode()
     JointCommandPublisher(node, 'right', NAMES, NAMES, inverse_dynamics=False)
     assert list(node.publishers) == ['/robot/limb/right/joint_command']
+
+
+class Steer:
+    """A stand-in for inputs.steer.CuffSteer: a fixed joint offset, and whether it was reset."""
+
+    def __init__(self, added):
+        self.added, self.resets = np.asarray(added, float), 0
+
+    def __call__(self, period, q_plan):
+        return self.added, np.zeros(7)
+
+    def reset(self):
+        self.resets += 1
+
+
+def test_an_offset_is_sent_but_never_enters_the_setpoint_the_servo_closes_on():
+    output, sent, clock = make(stale_after=10.0)
+    output.offset = Steer(np.r_[0.05, np.zeros(6)])
+    output.command(np.zeros(7), Q0)
+    ticks(output, clock, 5)
+    assert np.allclose(sent[-1].position, Q0 + [0.05, 0, 0, 0, 0, 0, 0])  # Baxter gets the offset
+    assert np.allclose(output.position, Q0)  # the pose servo does not: it would undo it
+    assert np.allclose(output.commanded, sent[-1].position)  # steering checks the arm against this
+    output.stop()
+    assert output.offset.resets == 1 and output.commanded is None
+
+
+def test_an_arm_steered_off_by_the_offset_does_not_move_the_setpoint():
+    """max_lead compares the setpoint with the arm less the offset: a steered arm is not a blocked one, so
+    the plan plays exactly as without steering."""
+
+    def run(added):
+        output, sent, clock = make(max_lead=0.1, stale_after=10.0)
+        output.offset = Steer(added)
+        output.command(np.full(7, 0.5), Q0)
+        planned = []
+        for _ in range(80):
+            ticks(output, clock, 1)
+            output.command(np.full(7, 0.5), sent[-1].position)  # the arm follows what is sent
+            planned.append(output.position)
+        return np.array(planned)
+
+    steered = run(np.r_[0.3, np.zeros(6)])  # steered further than max_lead
+    assert np.allclose(steered, run(np.zeros(7)))

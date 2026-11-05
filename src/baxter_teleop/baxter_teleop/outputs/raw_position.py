@@ -42,6 +42,10 @@ class RawPositionOutput:
     `send(setpoint)` is called once per period while active (from the stream thread, or from
     tick() in tests), under the lock, so it must be quick (a publish). Thread-safe:
     command()/stop() may be called from the control loop while the stream runs.
+
+    `offset`, if set, is called each period with the period and the generator's setpoint and returns a
+    joint offset and its rate, added to what is sent (inputs/steer.py), as the replay stream does. The
+    generator, and so `position` that the pose servo closes on, never carries it: the servo would undo it.
     """
 
     def __init__(self, generator: JointSetpointGenerator, send, max_lead=0.3, stale_after=0.1, clock=time.monotonic):
@@ -56,6 +60,9 @@ class RawPositionOutput:
         self._measured = None
         self._thread = None
         self._running = False
+        self.offset = None  # (period, setpoint's q) -> (joint offset, its rate), see the class docstring
+        self._added = None  # the offset sent with the last setpoint
+        self._sent = None  # the last position sent
 
     @property
     def active(self) -> bool:
@@ -72,6 +79,12 @@ class RawPositionOutput:
         """Setpoint position now, or None while inactive (e.g. for the teleop to servo on)."""
         with self._lock:
             return self.generator.state.position.copy() if self._active else None
+
+    @property
+    def commanded(self) -> np.ndarray | None:
+        """The position last sent, offset included, or None while inactive."""
+        with self._lock:
+            return None if not self._active or self._sent is None else self._sent.copy()
 
     def command(self, velocity, measured_position) -> None:
         """New target joint velocity from the control loop, with the arm's measured position.
@@ -90,6 +103,9 @@ class RawPositionOutput:
         """Stop streaming now; the caller holds the arm (e.g. Limb.exit_control_mode())."""
         with self._lock:
             self._active = False
+            self._added = self._sent = None
+            if self.offset is not None:
+                self.offset.reset()
 
     def tick(self) -> Setpoint | None:
         """One period: step the setpoint and send it. Returns it, or None while inactive."""
@@ -99,8 +115,17 @@ class RawPositionOutput:
             if self.clock() - self._last_command > self.stale_after:
                 self.generator.set_target_velocity(np.zeros(self.generator.dof))
             setpoint = self.generator.step()
-            if self.generator.hold_within(self._measured, self.max_lead):
+            # the arm the generator should lead: the measured one, less what the offset moved it by
+            reference = self._measured if self._added is None else self._measured - self._added
+            if self.generator.hold_within(reference, self.max_lead):
                 setpoint = self.generator.state
+            if self.offset is not None:
+                added, rate = self.offset(self.generator.dt, setpoint.position)
+                low, high = self.generator.limits.position_low, self.generator.limits.position_high
+                position = np.clip(setpoint.position + added, low, high)
+                self._added = position - setpoint.position
+                setpoint = Setpoint(position, setpoint.velocity + rate, setpoint.acceleration)
+            self._sent = setpoint.position
             # Sent under the lock: once stop() returns, no raw setpoint can follow the caller's
             # position hold (it would put the arm back in raw mode at a stale setpoint).
             self.send(setpoint)

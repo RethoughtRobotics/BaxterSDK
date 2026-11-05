@@ -5,10 +5,12 @@
 #   --left, --right, --both  arms (default: both)
 #   --session NAME           record episodes to rethought_ai/recorder/data/NAME (implies --record)
 #   --record                 run the RethoughtAI recorder below the teleop
-#   --policy                 play the policy (rethought_ai scripts/run_inference) instead of VR: its plan
-#                            through the replay stream (--input plan), the cuff and gripper as always
-#   --steer                  with --policy: while a plan plays, hold the cuff and push to steer it, the
-#                            arm stiff and the policy still driving; without a plan a squeeze is zero-g
+#   --policy                 play the policy (rethought_ai scripts/run_inference) instead of VR: its TCP
+#                            target stream through the VR servo, IK and jerk-limited raw output (as
+#                            --policy-target), with cuff steering on: while the policy drives, hold the
+#                            cuff and push to steer it, the policy still driving; otherwise a squeeze is zero-g
+#   --policy-plan            the policy's plan through the replay stream (--input plan) instead
+#   --steer, --no-steer      cuff steering on or off with any policy mode (on by default with --policy)
 #   --policy-target          follow the policy's TCP target stream as a VR controller (servo and IK):
 #                            for policies trained on teleop goals, which that servo was chasing
 #   --takeover [nudge]       with --policy-target: touch your controller's trackpad to drive the arm
@@ -95,9 +97,11 @@ while (( $# )); do
         --no-camera) CAMERA="" ;;
         --zed) CAMERA=1; CAMERA_TYPE=zed ;;
         --realsense) CAMERA=1; CAMERA_TYPE=realsense ;;
-        --policy) POLICY=plan ;;
+        --policy) POLICY=target; STEER=${STEER:-1} ;;
+        --policy-plan) POLICY=plan ;;
         --policy-target) POLICY=target ;;
         --steer) STEER=1 ;;
+        --no-steer) STEER=0 ;;
         --takeover)
             TAKEOVER=replace
             if [[ "${2:-}" == replace || "${2:-}" == nudge ]]; then TAKEOVER="$2"; shift; fi ;;
@@ -113,8 +117,9 @@ done
 if [[ -n "$TAKEOVER" && "$POLICY" != target ]]; then
     echo "ERROR: --takeover overrides a policy's target stream: use it with --policy-target." >&2; exit 1
 fi
-if [[ -n "$STEER" && "$POLICY" != plan ]]; then
-    echo "ERROR: --steer steers a played plan: use it with --policy." >&2; exit 1
+[[ "$STEER" == 0 ]] && STEER=""
+if [[ -n "$STEER" && -z "$POLICY" ]]; then
+    echo "ERROR: --steer steers a policy: use it with --policy, --policy-plan or --policy-target." >&2; exit 1
 fi
 if [[ -n "$POLICY" && -n "$SWAP" ]]; then
     echo "ERROR: --swap with --policy would mirror the policy's targets (x/y negated)." >&2; exit 1
@@ -128,7 +133,7 @@ teleop_cmd() {  # $1: arm, or empty when --arm was given directly
     if [[ "$POLICY" == plan ]]; then
         policy_args=" --input plan --vr-config vr_axes_policy.yaml --vr-trigger-topic /policy/${arm}/trigger${STEER:+ --steer}"
     elif [[ "$POLICY" == target ]]; then
-        policy_args=" --vr-config vr_axes_policy.yaml --vr-topic /policy/${arm}/target --vr-trigger-topic /policy/${arm}/trigger${TAKEOVER:+ --takeover $TAKEOVER}"
+        policy_args=" --vr-config vr_axes_policy.yaml --vr-topic /policy/${arm}/target --vr-trigger-topic /policy/${arm}/trigger${TAKEOVER:+ --takeover $TAKEOVER}${STEER:+ --steer}"
     fi
     echo "cd '${WS_DIR}' \
   && source '${SCRIPT_DIR}/env.sh' \
