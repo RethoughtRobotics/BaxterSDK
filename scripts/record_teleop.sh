@@ -39,6 +39,7 @@ TOPICS+='|^/robot/digital_io/(left|right)_(lower_cuff|upper_button|lower_button)
 TOPICS+='|^/policy/.*'  # a policy's chunks, plans, targets and engagement
 CAMERAS=(/cameras/left_hand_camera/image /cameras/right_hand_camera/image /cameras/third_eye/color/image_raw)  # the policies'
 TOPICS+='|^/cameras/(left_hand_camera|right_hand_camera|third_eye/color)/camera_info$'
+TOPICS+='|^/cameras/third_eye/color/image_raw_inpainted[a-z_]*/compressed$'  # ros2_inpaint: the policy's live view and its masks
 if [[ -n "$ALL_TOPICS" ]]; then  # every colour camera up (depth stays as it is)
     mapfile -t CAMERAS < <(ros2 topic list 2>/dev/null | grep -E '^/cameras/.*/(image|image_raw)$' | grep -vi depth || true)
 fi
