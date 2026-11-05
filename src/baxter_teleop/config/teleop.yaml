@@ -50,7 +50,7 @@ steer:
   damping: [300, 300, 300, 300, 60, 60, 60]
   # N m: the 99th percentile of the filtered torque's departure from a 2 s old tare, in a rollout.
   deadband: [1.5, 1.6, 1.5, 0.5, 0.35, 0.2, 0.25]
-  decay: 0.72  # s: the mean age of the merged chunks, multi_task_dit ensemble (every 4, coeff -0.05, ramp 4)
+  decay: 0.56  # s: the mean age of the merged chunks, multi_task_dit (24 steps, every 4, ramp 4), served on lamb
   cutoff: 5.0  # Hz, of the torque filter
   max_rate: 0.2  # rad/s, per joint
   max_offset: 0.15  # rad, per joint

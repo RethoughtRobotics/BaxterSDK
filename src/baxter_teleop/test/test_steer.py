@@ -14,8 +14,8 @@ from baxter_teleop.teleop import ESC, Teleop
 DT = 0.005
 KEYS = ('damping', 'deadband', 'decay', 'cutoff', 'max_rate', 'max_offset')
 # The merge of multi_task_dit: ages of the chunks in the merged plan, and their weights.
-AGES = np.array([0.27, 0.43, 0.59, 0.75, 0.91, 1.07, 1.23, 1.39])
-WEIGHTS = np.array([0.128, 0.21, 0.172, 0.141, 0.115, 0.094, 0.077, 0.063])
+AGES = np.array([0.22, 0.38, 0.54, 0.70, 0.86])
+WEIGHTS = np.array([0.15, 0.24, 0.22, 0.20, 0.19])
 
 
 def admittance(**over):

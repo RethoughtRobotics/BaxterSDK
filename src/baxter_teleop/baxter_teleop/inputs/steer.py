@@ -19,7 +19,7 @@ setpoint of the replay stream is the plan's plus this offset.
 The leak is not optional. A relative policy anchors each plan at the measured TCP, so a plan already
 holds the offset of its observation. An offset kept on top of it is counted again by every new plan:
 the arm speeds up, and goes on after the hand lets go. The merged plan sees the arm some L ago (the
-mean age of the merged chunks, about 0.72 s), which gives x(t) = x(t - L) + offset, so with a steady
+mean age of the merged chunks, about 0.56 s), which gives x(t) = x(t - L) + offset, so with a steady
 input the arm moves at the admittance's velocity when decay = L, and stops when the hand does. With an
 absolute policy nothing absorbs the offset: the leak is then a spring back to the plan, stiffness
 damping / decay.
