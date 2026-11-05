@@ -306,9 +306,9 @@ def test_the_stream_passes_the_plan_and_a_stop_drops_what_followed():
     assert not s.follow.offset.any()
 
 
-def test_the_tcp_offset_is_the_arms_distance_from_the_plan_not_the_commands():
-    """Published as a VR nudge's correction_offset: translation and rotation vector, base frame. The arm's
-    offset, not the share a of it the command takes."""
+def test_the_tcp_offset_is_the_arm_while_held_and_the_command_after():
+    """Published as a VR nudge's correction_offset: translation and rotation vector, base frame. Held, the
+    arm's offset, not the share a of it the command takes; released, the command's decaying handback."""
     _, _, _, s = steer(squeezed=True)
 
     def tcp(q):  # a stand-in arm: q[0:3] is the position, q[3] turns about z
@@ -321,7 +321,10 @@ def test_the_tcp_offset_is_the_arms_distance_from_the_plan_not_the_commands():
     for _ in range(400):
         added, _ = s(DT, np.zeros(7))
     assert added[0] == pytest.approx(0.5 * 0.02)  # the command takes half the way
-    assert np.allclose(s.tcp_offset(tcp), [0.02, 0, 0, 0, 0, 0.1])  # the label is all of it
+    assert np.allclose(s.tcp_offset(tcp), [0.02, 0, 0, 0, 0, 0.1])  # held: the label is all of it
+    s.cuff.squeezed = False
+    added, _ = s(DT, np.zeros(7))
+    assert np.allclose(s.tcp_offset(tcp), [added[0], 0, 0, 0, 0, added[3]])  # released: the handback
     s.reset()
     assert not s.tcp_offset(tcp).any()
 

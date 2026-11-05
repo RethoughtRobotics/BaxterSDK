@@ -192,15 +192,17 @@ class CuffSteer:
 
     def tcp_offset(self, tcp):
         """The correction as a TCP offset (6,), in a VR nudge's format: the translation and rotation vector,
-        base frame, from the plan's TCP to the arm's measured one, while steering adds anything; zeros
-        otherwise. The arm's, not the command's: held, the command is only the share a of the way to the arm,
-        and a policy without the hand goes where it is commanded, so the arm's offset is what it must learn,
-        whatever a and the steering's settings were. `tcp(q)` gives the TCP (position, rotation matrix) at
+        base frame, from the plan's TCP, while steering adds anything; zeros otherwise. Held, to the arm's
+        measured TCP: the command is only the share a of the way there, and a policy without the hand goes
+        where it is commanded, so where the arm went is what it must learn, whatever a was. Released, to the
+        commanded TCP: the hand is gone and the offset decays back to the plan (a nudge's handback), and the
+        arm's own tracking error is not the person's. `tcp(q)` gives the TCP (position, rotation matrix) at
         joints q (kinematics.ArmKinematics.tcp)."""
-        if self._added is None or not self._added[1].any() or self.q_measured is None:
+        if self._added is None or not self._added[1].any():
             return np.zeros(6)
-        q_plan = self._added[0]
-        (p0, R0), (p1, R1) = tcp(q_plan), tcp(self.q_measured)
+        q_plan, added = self._added
+        q_to = self.q_measured if self.held and self.q_measured is not None else q_plan + added
+        (p0, R0), (p1, R1) = tcp(q_plan), tcp(q_to)
         return np.r_[p1 - p0, Rotation.from_matrix(R1 @ R0.T).as_rotvec()]
 
     def hand_torque(self):
