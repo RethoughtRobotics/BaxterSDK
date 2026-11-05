@@ -422,7 +422,7 @@ class Teleop:
         while they drive the arm, and each cycle says on /teleop/{arm}/takeover whether they do. With
         a Nudge target the same while they nudge, said on /teleop/{arm}/nudging, with the offset on
         /teleop/{arm}/correction_offset. With `steer` a squeeze steers a playing plan (inputs/steer.py),
-        said on /teleop/{arm}/steering; the squeeze and the TCP offset it adds go out as a nudge's, on
+        said on /teleop/{arm}/steering; the squeeze and the arm's TCP offset from the plan go out as a nudge's, on
         /teleop/{arm}/nudging and /teleop/{arm}/correction_offset, every cycle.
         The keyboard keeps gripper/home/ESC."""
         print(f'\n{self.arm.capitalize()} arm VR teleop ({type(self.ik).__name__})')
