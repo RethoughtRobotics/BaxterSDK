@@ -35,8 +35,17 @@ Baxter's contact safety fires on a hard push (e0 at about 18 N m) and stops the 
 The node's parameters steer_softness_arm (s0 to e1) and steer_softness_wrist divide `damping` live, so a
 softness of 2 steers twice as fast for the same push. Sliders on them, with the teleop running:
     ros2 run rqt_reconfigure rqt_reconfigure
-Each change is logged, and /teleop/{arm}/steer_state records the admittance: position the offset,
-velocity its rate, effort the torque of the hand.
+Each change is logged, and /teleop/{arm}/steer_state records the admittance: position the total offset,
+velocity the admittance's rate, effort the torque of the hand.
+
+Softness moves only the small part of what the hand feels: Baxter's position hold is a spring of about
+120 N m/rad on s0 to e1 and 17 to 66 on the wrist, and it cannot be changed in this mode. Following takes
+that spring out instead. While held, the setpoint takes on a share `a` of the arm's distance from the plan:
+    setpoint = plan + a (measured - plan),   so   stiffness = k (1 - a)
+for steer_follow_arm (s0 to e1) and steer_follow_wrist, 0 the plain position hold. It feeds the measured
+position back into the command, which is stable while a times the servo's gain stays below 1: the share
+stops short of 1, the measurement is low-passed at `cutoff`, and no velocity feedforward goes with it.
+Released, the share's offset decays like the admittance's. diagnostics/follow_probe tries it on a held pose.
 """
 
 import numpy as np
@@ -50,6 +59,7 @@ from ..settings import STEER, joint_names
 SUPPRESS_PERIOD = 0.1  # s: Baxter's suppress topics need more than 5 Hz (Rethink API reference)
 TARE_TIME = 0.2  # s
 SOFTNESS = {'steer_softness_arm': slice(0, 4), 'steer_softness_wrist': slice(4, 7)}  # of Admittance.damping
+FOLLOW = {'steer_follow_arm': slice(0, 4), 'steer_follow_wrist': slice(4, 7)}  # share of the arm's offset
 MAX_SOFTNESS = 2.0  # phase margin 46 degrees at a 2000 N/m grip; at 3 it is 9, and unstable at 3000 N/m
 
 
@@ -96,6 +106,24 @@ class Admittance:
         return self.offset, self.rate
 
 
+class Follow:
+    """The setpoint's share of the arm's distance from the plan, see the module docstring."""
+
+    def __init__(self, cutoff, decay, max_rate, max_offset):
+        self.lag, self.decay = 1.0 / (2 * np.pi * float(cutoff)), float(decay)
+        self.max_rate, self.max_offset = float(max_rate), float(max_offset)
+        self.share, self.offset = np.zeros(7), np.zeros(7)
+
+    def step(self, dt, q_plan, q_measured, held):
+        """The offset one period on. Released, it only decays."""
+        following = held and q_measured is not None
+        target = self.share * (q_measured - q_plan) if following else np.zeros(7)
+        change = (target - self.offset) * dt / (dt + (self.lag if following else self.decay))
+        limit = self.max_rate * dt
+        self.offset = np.clip(self.offset + np.clip(change, -limit, limit), -self.max_offset, self.max_offset)
+        return self.offset
+
+
 class CuffSteer:
     """What the replay stream adds to each setpoint: called with its period, gives (offset, rate)."""
 
@@ -104,6 +132,8 @@ class CuffSteer:
         self.admittance = Admittance(**{
             k: STEER[k] for k in ('damping', 'deadband', 'decay', 'cutoff', 'max_rate', 'max_offset')
         })
+        self.follow = Follow(STEER['cutoff'], STEER['decay'], STEER['follow_max_rate'], STEER['follow_max_offset'])
+        self.q_measured = None
         self.max_error = float(STEER['max_tracking_error'])
         self.tripped, self.contact = False, False
         self._names = joint_names(arm)
@@ -118,7 +148,10 @@ class CuffSteer:
         slider = FloatingPointRange(from_value=1.0, to_value=MAX_SOFTNESS, step=0.0)
         for name in SOFTNESS:
             node.declare_parameter(name, 1.0, ParameterDescriptor(floating_point_range=[slider]))
-        node.add_on_set_parameters_callback(self._on_softness)
+        share = FloatingPointRange(from_value=0.0, to_value=float(STEER['max_follow']), step=0.0)
+        for name in FOLLOW:
+            node.declare_parameter(name, 0.0, ParameterDescriptor(floating_point_range=[share]))
+        node.add_on_set_parameters_callback(self._on_parameters)
 
     @property
     def active(self):
@@ -139,23 +172,29 @@ class CuffSteer:
                 joint = int(error.argmax())
                 self.node.get_logger().error(
                     f'Cuff steering off: {self._names[joint]} {error[joint]:.3f} rad from its setpoint with no '
-                    f'contact, hand torque {self._hand_torque()[joint]:.1f} N m: little torque means the arm is free'
+                    f'contact, hand torque {self.hand_torque()[joint]:.1f} N m: little torque means the arm is free'
                 )
         return self.active
 
     def reset(self):
         self.admittance.offset[:] = 0.0
+        self.follow.offset = np.zeros(7)
 
-    def __call__(self, dt):
-        return self.admittance.step(dt, self.held)
+    def __call__(self, dt, q_plan):
+        """(offset, rate) one period on. The rate is the admittance's: following sends no feedforward."""
+        added, rate = self.admittance.step(dt, self.held)
+        return added + self.follow.step(dt, q_plan, self.q_measured, self.held), rate
 
-    def _hand_torque(self):
+    def hand_torque(self):
         a = self.admittance
         return np.zeros(7) if a.effort is None else a.tare - a.effort
 
-    def _on_softness(self, parameters):
+    def _on_parameters(self, parameters):
         for parameter in parameters:
-            if parameter.name in SOFTNESS:
+            if parameter.name in FOLLOW:
+                self.follow.share[FOLLOW[parameter.name]] = parameter.value
+                self.node.get_logger().info(f'{parameter.name} {parameter.value:.2f}')
+            elif parameter.name in SOFTNESS:
                 joints = SOFTNESS[parameter.name]
                 damping = self.admittance.damping.copy()
                 damping[joints] = self._damping[joints] / parameter.value
@@ -167,7 +206,7 @@ class CuffSteer:
         contact = bool(msg.collision_state)
         if contact and not self.contact and self.held:
             self.node.get_logger().warning(
-                f'Cuff steering paused: Baxter contact safety, hand torque {np.round(self._hand_torque(), 1)} N m'
+                f'Cuff steering paused: Baxter contact safety, hand torque {np.round(self.hand_torque(), 1)} N m'
             )
         self.contact = contact
 
@@ -177,6 +216,7 @@ class CuffSteer:
 
     def _on_effort(self, msg):
         i = [msg.name.index(name) for name in self._names]
+        self.q_measured = np.array(msg.actual_position)[i]
         effort = np.array(msg.actual_effort)[i] - np.array(msg.gravity_model_effort)[i]
         self.admittance.measure(effort, self._now(), self.held)
         if self.active:
@@ -185,8 +225,8 @@ class CuffSteer:
                 JointState(
                     header=msg.header,
                     name=self._names,
-                    position=a.offset.tolist(),
+                    position=(a.offset + self.follow.offset).tolist(),
                     velocity=a.rate.tolist(),
-                    effort=self._hand_torque().tolist(),
+                    effort=self.hand_torque().tolist(),
                 )
             )

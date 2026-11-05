@@ -13,8 +13,8 @@ RAW_POSITION_MODE goes around Baxter's own command smoothing, so a step in the t
 joints as sent. Each setpoint therefore moves at most SPEED_RATIO times the joint velocity limits from
 the last one sent, and the velocity sent with it is that of the clamped step.
 
-`offset`, if set, is called each period with the period and returns a joint offset and its rate, added
-to the setpoint (inputs/steer.py): the path that moves at 200 Hz while plans arrive at 25 Hz. It stays
+`offset`, if set, is called each period with the period and the plan's joints and returns a joint offset
+and its rate, added to the setpoint (inputs/steer.py): the path that moves at 200 Hz while plans arrive at 25 Hz. It stays
 inside the joint limits.
 """
 
@@ -38,7 +38,7 @@ class ReplayStream:
         self._lock = threading.Lock()
         self._trajectory, self._t0 = None, 0.0
         self._last = None  # the last Setpoint sent
-        self.offset = None  # (period) -> (joint offset, its rate), see the module docstring
+        self.offset = None  # (period, plan's q) -> (joint offset, its rate), see the module docstring
         self._thread, self._running = None, False
 
     @property
@@ -76,7 +76,7 @@ class ReplayStream:
             q, qd, qdd = self._trajectory(self.clock() - self._t0)
             q, qd, qdd = np.asarray(q), np.asarray(qd), np.asarray(qdd)
             if self.offset is not None:
-                added, rate = self.offset(self.period)
+                added, rate = self.offset(self.period, q)
                 q, qd = np.clip(q + added, LIMITS.position_low, LIMITS.position_high), qd + rate
             if self._last is not None:
                 largest = SPEED_RATIO * np.asarray(LIMITS.velocity) * self.period

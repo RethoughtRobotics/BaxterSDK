@@ -7,7 +7,7 @@ import pytest
 from std_msgs.msg import Header
 
 from baxter_teleop.diagnostics.cuff_probe import verdict
-from baxter_teleop.inputs.steer import Admittance, CuffSteer, deadzone
+from baxter_teleop.inputs.steer import Admittance, CuffSteer, Follow, deadzone
 from baxter_teleop.outputs.replay_stream import ReplayStream
 from baxter_teleop.settings import LIMITS, STEER, joint_names
 from baxter_teleop.teleop import ESC, Teleop
@@ -111,7 +111,7 @@ class Offset:
     def __init__(self, value):
         self.value, self.resets = np.asarray(value, float), 0
 
-    def __call__(self, dt):
+    def __call__(self, dt, q_plan):
         return self.value, np.full(7, 0.1)
 
     def reset(self):
@@ -238,7 +238,11 @@ def test_softness_divides_the_damping_of_its_joints_live():
 def test_the_admittance_is_published_only_while_steering_can_run():
     node, _, out, s = steer()
     msg = types.SimpleNamespace(
-        header=Header(), name=joint_names('left'), actual_effort=[0.0] * 7, gravity_model_effort=[0.0] * 7
+        header=Header(),
+        name=joint_names('left'),
+        actual_effort=[0.0] * 7,
+        gravity_model_effort=[0.0] * 7,
+        actual_position=[0.0] * 7,
     )
     effort = node.subscribed['/robot/limb/left/gravity_compensation_torques']
     effort(msg)
@@ -246,6 +250,60 @@ def test_the_admittance_is_published_only_while_steering_can_run():
     out.active = False
     effort(msg)
     assert len(node.published) == 1
+
+
+def follow(share=0.9, max_rate=1.0, max_offset=0.6):
+    f = Follow(STEER['cutoff'], STEER['decay'], max_rate, max_offset)
+    f.share[:] = share
+    return f
+
+
+@pytest.mark.parametrize('share', [0.0, 0.5, 0.9])
+def test_following_divides_the_stiffness_by_what_it_leaves(share):
+    """An arm on a spring k to its setpoint under a steady torque: it settles at torque / (k (1 - share))."""
+    f, k, torque, plan = follow(share), 120.0, 6.0, np.zeros(7)
+    q = plan.copy()
+    for _ in range(20000):
+        q = plan + f.step(DT, plan, q, True) + torque / k
+    assert q[0] == pytest.approx(torque / (k * (1 - share)), rel=1e-3)
+
+
+def test_a_share_of_zero_is_the_plain_position_hold():
+    assert not follow(0.0).step(DT, np.zeros(7), np.full(7, 0.3), True).any()
+
+
+def test_following_sets_each_joint_apart():
+    node, _, _, s = steer()
+    node.on_parameters([types.SimpleNamespace(name='steer_follow_wrist', value=0.8)])
+    assert np.array_equal(s.follow.share, [0, 0, 0, 0, 0.8, 0.8, 0.8])
+
+
+def test_a_released_cuff_lets_the_followed_offset_decay():
+    f = follow()
+    f.offset[:] = 0.3
+    for _ in range(int(4 * STEER['decay'] / DT)):
+        f.step(DT, np.zeros(7), np.full(7, 0.5), False)
+    assert np.abs(f.offset).max() < 0.3 * np.exp(-3.9)
+
+
+def test_the_followed_offset_is_bounded():
+    f = follow(0.9, max_rate=1.0, max_offset=0.6)
+    last = np.zeros(7)
+    for _ in range(2000):
+        now = f.step(DT, np.zeros(7), np.full(7, 5.0), True).copy()
+        assert np.abs(now - last).max() <= 1.0 * DT + 1e-12
+        last = now
+    assert np.abs(last).max() == pytest.approx(0.6)
+
+
+def test_the_stream_passes_the_plan_and_a_stop_drops_what_followed():
+    _, _, _, s = steer(squeezed=True)
+    s.q_measured = np.full(7, 0.1)
+    s.follow.share[:] = 0.5
+    offset, rate = s(DT, np.zeros(7))
+    assert offset[0] > 0 and not rate.any()
+    s.reset()
+    assert not s.follow.offset.any()
 
 
 def test_a_released_arm_away_from_its_setpoints_is_not_a_failure():
