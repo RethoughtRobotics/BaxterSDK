@@ -14,7 +14,7 @@ PY="${PY:-${WS_DIR}/.venv-ros/bin/python}"  # ROS Kilted's Python 3.12 plus ruck
 # what this stack starts, never every ROS process on the machine (a micro-ROS agent, Foxglove).
 STACK_PROCESSES='baxter_sdk/(install|build|\.venv)|rethought_ai/(\.venv|launch)|policy\.launch\.py'
 STACK_PROCESSES+='|baxter_mujoco[.](baxter_ros|sim)|baxter_interface|baxter_teleop|baxter_tools|baxter_examples|move_group'
-STACK_PROCESSES+='|robot_state_publisher|joint_state_publisher|realsense2_camera|rs_launch\.py|rviz2'
+STACK_PROCESSES+='|robot_state_publisher|joint_state_publisher|realsense2_camera|rs_launch\.py|zed_wrapper|third_eye_zed\.launch\.py|rviz2'
 STACK_PROCESSES+='|ros2 bag (record|play)|rmw_zenohd|ros2cli\.daemon'
 STACK_PROCESSES+='|(run_sim_teleop|run_teleop|launch_sim|view_teleop_frames|record_teleop)\.sh'
 export STACK_PROCESSES
