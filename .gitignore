@@ -58,8 +58,9 @@ CATKIN_IGNORE
 
 .python-version
 
-# Local recordings and captured media
+# Local recordings, reports (separate private repo), and captured media
 recordings/
+reports/
 assets/kasina_jyothi1.jpg
 assets/shuttingdown.gif
 
