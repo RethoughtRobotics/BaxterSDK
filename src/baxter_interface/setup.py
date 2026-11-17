@@ -14,6 +14,13 @@ setup(
             [
                 'config/param.yaml',
                 'config/third_eye.yaml',
+                'config/third_eye_zed.yaml',
+            ],
+        ),
+        (
+            'share/' + package_name + '/launch',
+            [
+                'launch/third_eye_zed.launch.py',
             ],
         ),
     ],

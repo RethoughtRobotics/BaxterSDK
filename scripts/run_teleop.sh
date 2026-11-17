@@ -16,7 +16,9 @@
 #                            since the touch is then no deadman
 #   --swap                   you stand beside Baxter, not facing it
 #   --no-gripper             the VR trigger and going home leave the gripper alone
-#   --no-camera              do not start the third_eye RealSense
+#   --zed                    use the ZED camera as third_eye (default)
+#   --realsense              use the RealSense D435i as third_eye
+#   --no-camera              do not start the third_eye camera
 #   --no-viz                 recorder without its Rerun viewer
 #   teleop options           any option of python -m baxter_teleop, listed below
 
@@ -31,8 +33,9 @@
 # Episodes: Show starts/stops, OK saves, Back discards (left navigator), or both thumbsticks pushed
 # the same way for 2 s (north start, south stop, east save, west discard). The right navigator's
 # OK sends both arms home (as B). With one arm the recorder skips the other arm's topics.
-# The third_eye RealSense (config/third_eye.yaml) starts in the background unless running; it keeps
-# running after the teleop (teardown.sh stops it). Without one on USB it warns and goes on.
+# The third_eye camera starts in the background unless running; it keeps running after the teleop
+# (teardown.sh stops it). --zed (default) launches the ZED via third_eye_zed.launch.py; --realsense
+# launches the RealSense D435i via rs_launch.py. Without a camera on USB it warns and goes on.
 
 if [[ " $* " =~ \ (-h|--help)\  ]]; then
     sed -n '2,/^$/{/^#/s/^# \{0,1\}//p}' "$0"
@@ -54,6 +57,7 @@ ARGS=()  # passed to every teleop, each element one argument
 SWAP=""
 RECORD=""
 CAMERA=1
+CAMERA_TYPE=zed
 SESSION=""
 POLICY=""
 TAKEOVER=""
@@ -86,6 +90,8 @@ while (( $# )); do
             RECORD=1 ;;
         --camera) CAMERA=1 ;;
         --no-camera) CAMERA="" ;;
+        --zed) CAMERA=1; CAMERA_TYPE=zed ;;
+        --realsense) CAMERA=1; CAMERA_TYPE=realsense ;;
         --policy) POLICY=plan ;;
         --policy-target) POLICY=target ;;
         --takeover)
@@ -151,19 +157,38 @@ for arm in "${ARM_LIST[@]}"; do
     fi
 done
 
-if [[ -n "$CAMERA" ]] && ! pgrep -f "[r]ealsense2_camera_node.*third_eye" >/dev/null \
-    && ! grep -qs RealSense /sys/bus/usb/devices/*/product; then
-    echo "WARNING: no RealSense on USB: the third_eye camera is not running. Plug it in and rerun," >&2
-    echo "         or pass --no-camera. Recordings and policies (--record, --policy) need it." >&2
-    CAMERA=""
+third_eye_running() {
+    pgrep -f "[r]ealsense2_camera_node.*third_eye" >/dev/null \
+        || pgrep -f "[z]ed_wrapper.*third_eye" >/dev/null
+}
+if [[ -n "$CAMERA" ]] && ! third_eye_running; then
+    if [[ "$CAMERA_TYPE" == realsense ]]; then
+        if ! grep -qs RealSense /sys/bus/usb/devices/*/product; then
+            echo "WARNING: no RealSense on USB: the third_eye camera is not running. Plug it in and rerun," >&2
+            echo "         or pass --no-camera. Recordings and policies (--record, --policy) need it." >&2
+            CAMERA=""
+        fi
+    elif [[ "$CAMERA_TYPE" == zed ]]; then
+        if ! grep -qsE 'ZED|STEREOLABS' /sys/bus/usb/devices/*/product \
+            && ! grep -qsx '2b03' /sys/bus/usb/devices/*/idVendor; then
+            echo "WARNING: no ZED on USB: the third_eye camera is not running. Plug it in and rerun," >&2
+            echo "         or pass --no-camera. Recordings and policies (--record, --policy) need it." >&2
+            CAMERA=""
+        fi
+    fi
 fi
-if [[ -n "$CAMERA" ]] && ! pgrep -f "[r]ealsense2_camera_node.*third_eye" >/dev/null; then
+if [[ -n "$CAMERA" ]] && ! third_eye_running; then
     CAMERA_LOG="${XDG_RUNTIME_DIR:-/tmp}/baxter_teleop/third_eye.log"
     mkdir -p "$(dirname "$CAMERA_LOG")"
-    setsid bash -c "source '${SCRIPT_DIR}/env.sh' && exec ros2 launch realsense2_camera rs_launch.py camera_namespace:=cameras camera_name:=third_eye \
-        config_file:='${WS_DIR}/install/baxter_interface/share/baxter_interface/config/third_eye.yaml'" \
-        > "$CAMERA_LOG" 2>&1 < /dev/null &
-    echo "third_eye camera starting (log: ${CAMERA_LOG})"
+    if [[ "$CAMERA_TYPE" == realsense ]]; then
+        setsid bash -c "source '${SCRIPT_DIR}/env.sh' && exec ros2 launch realsense2_camera rs_launch.py camera_namespace:=cameras camera_name:=third_eye \
+            config_file:='${WS_DIR}/install/baxter_interface/share/baxter_interface/config/third_eye.yaml'" \
+            > "$CAMERA_LOG" 2>&1 < /dev/null &
+    elif [[ "$CAMERA_TYPE" == zed ]]; then
+        setsid bash -c "source '${SCRIPT_DIR}/env.sh' && exec ros2 launch baxter_interface third_eye_zed.launch.py" \
+            > "$CAMERA_LOG" 2>&1 < /dev/null &
+    fi
+    echo "third_eye ${CAMERA_TYPE} camera starting (log: ${CAMERA_LOG})"
 fi
 
 # One script per pane, run by either terminal backend: the teleop per arm and, below, record_teleop.sh
