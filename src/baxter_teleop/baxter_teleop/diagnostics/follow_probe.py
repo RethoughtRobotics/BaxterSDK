@@ -40,14 +40,12 @@ from ..inputs.cuff import Cuff
 from ..inputs.steer import CuffSteer, deadzone
 from ..outputs.raw_position import JointCommandPublisher
 from ..outputs.replay_stream import ReplayStream
-from ..settings import joint_names
+from ..settings import STEER, joint_names
 
 RATE = 100.0  # Hz, of the samples
-# rad: a free arm sits within 0.5 mrad of its setpoint (bag 20261111_181815); the wrist's lever arm is short,
-# so a hand turning it makes small deflections and gets a smaller deadzone
-CHASE_DEADZONE = np.array([3.0, 3.0, 3.0, 3.0, 1.0, 1.0, 1.0]) * 1e-3
+CHASE_DEADZONE = np.array(STEER['chase_deadzone'], float)
 CHASE = {'chase_gain_arm': slice(0, 4), 'chase_gain_wrist': slice(4, 7)}  # 1/s, live parameters
-WRIST_RATIO = 2.5  # the wrist's starting gain over the arm's: small deltas need a faster chase there
+WRIST_RATIO = float(STEER['chase_gain_wrist']) / float(STEER['chase_gain_arm'])
 SPIN_WAIT = 0.1  # s, of the executor's own thread
 
 
