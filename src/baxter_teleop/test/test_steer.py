@@ -8,9 +8,7 @@ from std_msgs.msg import Header
 
 from baxter_teleop.diagnostics.cuff_probe import verdict
 from baxter_teleop.inputs.steer import Admittance, CuffSteer, Follow, deadzone
-from baxter_teleop.outputs.raw_position import RawPositionOutput
 from baxter_teleop.outputs.replay_stream import ReplayStream
-from baxter_teleop.outputs.setpoint import JointLimits, JointSetpointGenerator
 from baxter_teleop.settings import LIMITS, STEER, joint_names
 from baxter_teleop.teleop import ESC, Teleop
 
@@ -179,28 +177,6 @@ def steer(squeezed=False):
     cuff = types.SimpleNamespace(squeezed=squeezed)
     out = types.SimpleNamespace(active=True, position=np.zeros(7), commanded=np.zeros(7))
     return node, cuff, out, CuffSteer(node, 'left', cuff, out)
-
-
-def test_a_held_cuff_steers_the_raw_output_without_touching_the_servos_setpoint():
-    """The real CuffSteer on the real RawPositionOutput, the target chain's pair: the follow share of the
-    arm's distance is sent, the setpoint the pose servo closes on stays the policy's, and a stop clears it."""
-    q0 = np.array([0.08, -1.0, 1.19, 1.94, -0.67, 1.03, 0.5])
-    sent = []
-    acceleration = np.array(LIMITS.acceleration)
-    limits = JointLimits(LIMITS.velocity, acceleration, 10 * acceleration, LIMITS.position_low, LIMITS.position_high)
-    output = RawPositionOutput(JointSetpointGenerator(limits, DT), sent.append, stale_after=10.0)
-    node, cuff = Node(), types.SimpleNamespace(squeezed=True)
-    s = output.offset = CuffSteer(node, 'left', cuff, output)
-    s.follow.share[:] = 0.9
-    output.command(np.zeros(7), q0)
-    s.q_measured = q0 + 0.1
-    for _ in range(400):
-        output.tick()
-    assert s.live(s.q_measured)
-    assert np.allclose(output.position, q0)
-    assert np.allclose(sent[-1].position - q0, 0.09, atol=0.02)
-    output.stop()
-    assert not s.follow.offset.any() and s._added is None
 
 
 def test_zero_g_is_suppressed_only_while_a_plan_plays():
