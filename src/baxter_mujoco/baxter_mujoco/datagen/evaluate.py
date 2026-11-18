@@ -49,6 +49,7 @@ BAG_TOPICS = (
     '/policy/{arm}/chunk',
     '/policy/{arm}/engaged',
     '/sim/objects',
+    '/sim/state',  # the full MuJoCo qpos: the cameras can be rendered again from it, a scene factor changed
 )
 BAG_IMAGES = ('/cameras/{arm}_hand_camera/image', '/cameras/third_eye/color/image_raw')
 
