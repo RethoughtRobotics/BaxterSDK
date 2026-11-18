@@ -4,6 +4,7 @@
 #   EPISODE         bag folder, e.g. ../rethought_ai/recorder/data/SweepTrash_Kin/episode_000
 #   --mode          pose (stiff joint servo), force (torque mode), both (default)
 #   --out DIR       write the comparison report (default: data/replays/<time>_<episode>/)
+#   --bag           record a bag of all topics during the replay (into --out/bag/)
 #   --arms, --omega, --speed, --lead, --until, --no-gripper   (python -m baxter_teleop.replay -h)
 
 # Runs on ROS_DOMAIN_ID as exported (unset = 0, the robot; the sim on its domain). Raw position and

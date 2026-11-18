@@ -33,6 +33,8 @@ collision avoidance: keep the workspace clear.
 """
 
 import argparse
+import signal
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -366,6 +368,7 @@ def main(argv=None):
     parser.add_argument(
         '--joint-error-model', default=None, help="pose mode, one arm: command each joint ahead by this model's lag"
     )
+    parser.add_argument('--bag', action='store_true', help='record a bag of all topics during the replay')
     args, ros_args = parser.parse_known_args(sys.argv[1:] if argv is None else argv)
 
     demo, gripper = read_demo(args.episode)
@@ -391,6 +394,7 @@ def main(argv=None):
     rclpy.init(args=[sys.argv[0], *ros_args])
     node = rclpy.create_node('demo_replay')
     runs = {}
+    bag_proc = None
     try:
         replayer = Replayer(
             node,
@@ -405,6 +409,15 @@ def main(argv=None):
             joint_lag,
             commanded,
         )
+        if args.bag:
+            bag_dir = Path(args.episode).resolve() / 'replay'
+            bag_proc = subprocess.Popen(
+                ['ros2', 'bag', 'record', '-a', '-o', str(bag_dir), '--storage', 'mcap'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            time.sleep(1.0)
+            print(f'Recording bag to {bag_dir}')
         start = dict(np.load(args.offsets)) if args.offsets else {}
         for mode in modes:
             offsets = {arm: start[arm] for arm in arms if arm in start}
@@ -436,6 +449,10 @@ def main(argv=None):
                 Path(args.out).mkdir(parents=True, exist_ok=True)
                 np.savez(Path(args.out) / f'learned_{mode}.npz', **offsets)
     finally:
+        if bag_proc is not None:
+            bag_proc.send_signal(signal.SIGINT)
+            bag_proc.wait(timeout=10)
+            print('Bag saved')
         node.destroy_node()
         rclpy.shutdown()
     if args.out:
