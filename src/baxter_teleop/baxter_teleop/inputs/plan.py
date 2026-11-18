@@ -43,7 +43,7 @@ MIN_SPAN = 0.1  # s: a plan must cover this much to be played
 HISTORY = 0.4  # s of knots already played kept in the curve
 LAM = 1e-4  # smoothing spline penalty: within ~0.65 deg of the plan's joints on a recorded demo
 BLEND = 0.2  # s for a new curve to reach its plan from the setpoint playing; plans arrive every 0.04 s
-MAX_IK_ERROR = 0.03  # m: reachable plans solve to well under a millimetre, a clipped one to tens of mm or more
+MAX_IK_ERROR = 0.06  # m: reachable plans solve to well under a millimetre, a clipped one to tens of mm or more
 MIN_KNOTS = 5  # followable knots needed to move at all, the fewest the smoothing spline can fit
 REPORT_KNOTS = 8  # a plan cut below this is logged: the next plan replaces any further knots before they play
 

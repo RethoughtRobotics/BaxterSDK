@@ -54,6 +54,8 @@ if [[ "$KIND" == rollouts ]]; then
     arg() { pgrep -af "[i]nference $1 " | grep -v "uv run" | head -1 | sed -n "s/.* $2 \([^ ]*\).*/\1/p"; }
     MODEL="$(arg serve --model)" REVISION="$(arg serve --revision)" EPISODE="$(arg run --start-at)"
     [[ -n "$MODEL" && -d "${RAI_DIR}/${MODEL}" ]] && MODEL="${RAI_DIR}/${MODEL}"
+    # served from another machine: no local `inference serve`, so ask the policy
+    [[ -n "$MODEL" ]] || MODEL="$(timeout 5 ros2 topic echo --once --field data --qos-durability transient_local /policy/model 2>/dev/null | head -1)"
     echo "Policy running: ${MODEL:-unknown}${EPISODE:+, shadowing ${EPISODE}}"
 fi
 
