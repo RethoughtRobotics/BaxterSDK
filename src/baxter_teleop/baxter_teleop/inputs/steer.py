@@ -13,8 +13,9 @@ tared on the 0.2 s before the squeeze, which removes the model's offset at this 
 Admittance in joint space, with a leak:
     offset' = C dz(tau_ext) - offset / decay,   C = diag(1 / damping)
 Joint space, because the TCP mobility J C J^T stays bounded through singularities where inverting J
-does not, and the power tau_ext' C tau_ext the hand puts in is never negative. No IK runs: each 200 Hz
-setpoint of the replay stream is the plan's plus this offset.
+does not, and the power tau_ext' C tau_ext the hand puts in is never negative. No IK runs for it: each
+200 Hz setpoint of the output, the raw output's generator or the replay stream, is the policy's plus this
+offset. The raw output's pose servo closes on the setpoint without the offset, or it would undo it.
 
 The leak is not optional. A relative policy anchors each plan at the measured TCP, so a plan already
 holds the offset of its observation. An offset kept on top of it is counted again by every new plan:
@@ -62,6 +63,9 @@ TARE_TIME = 0.2  # s
 SOFTNESS = {'steer_softness_arm': slice(0, 4), 'steer_softness_wrist': slice(4, 7)}  # of Admittance.damping
 FOLLOW = {'steer_follow_arm': slice(0, 4), 'steer_follow_wrist': slice(4, 7)}  # share of the arm's offset
 MAX_SOFTNESS = 2.0  # phase margin 46 degrees at a 2000 N/m grip; at 3 it is 9, and unstable at 3000 N/m
+CHASE_GAIN = float(STEER['chase_gain_arm'])
+CHASE_GAIN_WRIST = float(STEER['chase_gain_wrist'])
+CHASE_DEADZONE = np.array(STEER['chase_deadzone'], float)
 
 
 def deadzone(x, width):
@@ -94,13 +98,12 @@ class Admittance:
         if not held:
             self.tare = self.tare + (self.effort - self.tare) * dt / (dt + TARE_TIME)
 
-    def step(self, dt, held):
+    def step(self, dt, held, q_measured=None, q_commanded=None):
         """(offset, its rate) one period on. Released, the offset only decays."""
         drive = np.zeros(7)
-        if held and self.effort is not None:
-            drive = np.clip(
-                deadzone(self.tare - self.effort, self.deadband) / self.damping, -self.max_rate, self.max_rate
-            )
+        if held and q_measured is not None and q_commanded is not None:
+            gain = np.array([CHASE_GAIN] * 4 + [CHASE_GAIN_WRIST] * 3)
+            drive = np.clip(gain * deadzone(q_measured - q_commanded, CHASE_DEADZONE), -self.max_rate, self.max_rate)
         self.rate = drive - self.offset / self.decay
         offset = np.clip(self.offset + self.rate * dt, -self.max_offset, self.max_offset)
         self.rate, self.offset = (offset - self.offset) / dt, offset
@@ -126,7 +129,7 @@ class Follow:
 
 
 class CuffSteer:
-    """What the replay stream adds to each setpoint: called with its period, gives (offset, rate)."""
+    """What the output adds to each setpoint: called with its period, gives (offset, rate)."""
 
     def __init__(self, node, arm, cuff, stream):
         self.cuff, self.stream, self.node = cuff, stream, node
@@ -186,7 +189,8 @@ class CuffSteer:
 
     def __call__(self, dt, q_plan):
         """(offset, rate) one period on. The rate is the admittance's: following sends no feedforward."""
-        added, rate = self.admittance.step(dt, self.held)
+        q_commanded = q_plan + self.admittance.offset
+        added, rate = self.admittance.step(dt, self.held, self.q_measured, q_commanded)
         added = added + self.follow.step(dt, q_plan, self.q_measured, self.held)
         self._added = (np.array(q_plan, float), added)  # replaced whole: read from the teleop's thread
         return added, rate

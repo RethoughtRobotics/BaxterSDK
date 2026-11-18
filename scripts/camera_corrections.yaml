@@ -1,0 +1,18 @@
+---
+left_hand_camera:
+  wb_gains_bgr:
+    - 1.0066
+    - 1.0
+    - 1.0403
+  gamma: 1.4
+  vignetting_file: left_hand_camera_vignetting.npy
+right_hand_camera:
+  wb_gains_bgr:
+    - 0.993
+    - 1.0
+    - 1.0202
+  gamma: 1.4
+  vignetting_file: right_hand_camera_vignetting.npy
+_meta:
+  created: '2026-11-17T14:34:36'
+  description: Fixed camera corrections for dataset annotation.
