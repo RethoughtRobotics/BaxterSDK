@@ -5,6 +5,7 @@ base-frame TCP twist toward its goal, the IK (differential_ik.py) turns it into 
 and an output stage (outputs/) sends them to the arm. `python -m baxter_teleop` runs it (cli.py).
 """
 
+import os
 import time
 
 import numpy as np
@@ -329,8 +330,16 @@ class Teleop:
         """
         self.limb.set_command_timeout(0.2)
         moving = False
+        # Experimental: BAXTER_TELEOP_MAX_HZ caps the control loop's rate (unset: as fast as it runs),
+        # to test whether the loop rate, which differs between machines, changes closed-loop behaviour.
+        max_hz = float(os.environ.get('BAXTER_TELEOP_MAX_HZ', 0) or 0)
+        next_cycle = time.monotonic()
         try:
             while rclpy.ok():
+                if max_hz > 0:
+                    next_cycle += 1.0 / max_hz
+                    time.sleep(max(0.0, next_cycle - time.monotonic()))
+                    next_cycle = max(next_cycle, time.monotonic())
                 self._spin_pending()
                 injected = on_cycle() if on_cycle is not None else None
                 key = self._read_key() or injected
@@ -421,7 +430,7 @@ class Teleop:
         With a Takeover target, the operator's trigger (takeover_trigger_topic) drives the gripper
         while they drive the arm, and each cycle says on /teleop/{arm}/takeover whether they do. With
         a Nudge target the same while they nudge, said on /teleop/{arm}/nudging, with the offset on
-        /teleop/{arm}/correction_offset. With `steer` a squeeze steers a playing plan (inputs/steer.py),
+        /teleop/{arm}/correction_offset. With `steer` a squeeze steers the streaming policy (inputs/steer.py),
         said on /teleop/{arm}/steering; the squeeze and the arm's TCP offset from the plan go out every cycle on
         /kinesthetic/{arm}/active and /kinesthetic/{arm}/offset.
         The keyboard keeps gripper/home/ESC."""

@@ -35,6 +35,7 @@ setup(
             'joint_playback = baxter_examples.joint_position_file_playback:main',
             'gripper_action_client = baxter_examples.gripper_action_client:main',
             'head_action_client = baxter_examples.head_action_client:main',
+            'head_pan_gui = baxter_examples.head_pan_gui:main',
         ],
     },
 )

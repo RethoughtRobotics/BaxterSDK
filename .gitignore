@@ -73,3 +73,10 @@ scripts/*_vignetting.npy
 # Third-party ROS packages (separate repos, cloned into src/ for colcon)
 src/zed-ros2-wrapper/
 src/zed-ros2-interfaces/
+
+# Private lab-machine scripts live in rethought-hpc (lamb/); these are symlinks to them
+scripts/server_inpaint
+scripts/record_inpaint_lamb
+# Vendor installers and probe recordings are not source
+zed_sdk.run
+/*.npz

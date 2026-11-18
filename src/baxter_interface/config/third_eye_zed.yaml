@@ -1,12 +1,10 @@
 ---
-# third_eye (ZED): workspace camera matching the RealSense third-eye's output.
-# Colour only, 640x480 equivalent at 30 fps (HD720 grab downscaled 2x = 640x360;
-# set pub_downscale_factor to 1.0 and grab_resolution to VGA for native 672x376).
-# Depth, positional tracking, mapping, and detection are off: the pipeline uses
-# only /cameras/third_eye/color/image_raw (+ camera_info), same as the RealSense.
+# third_eye (ZED 2i): left colour only, no depth, no tracking, no sensors.
+# Publishes /cameras/third_eye/color/image_raw (+ camera_info), remapped from zed_node/left/.
+# HD720 downscaled 2x = 640x360 at 30 fps.
 #
 # Launched by: ros2 launch baxter_interface third_eye_zed.launch.py
-#   (run_teleop.sh starts it automatically unless --realsense or --no-camera)
+#   (baxter_start and run_teleop.sh start it automatically)
 /**:
   ros__parameters:
     general:
@@ -17,6 +15,10 @@
       pub_downscale_factor: 2.0
       pub_frame_rate: 30.0
       sdk_verbose: 0
+
+    video:
+      auto_exposure_gain: true
+      auto_whitebalance: true
 
     depth:
       depth_mode: NONE
@@ -39,3 +41,4 @@
     sensors:
       sensors_image_sync: false
       sensors_pub_rate: 0.0
+      publish_imu_tf: false

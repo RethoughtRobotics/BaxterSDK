@@ -196,8 +196,12 @@ def main(argv=None):
     args, ros_args = p.parse_known_args(sys.argv[1:] if argv is None else argv)
     if args.takeover and (args.input != 'vr' or args.vr_topic is None):
         p.error("--takeover needs --input vr following a policy's target (--vr-topic)")
-    if args.steer and not (args.input == 'plan' or args.vr_topic is not None):
-        p.error("--steer steers a policy: use it with --input plan or a policy's target (--vr-topic)")
+    if args.steer and not (args.input == 'plan' or (args.input == 'vr' and args.vr_topic is not None)):
+        p.error(
+            "--steer steers a policy: use it with --input plan or --input vr following a policy's target (--vr-topic)"
+        )
+    if args.steer and args.input == 'vr' and args.output == 'velocity':
+        p.error('--steer adds to a streamed setpoint: use it with --output raw or raw_id')
     if args.input == 'plan':  # a plan is played by the replay stream, never through the servo and IK
         args.output = 'replay'
     args.servo_feedback = servo_feedback_for(args.output, args.servo_feedback)
@@ -283,6 +287,7 @@ def main(argv=None):
                 home_button=args.home_button,
                 target=target,
                 takeover_trigger_topic=f'/vive/{hand}/trigger' if args.takeover else None,
+                steer=args.steer,
             )
         elif args.input == 'plan':
             teleop.spin_vr(

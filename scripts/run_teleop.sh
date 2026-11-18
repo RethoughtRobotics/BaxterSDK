@@ -171,7 +171,7 @@ done
 
 third_eye_running() {
     pgrep -f "[r]ealsense2_camera_node.*third_eye" >/dev/null \
-        || pgrep -f "[z]ed_wrapper.*third_eye" >/dev/null
+        || pgrep -f "[c]omponent_container.*third_eye" >/dev/null
 }
 if [[ -n "$CAMERA" ]] && ! third_eye_running; then
     if [[ "$CAMERA_TYPE" == realsense ]]; then
