@@ -22,6 +22,41 @@ CAMERAS = ('left_hand_camera', 'right_hand_camera')
 YAML_PATH = Path(__file__).resolve().parent / 'camera_corrections.yaml'
 
 
+def load_corrections(path=YAML_PATH):
+    """Camera name -> its correction: vignetting gain map (or None), white-balance gains (BGR), gamma LUT."""
+    path = Path(path)
+    data = yaml.safe_load(path.read_text())
+    corrections = {}
+    for cam in CAMERAS:
+        if cam not in data:
+            continue
+        entry = data[cam]
+        vig_path = path.parent / entry.get('vignetting_file', '')
+        corrections[cam] = {
+            'vignetting': np.load(vig_path) if vig_path.is_file() else None,
+            'wb': entry['wb_gains_bgr'],
+            'gamma': entry['gamma'],
+            'lut': np.array([((i / 255.0) ** (1.0 / entry['gamma'])) * 255 for i in range(256)], dtype=np.uint8),
+        }
+    return corrections
+
+
+def correct(bgr, corr):
+    """A BGR uint8 image with one camera's correction applied: vignetting gain, white balance, gamma."""
+    h, w = bgr.shape[:2]
+    img = bgr.astype(np.float32)
+    if corr['vignetting'] is not None:
+        vig = corr['vignetting']
+        if vig.shape != (h, w):
+            vig = cv2.resize(vig, (w, h))
+        for c in range(3):
+            img[:, :, c] *= vig
+    img[:, :, 0] *= corr['wb'][0]
+    img[:, :, 2] *= corr['wb'][2]
+    np.clip(img, 0, 255, out=img)
+    return cv2.LUT(img.astype(np.uint8), corr['lut'])
+
+
 class CorrectionNode(Node):
     def __init__(self):
         super().__init__('camera_corrections')
@@ -29,28 +64,12 @@ class CorrectionNode(Node):
             self.get_logger().error(f'No corrections file at {YAML_PATH}; run calibrate_wrist_cameras.py first')
             raise SystemExit(1)
 
-        with open(YAML_PATH) as f:
-            data = yaml.safe_load(f)
-
-        self._corrections = {}
+        self._corrections = load_corrections()
         self._pubs = {}
-        for cam in CAMERAS:
-            if cam not in data:
-                continue
-            entry = data[cam]
-            vig = None
-            vig_path = YAML_PATH.parent / entry.get('vignetting_file', '')
-            if vig_path.exists():
-                vig = np.load(vig_path)
-            self._corrections[cam] = {
-                'vignetting': vig,
-                'wb': entry['wb_gains_bgr'],
-                'gamma': entry['gamma'],
-                'lut': np.array([((i / 255.0) ** (1.0 / entry['gamma'])) * 255 for i in range(256)], dtype=np.uint8),
-            }
+        for cam, corr in self._corrections.items():
             self._pubs[cam] = self.create_publisher(Image, f'/cameras/{cam}/image/processed', 1)
             self.create_subscription(Image, f'/cameras/{cam}/image', lambda msg, c=cam: self._on_image(c, msg), 1)
-            self.get_logger().info(f'{cam}: wb={entry["wb_gains_bgr"]}, gamma={entry["gamma"]}')
+            self.get_logger().info(f'{cam}: wb={corr["wb"]}, gamma={corr["gamma"]}')
 
     def _on_image(self, cam, msg):
         corr = self._corrections[cam]
@@ -64,17 +83,7 @@ class CorrectionNode(Node):
         else:
             bgr = raw.reshape(h, w, 3).copy()
 
-        img = bgr.astype(np.float32)
-        if corr['vignetting'] is not None:
-            vig = corr['vignetting']
-            if vig.shape != (h, w):
-                vig = cv2.resize(vig, (w, h))
-            for c in range(3):
-                img[:, :, c] *= vig
-        img[:, :, 0] *= corr['wb'][0]
-        img[:, :, 2] *= corr['wb'][2]
-        np.clip(img, 0, 255, out=img)
-        result = cv2.LUT(img.astype(np.uint8), corr['lut'])
+        result = correct(bgr, corr)
 
         out = Image()
         out.header = msg.header
