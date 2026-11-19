@@ -37,7 +37,10 @@ TOPICS+='|^/robot/(range|accelerometer)/.*'  # hand IR range (distance to what's
 TOPICS+='|^/teleop/.*|^/kinesthetic/.*|^/vive/.*|^/libsurvive/.*|^/sim/.*'
 TOPICS+='|^/robot/digital_io/(left|right)_(lower_cuff|upper_button|lower_button)/state$'  # cuff squeeze (zero-g takeover), gripper buttons
 TOPICS+='|^/policy/.*'  # a policy's chunks, plans, targets and engagement
-CAMERAS=(/cameras/left_hand_camera/image /cameras/right_hand_camera/image /cameras/third_eye/color/image_raw)  # the policies'
+# the policies' cameras: the wrist cameras as the policies see them (processed: camera_correction_node.py's
+# vignetting, white balance and gamma), and raw beside them for reference
+CAMERAS=(/cameras/left_hand_camera/image/processed /cameras/right_hand_camera/image/processed
+    /cameras/left_hand_camera/image /cameras/right_hand_camera/image /cameras/third_eye/color/image_raw)
 TOPICS+='|^/cameras/(left_hand_camera|right_hand_camera|third_eye/color)/camera_info$'
 TOPICS+='|^/cameras/third_eye/color/image_raw_inpainted[a-z_]*/compressed$'  # ros2_inpaint: the policy's live view and its masks
 if [[ -n "$ALL_TOPICS" ]]; then  # every colour camera up (depth stays as it is)
